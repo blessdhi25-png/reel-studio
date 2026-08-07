@@ -15,6 +15,25 @@ BigInt.prototype.toJSON = function () {
   return Number(this);
 };
 
+// Without DATABASE_URL set (see connectDB() in config/db.js), or any other
+// bug in a route handler, an async route that throws and isn't individually
+// wrapped in try/catch becomes an "unhandled rejection" — and Node's
+// default behavior since v15 is to terminate the ENTIRE process on those,
+// not just fail that one request. That takes down every in-flight and
+// future request too, which is what makes a single bad query look like
+// the whole server randomly crashing / going unreachable. These two
+// handlers log the error instead of letting it kill the process, so one
+// broken request degrades gracefully (that request still fails — it just
+// doesn't take the server down with it). This is a safety net, not a
+// substitute for fixing the underlying cause (e.g. actually setting
+// DATABASE_URL) or for routes catching their own errors properly.
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection]', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException]', err);
+});
+
 import authRoutes from './routes/auth.js';
 import userRoutes from './routes/users.js';
 import videoRoutes from './routes/videos.js';
