@@ -1,0 +1,144 @@
+import 'dotenv/config';
+import express from 'express';
+import cors from 'cors';
+import path from 'path';
+import { createServer } from 'http';
+import { initSocket } from './realtime/socket.js';
+import { connectDB } from './config/db.js';
+
+// Prisma returns BigInt for Video.viewCount/likeCount/commentCount.
+// JSON.stringify (which res.json() uses) can't serialize BigInt natively —
+// without this, any route returning a video silently 500s. Safe to convert
+// to Number here since these counts won't realistically exceed
+// Number.MAX_SAFE_INTEGER.
+BigInt.prototype.toJSON = function () {
+  return Number(this);
+};
+
+import authRoutes from './routes/auth.js';
+import userRoutes from './routes/users.js';
+import videoRoutes from './routes/videos.js';
+import engagementRoutes from './routes/engagement.js';
+import monetizationRoutes from './routes/monetization.js';
+import discoveryRoutes from './routes/discovery.js';
+import paymentsRoutes from './routes/payments.js';
+import webhookRoutes from './routes/webhook.js';
+import messagesRoutes from './routes/messages.js';
+import reportsRoutes from './routes/reports.js';
+import adminRoutes from './routes/admin.js';
+import notificationsRoutes from './routes/notifications.js';
+import liveRoutes from './routes/live.js';
+import studioRoutes from './routes/studio.js';
+import privacyRoutes from './routes/privacy.js';
+import artistRoutes from './routes/artists.js';
+
+const app = express();
+
+// CORS: the sign-up "Failed to fetch" seen on mobile/ngrok is caused by the
+// frontend calling the wrong URL (see resolveApiBase() in frontend's
+// lib/api.js), not by CORS — cors() with no options already reflects any
+// request origin. This is made explicit and configurable anyway, since an
+// open cors() is easy to accidentally lock down later without realizing it
+// breaks ngrok/mobile testing.
+//
+// ALLOWED_ORIGINS in .env, comma-separated, e.g.:
+//   ALLOWED_ORIGINS=http://localhost:3000,https://abcd1234.ngrok-free.app
+// The production Vercel frontend is always allowed even if ALLOWED_ORIGINS
+// is left unset on Render, so a missing env var can't silently break prod.
+const DEFAULT_ALLOWED_ORIGINS = ['https://reel-studio-wine.vercel.app'];
+const envOrigins = process.env.ALLOWED_ORIGINS?.split(',').map((o) => o.trim()).filter(Boolean) || [];
+const allowedOrigins = [...new Set([...DEFAULT_ALLOWED_ORIGINS, ...envOrigins])];
+
+app.use(
+  cors({
+    origin(origin, callback) {
+      // No Origin header (curl, server-to-server, some native app webviews)
+      // => allow.
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      // ngrok rotates subdomains on the free tier, so an exact allowlist
+      // entry goes stale between sessions — accept any *.ngrok-free.app /
+      // *.ngrok.io origin without requiring it to be listed explicitly.
+      if (/\.ngrok(-free)?\.app$|\.ngrok\.io$/.test(new URL(origin).hostname)) {
+        return callback(null, true);
+      }
+      // IMPORTANT: never pass an Error here. cors() invokes this inside
+      // Express's request-handling flow, and an Error passed to a
+      // non-async callback like this bypasses Express's normal error
+      // handling and can crash the Node process instead of just failing
+      // the one request. Returning `false` makes cors() skip the
+      // Access-Control-Allow-Origin header, which the browser reports as
+      // a CORS failure on the client (a 403 you can catch) — safe.
+      console.warn(`[cors] Rejected origin: ${origin}`);
+      callback(null, false);
+    },
+    credentials: true,
+  })
+);
+
+// IMPORTANT: the Stripe webhook needs the raw, unparsed body to verify the
+// signature — it must be mounted before express.json() below.
+app.use('/api/v1/webhooks/stripe', webhookRoutes);
+
+app.use(express.json());
+
+// Serve transcoded HLS files directly (self-hosted MVP).
+// Swap for a CDN URL once you move to a managed storage service.
+app.use('/hls', express.static(path.resolve(process.env.HLS_DIR || './storage/hls')));
+
+// Serve uploaded profile photos the same way.
+app.use('/uploads', express.static(path.resolve(process.env.UPLOAD_DIR || './uploads')));
+
+// Render's health check hits whatever path is configured in the dashboard —
+// both are provided so it works regardless of which one is set, and so the
+// frontend can probe the versioned path directly.
+app.get('/health', (_req, res) => res.json({ ok: true }));
+app.get('/api/v1/health', (_req, res) => res.json({ ok: true }));
+
+app.use('/api/v1/auth', authRoutes);
+app.use('/api/v1/users', userRoutes);
+app.use('/api/v1/videos', videoRoutes);
+app.use('/api/v1', engagementRoutes); // /videos/:id/like, /videos/:id/comments, /comments/:id
+app.use('/api/v1', monetizationRoutes); // /users/me/earnings
+app.use('/api/v1', paymentsRoutes); // /stripe/connect, /stripe/status, /stripe/dashboard-link, /videos/:id/tip/checkout
+app.use('/api/v1', discoveryRoutes); // /search, /trending
+app.use('/api/v1', messagesRoutes); // /conversations, /conversations/:otherUserId
+app.use('/api/v1', reportsRoutes); // /reports, /reports/mine
+app.use('/api/v1/admin', adminRoutes); // moderation dashboard
+app.use('/api/v1', notificationsRoutes); // /notifications, /notifications/:id/read
+app.use('/api/v1', liveRoutes); // /live, /live/:id, /live/start, /live/:id/end
+app.use('/api/v1', studioRoutes); // /studio/overview, /videos/:id/boost/checkout
+app.use('/api/v1', privacyRoutes); // /users/me/privacy, /users/:id/block
+app.use('/api/v1/artists', artistRoutes); // artist registration, track catalog & analytics
+
+// Any request that reached here matched no route above. Returning JSON
+// (not Express's default HTML 404 page) matters here specifically because
+// a mismatched frontend base URL (e.g. missing /api/v1, or hitting a typo'd
+// path) is exactly what was reported as "404/CORS errors" — a plain-text/
+// HTML 404 body makes that failure mode harder to distinguish at a glance
+// from an actual CORS rejection in the browser's network tab.
+app.use((_req, res) => {
+  res.status(404).json({ error: 'Not found' });
+});
+
+app.use((err, _req, res, _next) => {
+  console.error(err);
+  res.status(500).json({ error: 'Internal server error' });
+});
+
+const PORT = process.env.PORT || 4000;
+const httpServer = createServer(app);
+initSocket(httpServer);
+
+// Attempt the DB connection but never let it block/crash server startup —
+// see connectDB() in config/db.js for why. Binding the port is what makes
+// Render's health check pass, so that has to happen regardless of DB state.
+await connectDB();
+
+// Binding to 0.0.0.0 (not the default 127.0.0.1/localhost) is required on
+// Render: their port-detection and health checks probe the container from
+// outside, and a server only listening on localhost is unreachable from
+// there even though it works fine locally.
+httpServer.listen(PORT, '0.0.0.0', () => {
+  console.log(`API + realtime listening on 0.0.0.0:${PORT}`);
+});

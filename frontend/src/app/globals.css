@@ -1,0 +1,29 @@
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Work+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  background-color: #1A1423;
+  color: #F2EBE2;
+  font-family: 'Work Sans', sans-serif;
+}
+
+/* Hide scrollbar on the snap feed while keeping it scrollable */
+.feed-scroll::-webkit-scrollbar {
+  display: none;
+}
+.feed-scroll {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Gentle floating motion for the auth pages' hero preview cards */
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+}
+.animate-float {
+  animation: float 5s ease-in-out infinite;
+}
