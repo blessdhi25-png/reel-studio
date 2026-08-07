@@ -62,6 +62,15 @@ app.use(
       if (/\.ngrok(-free)?\.app$|\.ngrok\.io$/.test(new URL(origin).hostname)) {
         return callback(null, true);
       }
+      // Vercel mints a brand-new hostname for EVERY deployment (e.g.
+      // active-reel-ek068bgtv-bless-dhi-s-projects.vercel.app) on top of
+      // whatever stable production alias exists — so a single hardcoded
+      // origin above goes stale the moment a new preview/prod deploy runs.
+      // Accept any *.vercel.app origin under this specific team/project
+      // rather than trying to keep every generated hash in sync manually.
+      if (/-bless-dhi-s-projects\.vercel\.app$/.test(new URL(origin).hostname)) {
+        return callback(null, true);
+      }
       // IMPORTANT: never pass an Error here. cors() invokes this inside
       // Express's request-handling flow, and an Error passed to a
       // non-async callback like this bypasses Express's normal error
