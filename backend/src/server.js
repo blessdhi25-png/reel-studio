@@ -113,6 +113,7 @@ app.use(express.json());
 // Serve transcoded HLS files directly (self-hosted MVP).
 // Swap for a CDN URL once you move to a managed storage service.
 app.use('/hls', express.static(path.resolve(process.env.HLS_DIR || './storage/hls')));
+app.use('/thumbnails', express.static(path.resolve(process.env.THUMBNAILS_DIR || './storage/thumbnails')));
 
 // Serve uploaded profile photos and videos the same way. This must resolve
 // to the exact same directory upload.js writes into — using
