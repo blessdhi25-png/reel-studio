@@ -52,9 +52,19 @@ export default function TuneFeedPanel({ weights, onChange }) {
   }
 
   return (
-    <div className="fixed bottom-6 right-6 z-30">
+    <div
+      className="fixed right-4 z-20"
+      style={{ top: 'calc(env(safe-area-inset-top) + 6.25rem)' }}
+    >
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="bg-zinc-800/90 hover:bg-zinc-700 border border-zinc-700/80 text-amber-400 text-xs font-bold py-2 px-3 rounded-xl flex items-center gap-2 shadow-lg backdrop-blur-md transition-colors ml-auto"
+      >
+        ⚙ Tune Feed
+      </button>
+
       {open && (
-        <div className="mb-3 w-72 bg-ink2 border border-reel/20 rounded-sprocket p-5 shadow-xl ml-auto">
+        <div className="mt-3 w-72 bg-ink2 border border-reel/20 rounded-sprocket p-5 shadow-xl">
           <div className="flex items-center justify-between mb-4">
             <p className="font-display text-lg text-bone tracking-wide">Tune your feed</p>
             <button onClick={() => setOpen(false)} className="text-smoke text-sm">✕</button>
@@ -95,13 +105,6 @@ export default function TuneFeedPanel({ weights, onChange }) {
           </button>
         </div>
       )}
-
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className="bg-zinc-800/90 hover:bg-zinc-700 border border-zinc-700/80 text-amber-400 text-xs font-bold py-2 px-3 rounded-xl flex items-center gap-2 shadow-lg backdrop-blur-md transition-colors"
-      >
-        ⚙ Tune Feed
-      </button>
     </div>
   );
 }
