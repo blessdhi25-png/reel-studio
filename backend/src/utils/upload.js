@@ -58,6 +58,26 @@ export const uploadAvatar = multer({
   limits: { fileSize: 8 * 1024 * 1024 }, // 8MB cap
 });
 
+// Cover/profile banners — same image-type restriction as avatars, its own
+// subdirectory, and a slightly bigger cap since banners are typically wider
+// and higher-resolution than a profile photo.
+const bannerDir = path.join(uploadDir, 'banners');
+if (!fs.existsSync(bannerDir)) fs.mkdirSync(bannerDir, { recursive: true });
+
+const bannerStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, bannerDir),
+  filename: (req, file, cb) => {
+    const unique = `${req.userId}-${Date.now()}`;
+    cb(null, `${unique}${path.extname(file.originalname) || '.jpg'}`);
+  },
+});
+
+export const uploadBanner = multer({
+  storage: bannerStorage,
+  fileFilter: imageFileFilter,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB cap
+});
+
 // Audio tracks distributed by verified artists for other creators to use.
 const trackDir = path.join(uploadDir, 'tracks');
 if (!fs.existsSync(trackDir)) fs.mkdirSync(trackDir, { recursive: true });
