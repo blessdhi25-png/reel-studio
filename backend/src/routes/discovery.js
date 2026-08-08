@@ -16,7 +16,7 @@ router.get('/search', async (req, res) => {
     prisma.video.findMany({
       where: { status: 'published', caption: { contains: q, mode: 'insensitive' } },
       take: 10,
-      include: { user: { select: { username: true } } },
+      include: { user: { select: { id: true, username: true, avatarUrl: true } } },
     }),
   ]);
 
