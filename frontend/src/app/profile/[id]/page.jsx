@@ -51,6 +51,9 @@ export default function ProfilePage({ params }) {
   const [isSelf, setIsSelf] = useState(false);
   const [following, setFollowing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
+  const [usingLocalFallback, setUsingLocalFallback] = useState(false);
+  const [retryTick, setRetryTick] = useState(0);
   const [showReport, setShowReport] = useState(false);
   const [confirmLogout, setConfirmLogout] = useState(false);
   const [toast, setToast] = useState(null);
@@ -80,32 +83,72 @@ export default function ProfilePage({ params }) {
   }
 
   useEffect(() => {
+    let cancelled = false;
     const stored = localStorage.getItem('user');
-    const self = stored && JSON.parse(stored).id === id;
+    const localUser = stored ? JSON.parse(stored) : null;
+    const self = !!localUser && localUser.id === id;
     setIsSelf(self);
 
-    api
-      .getUser(id)
-      .then((u) => {
+    async function load() {
+      setLoading(true);
+      setLoadError(null);
+      setUsingLocalFallback(false);
+      setPrivateLocked(false);
+
+      try {
+        const u = await api.getUser(id);
+        if (cancelled) return;
         setUser(u);
         setBlocked(!!u.blockedByMe);
-        return api.getUserVideos(id).catch((err) => {
+
+        // A broken /videos request shouldn't take down the rest of the
+        // profile — the header, follow button, etc. should still render
+        // even if the grid can't load.
+        try {
+          const v = await api.getUserVideos(id);
+          if (!cancelled) setVideos(v);
+        } catch (err) {
           if (err.message === 'This account is private') {
-            setPrivateLocked(true);
-            return [];
+            if (!cancelled) setPrivateLocked(true);
           }
-          return [];
-        });
-      })
-      .then((v) => setVideos(v))
-      .catch(() => {})
-      .finally(() => setLoading(false));
+          // Any other failure here just leaves the grid empty — not fatal.
+        }
+      } catch (err) {
+        if (cancelled) return;
+        // Own profile, but the network/backend hiccupped: fall back to
+        // whatever's cached in localStorage from login rather than showing
+        // a dead end. It's stale/partial (no counts, no bio), but it's
+        // enough to keep the page usable instead of stuck or blank.
+        if (self && localUser) {
+          setUser({
+            id: localUser.id,
+            username: localUser.username,
+            displayName: localUser.displayName || localUser.username,
+            avatarUrl: localUser.avatarUrl || null,
+            bio: null,
+            _count: { followers: 0, following: 0, videos: 0 },
+          });
+          setUsingLocalFallback(true);
+        } else {
+          setUser(null);
+        }
+        setLoadError(err.message || 'Could not load this profile.');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    load();
 
     if (self) {
-      api.getBookmarks().then(setBookmarks).catch(() => {});
-      api.getLikedVideos().then(setLikedVideos).catch(() => {});
+      api.getBookmarks().then((b) => !cancelled && setBookmarks(b)).catch(() => {});
+      api.getLikedVideos().then((l) => !cancelled && setLikedVideos(l)).catch(() => {});
     }
-  }, [id]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [id, retryTick]);
 
   async function toggleFollow() {
     if (!localStorage.getItem('token')) {
@@ -159,8 +202,20 @@ export default function ProfilePage({ params }) {
 
   if (!user) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-zinc-950">
-        <p className="font-body text-zinc-400">User not found.</p>
+      <main className="min-h-screen flex items-center justify-center bg-zinc-950 px-6">
+        <div className="text-center">
+          <p className="font-body text-zinc-400 mb-4">
+            {loadError || 'User not found.'}
+          </p>
+          {loadError && (
+            <button
+              onClick={() => setRetryTick((t) => t + 1)}
+              className="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 px-4 py-2 rounded-xl text-sm font-medium"
+            >
+              Retry
+            </button>
+          )}
+        </div>
       </main>
     );
   }
@@ -174,20 +229,20 @@ export default function ProfilePage({ params }) {
 
   return (
     <main className="min-h-screen bg-zinc-950 pb-28">
-      {/* Cover banner — real image when the user has set one, gradient otherwise */}
-      <div className="h-40 md:h-52 w-full rounded-b-3xl border-b border-zinc-800 relative overflow-hidden bg-gradient-to-r from-amber-500/20 via-zinc-900 to-zinc-900">
-        {user.bannerUrl && (
-          <img
-            src={user.bannerUrl}
-            alt=""
-            className="absolute inset-0 w-full h-full object-cover"
-            onError={(e) => {
-              // A stale/broken cached URL shouldn't leave a blank box —
-              // fall back to the gradient underneath by just hiding the img.
-              e.currentTarget.style.display = 'none';
-            }}
-          />
-        )}
+      {usingLocalFallback && (
+        <div className="bg-amber-500/10 border-b border-amber-500/30 px-4 py-2 flex items-center justify-between gap-3">
+          <p className="font-body text-xs text-amber-400">
+            Showing cached profile info — couldn't reach the server for the latest data.
+          </p>
+          <button
+            onClick={() => setRetryTick((t) => t + 1)}
+            className="font-mono text-[10px] uppercase tracking-widest text-amber-300 hover:text-amber-200 shrink-0"
+          >
+            Retry
+          </button>
+        </div>
+      )}      {/* Cover banner */}
+      <div className="h-40 md:h-52 w-full bg-gradient-to-r from-amber-500/20 via-zinc-900 to-zinc-900 rounded-b-3xl border-b border-zinc-800 relative">
         <div className="absolute top-4 left-4 right-4 flex items-center justify-between">
           <a href="/" className="font-mono text-xs text-zinc-300 uppercase tracking-widest bg-black/30 backdrop-blur px-2.5 py-1 rounded-lg">
             ← Feed
