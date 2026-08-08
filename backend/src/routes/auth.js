@@ -129,10 +129,16 @@ async function sendVerificationCode(user) {
 }
 
 router.post('/register', asyncHandler(async (req, res) => {
-  const { username, email, password, displayName } = req.body;
+  let { username, email, password, displayName } = req.body;
   if (!username || !email || !password) {
     return res.status(400).json({ error: 'username, email, and password are required' });
   }
+
+  // Normalize once, up front, so what's checked, stored, and later matched
+  // against at login are always the same trimmed/lowercased values.
+  username = username.trim().toLowerCase();
+  email = email.trim().toLowerCase();
+
   if (!EMAIL_RE.test(email)) {
     return res.status(400).json({ error: 'Enter a valid email address' });
   }
@@ -141,7 +147,12 @@ router.post('/register', asyncHandler(async (req, res) => {
   }
 
   const existing = await prisma.user.findFirst({
-    where: { OR: [{ email }, { username }] },
+    where: {
+      OR: [
+        { email: { equals: email, mode: 'insensitive' } },
+        { username: { equals: username, mode: 'insensitive' } },
+      ],
+    },
   });
   if (existing) {
     return res.status(409).json({ error: 'Username or email already in use' });
@@ -166,10 +177,11 @@ router.post('/register', asyncHandler(async (req, res) => {
 }));
 
 router.post('/verify-email', asyncHandler(async (req, res) => {
-  const { email, code } = req.body;
+  let { email, code } = req.body;
   if (!email || !code) return res.status(400).json({ error: 'email and code are required' });
+  email = email.trim();
 
-  const user = await prisma.user.findUnique({ where: { email } });
+  const user = await prisma.user.findFirst({ where: { email: { equals: email, mode: 'insensitive' } } });
   if (!user) return res.status(404).json({ error: 'No account found for that email' });
   if (user.emailVerified) return res.status(400).json({ error: 'Email is already verified' });
 
@@ -195,10 +207,11 @@ router.post('/verify-email', asyncHandler(async (req, res) => {
 }));
 
 router.post('/resend-verification', asyncHandler(async (req, res) => {
-  const { email } = req.body;
+  let { email } = req.body;
   if (!email) return res.status(400).json({ error: 'email is required' });
+  email = email.trim();
 
-  const user = await prisma.user.findUnique({ where: { email } });
+  const user = await prisma.user.findFirst({ where: { email: { equals: email, mode: 'insensitive' } } });
   // Don't reveal whether the email exists — always return ok.
   if (!user || user.emailVerified) return res.json({ ok: true });
 
@@ -220,7 +233,25 @@ router.post('/resend-verification', asyncHandler(async (req, res) => {
 
 router.post('/login', asyncHandler(async (req, res) => {
   const { email, password } = req.body;
-  const user = await prisma.user.findUnique({ where: { email } });
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Invalid email or password' });
+  }
+
+  // "email" here is really "email or username" — the login form accepts
+  // either. Trimmed + case-insensitive on both sides so "Jane@Example.com"
+  // or "JaneDoe" match regardless of how the value was originally typed or
+  // stored. `mode: 'insensitive'` (Postgres only) is used instead of
+  // lowercasing at write-time, so this also matches accounts that already
+  // exist with mixed-case emails/usernames — no backfill migration needed.
+  const identifier = email.trim();
+  const user = await prisma.user.findFirst({
+    where: {
+      OR: [
+        { email: { equals: identifier, mode: 'insensitive' } },
+        { username: { equals: identifier, mode: 'insensitive' } },
+      ],
+    },
+  });
   if (!user) return res.status(401).json({ error: 'Invalid email or password' });
 
   if (!user.passwordHash) {
