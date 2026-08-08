@@ -5,7 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { api } from '../lib/api';
 import { getSocket } from '../lib/socket';
 
-const HIDDEN_ON = ['/login', '/signup', '/verify-email'];
+const HIDDEN_ON = ['/login', '/signup', '/verify-email', '/upload'];
 
 function HomeIcon({ active }) {
   return (
