@@ -82,7 +82,7 @@ async function request(path, { method = 'GET', body, isForm = false, timeoutMs =
     console.error(`[api] ${networkErr.name === 'AbortError' ? 'Timed out requesting' : 'Network error requesting'} ${url}:`, networkErr);
     const err = new Error(
       networkErr.name === 'AbortError'
-        ? 'The server took too long to respond. Please try again.'
+        ? 'The server took too long to respond. This can happen if it\u2019s waking up after being idle \u2014 please try again in a moment.'
         : 'Unable to connect to the server. Please verify backend connection.'
     );
     err.cause = networkErr;
@@ -109,16 +109,40 @@ export function googleAuthUrl() {
   return `${API_BASE}/auth/google`;
 }
 
+// Render's free tier spins the backend down after ~15 minutes of
+// inactivity; the next request has to wait for a cold start, which can
+// easily take 30-50+ seconds — well past the default 15s request timeout,
+// which is exactly what produced "The server took too long to respond" on
+// login/register/Google sign-in screenshotted from production. Two things
+// address this together: auth calls below use a longer AUTH_TIMEOUT_MS, and
+// pingServer() lets a page fire a cheap, fire-and-forget /health request as
+// soon as it mounts (e.g. the login/signup page's first render) so the cold
+// start happens in the background *before* the person finishes typing their
+// password, rather than during the login submit itself.
+const AUTH_TIMEOUT_MS = 45000;
+
+export function pingServer() {
+  request('/health', { timeoutMs: 8000 }).catch(() => {
+    // Swallowed on purpose — this is best-effort warming, not a real
+    // request the UI depends on. If the server is asleep this may itself
+    // time out without ever waking it (Render's cold start can outlast
+    // even this timeout on a slow spin-up); the real login/register/Google
+    // request afterward still gets its own full AUTH_TIMEOUT_MS.
+  });
+}
+
 export const api = {
-  register: (data) => request('/auth/register', { method: 'POST', body: data }),
+  register: (data) => request('/auth/register', { method: 'POST', body: data, timeoutMs: AUTH_TIMEOUT_MS }),
   getMe: () => request('/auth/me'),
   // For Google Identity Services / One-Tap: pass the credential GSI hands
   // back after sign-in, get { token, user } directly (no redirect).
   googleOneTapLogin: (credential) =>
-    request('/auth/google', { method: 'POST', body: { credential } }),
-  login: (data) => request('/auth/login', { method: 'POST', body: data }),
-  verifyEmail: (email, code) => request('/auth/verify-email', { method: 'POST', body: { email, code } }),
-  resendVerification: (email) => request('/auth/resend-verification', { method: 'POST', body: { email } }),
+    request('/auth/google', { method: 'POST', body: { credential }, timeoutMs: AUTH_TIMEOUT_MS }),
+  login: (data) => request('/auth/login', { method: 'POST', body: data, timeoutMs: AUTH_TIMEOUT_MS }),
+  verifyEmail: (email, code) =>
+    request('/auth/verify-email', { method: 'POST', body: { email, code }, timeoutMs: AUTH_TIMEOUT_MS }),
+  resendVerification: (email) =>
+    request('/auth/resend-verification', { method: 'POST', body: { email }, timeoutMs: AUTH_TIMEOUT_MS }),
   getFeed: (type, cursor, weights, circle, following) => {
     const params = new URLSearchParams();
     if (type) params.set('type', type);
