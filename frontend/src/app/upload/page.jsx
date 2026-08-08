@@ -245,11 +245,17 @@ export default function UploadPage() {
             videoUrl: result.rawUrl,
             caption,
             circle: result.circle,
+            // videoType matters here — without it the feed can't tell which
+            // tab (All / Shorts / Features) this optimistic entry belongs
+            // in, and would either show it under the wrong tab or drop it
+            // entirely once real per-tab filtering is applied.
+            videoType: videoType === 'long' ? 'long' : 'short',
             user: me,
             likeCount: 0,
             commentCount: 0,
             bookmarkCount: 0,
             processing: true,
+            postedAt: Date.now(),
           })
         );
       }
