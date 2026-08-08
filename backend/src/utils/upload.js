@@ -2,7 +2,15 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 
-const uploadDir = process.env.UPLOAD_DIR || './uploads';
+// A bare relative path like './uploads' resolves against process.cwd() at
+// whatever moment Node happened to be started from — which is usually fine
+// locally, but on some hosts/process managers cwd isn't guaranteed to be
+// the project root. Anchoring explicitly to process.cwd() here makes the
+// resolution obvious and consistent instead of implicit, and matches what
+// server.js uses when mounting the /uploads static route (see server.js).
+const uploadDir = process.env.UPLOAD_DIR
+  ? path.resolve(process.env.UPLOAD_DIR)
+  : path.join(process.cwd(), 'uploads');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
 const storage = multer.diskStorage({
