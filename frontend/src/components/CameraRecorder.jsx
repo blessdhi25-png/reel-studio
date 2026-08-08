@@ -21,6 +21,12 @@ export default function CameraRecorder({ onCaptured, onCancel }) {
   const [recording, setRecording] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState(duration);
   const [error, setError] = useState(null);
+  // Separate from `error` (camera/mic access failures, which hide the
+  // preview entirely) because this can happen even though the camera
+  // preview is working fine — only recording itself is unsupported. Keeping
+  // the live preview visible while explaining the situation is friendlier
+  // than blanking the screen over something the person can work around.
+  const [recordError, setRecordError] = useState(null);
   // Starts false so the detected built-in camera (selectedDeviceId, from
   // the shared hook) wins by default on load. Only flips to true once the
   // person explicitly hits the front/back flip button — a mobile-only
@@ -79,20 +85,62 @@ export default function CameraRecorder({ onCaptured, onCancel }) {
     setSelectedDeviceId(deviceId);
   }
 
+  // iOS Safari has no WebM support at all — MediaRecorder.isTypeSupported
+  // returns false for every video/webm variant there, and previously this
+  // fell back to a hardcoded 'video/webm' anyway, which throws a synchronous
+  // NotSupportedError the moment `new MediaRecorder(...)` runs. That
+  // uncaught throw is what produced "broken/empty preview" specifically on
+  // mobile — recording never actually started, but nothing surfaced a
+  // message explaining why. This tries codecs in preference order and only
+  // uses one MediaRecorder actually reports support for; Safari lands on
+  // video/mp4, everything else lands on a webm variant.
+  function pickSupportedMimeType() {
+    const candidates = [
+      'video/webm;codecs=vp9,opus',
+      'video/webm;codecs=vp9',
+      'video/webm;codecs=vp8,opus',
+      'video/webm',
+      'video/mp4;codecs=h264,aac',
+      'video/mp4',
+    ];
+    return candidates.find((t) => MediaRecorder.isTypeSupported?.(t));
+  }
+
   function startRecording() {
     if (!streamRef.current) return;
     chunksRef.current = [];
-    const recorder = new MediaRecorder(streamRef.current, {
-      mimeType: MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
-        ? 'video/webm;codecs=vp9'
-        : 'video/webm',
-    });
+
+    const mimeType = pickSupportedMimeType();
+    if (!mimeType) {
+      setRecordError('Recording isn\u2019t supported in this browser. Please upload a video file instead.');
+      return;
+    }
+
+    let recorder;
+    try {
+      recorder = new MediaRecorder(streamRef.current, { mimeType });
+    } catch {
+      setRecordError('Recording isn\u2019t supported in this browser. Please upload a video file instead.');
+      return;
+    }
+
+    // Base type (codec params stripped) drives both the File's `type` and
+    // its extension, so what actually gets recorded matches what's sent to
+    // the backend — the fileFilter in backend/src/utils/upload.js only
+    // accepts the exact strings 'video/mp4' / 'video/webm' / 'video/quicktime',
+    // and the extension needs to match too since some players/servers infer
+    // type from the filename. Hardcoding '.webm' regardless of the real
+    // mimeType (the previous behavior) meant an mp4-encoded recording from
+    // Safari would ship mislabeled as a .webm file.
+    const baseType = mimeType.split(';')[0];
+    const extension = baseType === 'video/mp4' ? 'mp4' : 'webm';
+
     recorder.ondataavailable = (e) => {
       if (e.data.size > 0) chunksRef.current.push(e.data);
     };
     recorder.onstop = () => {
-      const blob = new Blob(chunksRef.current, { type: 'video/webm' });
-      const file = new File([blob], `recording-${Date.now()}.webm`, { type: 'video/webm' });
+      const blob = new Blob(chunksRef.current, { type: baseType });
+      const file = new File([blob], `recording-${Date.now()}.${extension}`, { type: baseType });
       streamRef.current?.getTracks().forEach((t) => t.stop());
       onCaptured(file);
     };
@@ -166,6 +214,12 @@ export default function CameraRecorder({ onCaptured, onCancel }) {
             <span className="font-mono text-xs text-bone">{secondsLeft}s</span>
           </div>
         )}
+
+        {recordError && !error && (
+          <div className="absolute inset-x-0 bottom-0 bg-ink/85 px-4 py-3 text-center">
+            <p className="font-body text-smoke text-xs">{recordError}</p>
+          </div>
+        )}
       </div>
 
       <div className="px-6 py-6">
@@ -187,7 +241,7 @@ export default function CameraRecorder({ onCaptured, onCancel }) {
         <div className="flex items-center justify-center">
           <button
             onClick={recording ? stopRecording : startRecording}
-            disabled={!!error}
+            disabled={!!error || !!recordError}
             className="w-16 h-16 rounded-full border-4 border-bone flex items-center justify-center disabled:opacity-30"
           >
             <span className={`bg-red-500 transition-all ${recording ? 'w-6 h-6 rounded-sprocket' : 'w-12 h-12 rounded-full'}`} />
