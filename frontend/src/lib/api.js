@@ -45,7 +45,7 @@ function getToken() {
   return window.localStorage.getItem('token');
 }
 
-async function request(path, { method = 'GET', body, isForm = false } = {}) {
+async function request(path, { method = 'GET', body, isForm = false, timeoutMs = 15000 } = {}) {
   const headers = {};
   const token = getToken();
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -53,32 +53,50 @@ async function request(path, { method = 'GET', body, isForm = false } = {}) {
 
   const url = `${API_BASE}${path}`;
 
+  // Defense-in-depth against the UI hanging forever on a stuck request
+  // (e.g. profile fetches getting stuck on an infinite skeleton loader): a
+  // request that neither succeeds nor fails within timeoutMs is aborted so
+  // the caller's try/catch/finally always runs. The real fix for the
+  // profile page's hang was on the backend (see
+  // backend/src/utils/asyncHandler.js — a thrown error in an async Express
+  // 4 route was never sending a response at all), but this guards against
+  // any other future case where a connection genuinely never resolves.
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
   let res;
   try {
     res = await fetch(url, {
       method,
       headers,
       body: isForm ? body : body ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
     });
   } catch (networkErr) {
     // fetch() throws a bare TypeError ("Failed to fetch") for anything from
-    // a wrong host/port to no network at all — none of which is
-    // self-explanatory to someone testing on a phone. Log the exact URL so
-    // it's obvious at a glance whether the base URL resolved correctly,
-    // and surface a message people can actually act on.
-    console.error(`[api] Network error requesting ${url}:`, networkErr);
+    // a wrong host/port to no network at all, and an AbortError when our
+    // own timeout above fires — neither is self-explanatory to someone
+    // testing on a phone. Log the exact URL so it's obvious at a glance
+    // whether the base URL resolved correctly, and surface a message
+    // people can actually act on.
+    console.error(`[api] ${networkErr.name === 'AbortError' ? 'Timed out requesting' : 'Network error requesting'} ${url}:`, networkErr);
     const err = new Error(
-      'Unable to connect to the server. Please verify backend connection.'
+      networkErr.name === 'AbortError'
+        ? 'The server took too long to respond. Please try again.'
+        : 'Unable to connect to the server. Please verify backend connection.'
     );
     err.cause = networkErr;
     err.requestUrl = url;
     throw err;
+  } finally {
+    clearTimeout(timeout);
   }
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
     const err = new Error(body.error || 'Request failed');
     Object.assign(err, body);
+    err.status = res.status;
     throw err;
   }
   return res.json();
@@ -136,7 +154,6 @@ export const api = {
   getUser: (id) => request(`/users/${id}`),
   updateProfile: (data) => request('/users/me', { method: 'PATCH', body: data }),
   uploadAvatar: (formData) => request('/users/me/avatar', { method: 'POST', body: formData, isForm: true }),
-  uploadBanner: (formData) => request('/users/me/banner', { method: 'POST', body: formData, isForm: true }),
 
   // Artist Hub
   getMyArtistProfile: () => request('/artists/me'),
