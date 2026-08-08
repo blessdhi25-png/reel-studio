@@ -2,13 +2,21 @@ import { Router } from 'express';
 import prisma from '../config/db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { notify } from '../utils/notify.js';
-import { uploadAvatar, uploadBanner } from '../utils/upload.js';
+import { uploadAvatar } from '../utils/upload.js';
 import { isBlocked } from './privacy.js';
 import { optionalAuth } from '../middleware/auth.js';
 import { getOnlineUserIds } from '../realtime/socket.js';
+import { asyncHandler } from '../utils/asyncHandler.js';
 
 const router = Router();
 const BASE_URL = process.env.BASE_URL || 'http://localhost:4000';
+
+// Every handler below is wrapped in asyncHandler(...) — see
+// utils/asyncHandler.js for why: on Express 4, a rejected promise inside a
+// bare `async (req, res) => {...}` route never reaches the error middleware
+// and never sends a response, so the request just hangs forever. That was
+// the actual cause of the profile page's "infinite skeleton" — not
+// anything wrong in the frontend's own fetch/loading logic.
 
 // These must come before GET /:id — otherwise ":id" would swallow these paths.
 
@@ -16,7 +24,7 @@ const BASE_URL = process.env.BASE_URL || 'http://localhost:4000';
 // degree connections), ranked by how many mutuals overlap. Tops up with
 // generally popular accounts if there aren't enough mutual-based candidates
 // yet (e.g. a brand-new account that isn't following anyone).
-router.get('/suggested', requireAuth, async (req, res) => {
+router.get('/suggested', requireAuth, asyncHandler(async (req, res) => {
   const limit = Math.min(Number(req.query.limit) || 9, 24);
 
   const myFollowing = await prisma.follow.findMany({
@@ -72,20 +80,20 @@ router.get('/suggested', requireAuth, async (req, res) => {
     .sort((a, b) => b.mutualCount - a.mutualCount || b._count.followers - a._count.followers);
 
   res.json(result);
-});
+}));
 
 // Batch presence check for a set of user ids — used to show the green
 // "online" dot without polling each profile individually.
-router.get('/online', requireAuth, async (req, res) => {
+router.get('/online', requireAuth, asyncHandler(async (req, res) => {
   const ids = (req.query.ids || '').split(',').filter(Boolean).slice(0, 100);
   res.json({ onlineIds: getOnlineUserIds(ids) });
-});
+}));
 
-router.get('/:id', optionalAuth, async (req, res) => {
+router.get('/:id', optionalAuth, asyncHandler(async (req, res) => {
   const user = await prisma.user.findUnique({
     where: { id: req.params.id },
     select: {
-      id: true, username: true, displayName: true, avatarUrl: true, bannerUrl: true,
+      id: true, username: true, displayName: true, avatarUrl: true,
       bio: true, creatorStatus: true, createdAt: true, isPrivate: true,
       _count: { select: { followers: true, following: true, videos: true } },
     },
@@ -113,26 +121,20 @@ router.get('/:id', optionalAuth, async (req, res) => {
   }
 
   res.json({ ...user, totalLikes: likeSum._sum.likeCount || 0, blockedByMe });
-});
+}));
 
-router.patch('/me', requireAuth, async (req, res) => {
-  const { displayName, avatarUrl, bannerUrl, bio } = req.body;
+router.patch('/me', requireAuth, asyncHandler(async (req, res) => {
+  const { displayName, avatarUrl, bio } = req.body;
   const user = await prisma.user.update({
     where: { id: req.userId },
-    data: { displayName, avatarUrl, bannerUrl, bio },
+    data: { displayName, avatarUrl, bio },
   });
-  res.json({
-    id: user.id,
-    displayName: user.displayName,
-    avatarUrl: user.avatarUrl,
-    bannerUrl: user.bannerUrl,
-    bio: user.bio,
-  });
-});
+  res.json({ id: user.id, displayName: user.displayName, avatarUrl: user.avatarUrl, bio: user.bio });
+}));
 
 // Real photo upload for the profile picture — separate from PATCH /me so a
 // large image doesn't have to round-trip as base64 inside a JSON body.
-router.post('/me/avatar', requireAuth, uploadAvatar.single('avatar'), async (req, res) => {
+router.post('/me/avatar', requireAuth, uploadAvatar.single('avatar'), asyncHandler(async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No image uploaded' });
 
   const avatarUrl = `${BASE_URL}/uploads/avatars/${req.file.filename}`;
@@ -141,22 +143,9 @@ router.post('/me/avatar', requireAuth, uploadAvatar.single('avatar'), async (req
     data: { avatarUrl },
   });
   res.json({ avatarUrl: user.avatarUrl });
-});
+}));
 
-// Same idea for the cover banner — persisted immediately on upload rather
-// than only living in the form's local state until Save is pressed.
-router.post('/me/banner', requireAuth, uploadBanner.single('banner'), async (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'No image uploaded' });
-
-  const bannerUrl = `${BASE_URL}/uploads/banners/${req.file.filename}`;
-  const user = await prisma.user.update({
-    where: { id: req.userId },
-    data: { bannerUrl },
-  });
-  res.json({ bannerUrl: user.bannerUrl });
-});
-
-router.get('/:id/videos', optionalAuth, async (req, res) => {
+router.get('/:id/videos', optionalAuth, asyncHandler(async (req, res) => {
   if (req.userId && (await isBlocked(req.userId, req.params.id))) {
     return res.json([]);
   }
@@ -181,9 +170,9 @@ router.get('/:id/videos', optionalAuth, async (req, res) => {
     orderBy: { createdAt: 'desc' },
   });
   res.json(videos);
-});
+}));
 
-router.post('/:id/follow', requireAuth, async (req, res) => {
+router.post('/:id/follow', requireAuth, asyncHandler(async (req, res) => {
   if (req.userId === req.params.id) {
     return res.status(400).json({ error: 'Cannot follow yourself' });
   }
@@ -207,29 +196,29 @@ router.post('/:id/follow', requireAuth, async (req, res) => {
   });
 
   res.json({ ok: true });
-});
+}));
 
-router.delete('/:id/follow', requireAuth, async (req, res) => {
+router.delete('/:id/follow', requireAuth, asyncHandler(async (req, res) => {
   await prisma.follow.deleteMany({
     where: { followerId: req.userId, followeeId: req.params.id },
   });
   res.json({ ok: true });
-});
+}));
 
-router.get('/:id/followers', async (req, res) => {
+router.get('/:id/followers', asyncHandler(async (req, res) => {
   const followers = await prisma.follow.findMany({
     where: { followeeId: req.params.id },
     include: { follower: { select: { id: true, username: true, avatarUrl: true } } },
   });
   res.json(followers.map(f => f.follower));
-});
+}));
 
-router.get('/:id/following', async (req, res) => {
+router.get('/:id/following', asyncHandler(async (req, res) => {
   const following = await prisma.follow.findMany({
     where: { followerId: req.params.id },
     include: { followee: { select: { id: true, username: true, avatarUrl: true } } },
   });
   res.json(following.map(f => f.followee));
-});
+}));
 
 export default router;
