@@ -37,6 +37,13 @@ router.post('/', requireAuth, upload.single('video'), async (req, res) => {
   const appOrigin = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
   const rawUrl = `${appOrigin}/uploads/${req.file.filename}`;
 
+  // This app has no transcode worker running in local dev (nothing ever
+  // calls POST /:id/complete), so leaving status as 'processing' meant
+  // every upload sat invisible in the feed forever. Publishing immediately
+  // with the raw file as videoUrl makes uploads viewable right away.
+  // If/when a real transcode worker exists, it can still call
+  // POST /:id/complete later to swap videoUrl for the real HLS rendition —
+  // that update is harmless to apply on top of an already-published video.
   const video = await prisma.video.create({
     data: {
       userId: req.userId,
@@ -45,7 +52,8 @@ router.post('/', requireAuth, upload.single('video'), async (req, res) => {
       circle: normalizedCircle,
       trackId: validTrackId,
       rawPath: req.file.path,
-      status: 'processing',
+      videoUrl: rawUrl,
+      status: 'published',
     },
   });
 
@@ -90,6 +98,15 @@ router.get('/feed', optionalAuth, async (req, res) => {
   // bookmarked/shared link degrades to "show everything" instead of a 400.
   const circleFilter = normalizeCircle(circle) ? { circle: normalizeCircle(circle) } : {};
 
+  // Videos are published immediately on upload now (see POST / above), so
+  // this mostly matters as a safety net: if a future transcode-worker
+  // pipeline reintroduces a real 'processing' window, the uploader should
+  // still see their own video in their feed while it's mid-processing —
+  // everyone else only ever sees 'published' ones.
+  const visibilityFilter = req.userId
+    ? { OR: [{ status: 'published' }, { status: 'processing', userId: req.userId }] }
+    : { status: 'published' };
+
   let followingFilter = {};
   if (following === 'true' || following === '1') {
     if (!req.userId) return res.status(401).json({ error: 'Log in to see videos from people you follow' });
@@ -122,7 +139,7 @@ router.get('/feed', optionalAuth, async (req, res) => {
     // doesn't require pulling a whole candidate pool.
     const poolSize = Math.max(Number(limit) * 5, 50);
     const pool = await prisma.video.findMany({
-      where: { status: 'published', ...(type ? { videoType: type } : {}), ...circleFilter, ...followingFilter },
+      where: { ...visibilityFilter, ...(type ? { videoType: type } : {}), ...circleFilter, ...followingFilter },
       orderBy: [{ rankingScore: 'desc' }, { createdAt: 'desc' }],
       take: poolSize,
       include: { user: { select: { id: true, username: true, avatarUrl: true, stripeOnboarded: true } } },
@@ -131,7 +148,7 @@ router.get('/feed', optionalAuth, async (req, res) => {
     nextCursor = null;
   } else {
     videos = await prisma.video.findMany({
-      where: { status: 'published', ...(type ? { videoType: type } : {}), ...circleFilter, ...followingFilter },
+      where: { ...visibilityFilter, ...(type ? { videoType: type } : {}), ...circleFilter, ...followingFilter },
       orderBy,
       take: Number(limit),
       ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
