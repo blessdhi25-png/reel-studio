@@ -119,7 +119,28 @@ export default function FeedPage() {
   useEffect(() => {
     api
       .getFeed(filter, undefined, tuningWeights, circle)
-      .then((data) => setVideos(data.videos))
+      .then((data) => {
+        let videos = data.videos;
+        // See app/upload/page.jsx — after a successful upload it stashes a
+        // lightweight optimistic entry here so the clip shows up right away
+        // instead of waiting on background HLS processing to finish and the
+        // video to flip to 'published'. Consumed once and removed; the real
+        // published version will appear on a later feed load in its normal
+        // ranked position.
+        const pendingRaw = typeof window !== 'undefined' ? sessionStorage.getItem('pendingUpload') : null;
+        if (pendingRaw) {
+          sessionStorage.removeItem('pendingUpload');
+          try {
+            const pending = JSON.parse(pendingRaw);
+            if (!videos.some((v) => v.id === pending.id)) {
+              videos = [pending, ...videos];
+            }
+          } catch {
+            /* ignore malformed stash */
+          }
+        }
+        setVideos(videos);
+      })
       .catch(() => {});
   }, [filter, tuningWeights, circle]);
 
