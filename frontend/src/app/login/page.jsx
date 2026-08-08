@@ -3,7 +3,7 @@
 import { useEffect, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { api, googleAuthUrl } from '../../lib/api';
+import { api, googleAuthUrl, pingServer } from '../../lib/api';
 import AuthHero from '../../components/AuthHero';
 
 function GoogleIcon() {
@@ -70,6 +70,14 @@ function LoginForm() {
       setForm((f) => ({ ...f, email: saved }));
       setRemember(true);
     }
+  }, []);
+
+  // Fires a cheap /health request the moment this page loads, so a cold
+  // Render instance starts spinning up while the person is still typing
+  // their email/password — instead of only starting once they hit submit,
+  // which is what was producing "The server took too long to respond" here.
+  useEffect(() => {
+    pingServer();
   }, []);
 
   useEffect(() => {
