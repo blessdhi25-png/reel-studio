@@ -71,9 +71,10 @@ const DM_OPTIONS = [
 ];
 
 // Fields with no corresponding column/endpoint on the backend yet
-// (see backend/src/routes/users.js + prisma schema — only displayName,
-// avatarUrl, and bio are persisted server-side for PATCH /users/me).
-// We keep them fully interactive and persist them locally per-account
+// (see backend/src/routes/users.js + prisma schema — displayName,
+// avatarUrl, bannerUrl, and bio are persisted server-side for PATCH
+// /users/me; avatar/banner also each have their own upload endpoint).
+// We keep the rest fully interactive and persist them locally per-account
 // so the hub still "feels" complete, and swap this for real API calls
 // the moment the backend grows the columns/endpoints for them.
 const LOCAL_EXTRAS_PREFIX = 'profileExtras:';
@@ -152,6 +153,7 @@ export default function EditProfilePage() {
     Promise.all([api.getUser(user.id), api.getPrivacySettings()])
       .then(([u, privacy]) => {
         setAvatarUrl(u.avatarUrl || '');
+        setBannerUrl(u.bannerUrl || '');
         setDisplayName(u.displayName || '');
         setUsername(u.username || '');
         originalUsername.current = u.username || '';
@@ -165,7 +167,6 @@ export default function EditProfilePage() {
         setEmailVerified(!!user.emailVerified);
 
         const extras = loadLocalExtras(user.id);
-        setBannerUrl(extras.bannerUrl || '');
         setWebsite(extras.website || '');
         setDob(extras.dob || '');
         setAllowDownloads(extras.allowDownloads ?? true);
@@ -207,23 +208,30 @@ export default function EditProfilePage() {
     }
   }
 
-  /* ---------------- Banner upload (local preview only) ---------------- */
-  /* No backend column/endpoint for banners exists yet, so this stores a
-     data URL locally rather than pretending to upload it to a server. */
+  /* ---------------- Banner upload (real API) ---------------- */
 
-  function handleBannerSelect(e) {
+  async function handleBannerSelect(e) {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
 
     setBannerUploading(true);
-    const reader = new FileReader();
-    reader.onload = () => {
-      setBannerUrl(reader.result);
+    const localPreview = URL.createObjectURL(file);
+    setBannerUrl(localPreview);
+
+    try {
+      const body = new FormData();
+      body.append('banner', file);
+      const { bannerUrl: uploaded } = await api.uploadBanner(body);
+      setBannerUrl(uploaded);
+      URL.revokeObjectURL(localPreview);
+      const stored = JSON.parse(localStorage.getItem('user') || '{}');
+      localStorage.setItem('user', JSON.stringify({ ...stored, bannerUrl: uploaded }));
+    } catch (err) {
+      flashToast(err.message || 'Could not upload banner');
+    } finally {
       setBannerUploading(false);
-    };
-    reader.onerror = () => setBannerUploading(false);
-    reader.readAsDataURL(file);
+    }
   }
 
   /* ---------------- Username availability (client-side stub) ---------------- */
@@ -258,18 +266,23 @@ export default function EditProfilePage() {
     setSaving(true);
     try {
       // Fields the backend actually persists.
-      const updated = await api.updateProfile({ displayName, avatarUrl, bio });
+      const updated = await api.updateProfile({ displayName, avatarUrl, bannerUrl, bio });
       await api.updatePrivacySettings({ isPrivate, messagePrivacy });
 
       const stored = JSON.parse(localStorage.getItem('user') || '{}');
       localStorage.setItem(
         'user',
-        JSON.stringify({ ...stored, displayName: updated.displayName, avatarUrl: updated.avatarUrl })
+        JSON.stringify({
+          ...stored,
+          displayName: updated.displayName,
+          avatarUrl: updated.avatarUrl,
+          bannerUrl: updated.bannerUrl,
+        })
       );
 
       // Fields not yet backed by the API — persisted locally so the hub
       // stays consistent across reloads.
-      saveLocalExtras(userId, { bannerUrl, website, dob, allowDownloads, showOnlineStatus });
+      saveLocalExtras(userId, { website, dob, allowDownloads, showOnlineStatus });
 
       flashToast('Changes saved');
     } catch (err) {
@@ -295,7 +308,10 @@ export default function EditProfilePage() {
   }
 
   return (
-    <main className="min-h-screen bg-black px-4 pb-32">
+    <main
+      className="min-h-screen bg-black px-4"
+      style={{ paddingBottom: 'calc(11rem + env(safe-area-inset-bottom))' }}
+    >
       <form onSubmit={handleSubmit} className="max-w-3xl mx-auto p-6 md:p-8 bg-zinc-900/70 border border-zinc-800/80 rounded-3xl backdrop-blur-md shadow-2xl my-8">
         {/* Header */}
         <div className="mb-6">
@@ -370,8 +386,12 @@ export default function EditProfilePage() {
         )}
       </form>
 
-      {/* Sticky footer action bar */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-zinc-800 bg-black/90 backdrop-blur-md">
+      {/* Sticky footer action bar — docked above the global bottom nav
+          (also `fixed bottom-0`) instead of on top of it. */}
+      <div
+        className="fixed left-0 right-0 z-30 border-t border-zinc-800 bg-black/90 backdrop-blur-md"
+        style={{ bottom: 'calc(4.5rem + env(safe-area-inset-bottom))' }}
+      >
         <div className="max-w-3xl mx-auto px-4 md:px-8 py-4 flex items-center justify-between gap-4">
           <button
             type="button"
@@ -393,9 +413,12 @@ export default function EditProfilePage() {
         </div>
       </div>
 
-      {/* Toast */}
+      {/* Toast — sits above the footer bar above */}
       {toast && (
-        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-zinc-900 text-white text-sm font-medium px-4 py-3 rounded-xl border border-amber-500/40 shadow-2xl">
+        <div
+          className="fixed left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-zinc-900 text-white text-sm font-medium px-4 py-3 rounded-xl border border-amber-500/40 shadow-2xl"
+          style={{ bottom: 'calc(9.5rem + env(safe-area-inset-bottom))' }}
+        >
           <CheckCircleIcon className="text-amber-400" />
           {toast}
         </div>
