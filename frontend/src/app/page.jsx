@@ -123,20 +123,38 @@ export default function FeedPage() {
         let videos = data.videos;
         // See app/upload/page.jsx — after a successful upload it stashes a
         // lightweight optimistic entry here so the clip shows up right away
-        // instead of waiting on background HLS processing to finish and the
-        // video to flip to 'published'. Consumed once and removed; the real
-        // published version will appear on a later feed load in its normal
-        // ranked position.
+        // instead of waiting on a network round trip. Handling here has to
+        // avoid three bugs the naive version had:
+        //   1. Removing it from sessionStorage on the very first fetch
+        //      regardless of outcome — that meant switching tabs (which
+        //      re-runs this effect) right after upload lost it for good
+        //      even though it hadn't actually shown up under that tab yet.
+        //   2. Not checking videoType — it would get prepended under every
+        //      tab, including ones it doesn't belong in.
+        //   3. No expiry — a stash that's never superseded (e.g. the user
+        //      never returns to a matching tab) would sit in sessionStorage
+        //      indefinitely.
+        const PENDING_TTL_MS = 5 * 60 * 1000;
         const pendingRaw = typeof window !== 'undefined' ? sessionStorage.getItem('pendingUpload') : null;
         if (pendingRaw) {
-          sessionStorage.removeItem('pendingUpload');
           try {
             const pending = JSON.parse(pendingRaw);
-            if (!videos.some((v) => v.id === pending.id)) {
+            const alreadyInResults = videos.some((v) => v.id === pending.id);
+            const expired = !pending.postedAt || Date.now() - pending.postedAt > PENDING_TTL_MS;
+            if (alreadyInResults || expired) {
+              // Superseded by the real (now-published) video, or just old —
+              // either way there's nothing left for the stash to do.
+              sessionStorage.removeItem('pendingUpload');
+            } else if (filter === null || filter === pending.videoType) {
+              // Matches the tab currently being viewed — show it, but leave
+              // the stash in place until a real fetch confirms it's there,
+              // so switching tabs and back doesn't lose it.
               videos = [pending, ...videos];
             }
+            // else: doesn't match this tab — leave it stashed, untouched,
+            // for whichever tab it does belong to.
           } catch {
-            /* ignore malformed stash */
+            sessionStorage.removeItem('pendingUpload');
           }
         }
         setVideos(videos);
