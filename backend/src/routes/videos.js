@@ -26,6 +26,17 @@ router.post('/', requireAuth, upload.single('video'), async (req, res) => {
     if (track) validTrackId = track.id;
   }
 
+  // The raw upload is immediately servable from /uploads (see the static
+  // route in server.js) even before the transcode worker finishes and calls
+  // POST /:id/complete with the real HLS videoUrl — returning this now lets
+  // the frontend show the just-posted clip right away instead of waiting on
+  // background processing. APP_URL is preferred when set (the deployed
+  // backend origin, e.g. https://reel-backend-a2sz.onrender.com); falling
+  // back to building it from the incoming request works for local dev
+  // without needing APP_URL set at all.
+  const appOrigin = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+  const rawUrl = `${appOrigin}/uploads/${req.file.filename}`;
+
   const video = await prisma.video.create({
     data: {
       userId: req.userId,
@@ -38,7 +49,7 @@ router.post('/', requireAuth, upload.single('video'), async (req, res) => {
     },
   });
 
-  res.status(201).json({ id: video.id, status: video.status, circle: video.circle });
+  res.status(201).json({ id: video.id, status: video.status, circle: video.circle, rawUrl });
 });
 
 // The fixed list of circles plus a live published-video count for each, so
