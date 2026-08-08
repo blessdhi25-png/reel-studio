@@ -42,6 +42,17 @@ const VideoCard = forwardRef(function VideoCard(
   const [paused, setPaused] = useState(false);
   const [isOwnVideo, setIsOwnVideo] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
+  // video.durationSeconds is only ever populated by the transcode worker's
+  // completion callback (POST /:id/complete) — which, per the immediate-
+  // publish upload flow (see backend/src/routes/videos.js), never runs in
+  // this self-hosted setup. That left durationSeconds permanently null on
+  // every video ever posted, which is why the on-screen duration badge was
+  // stuck at "0:00" for every published clip, not just freshly uploaded
+  // ones. Reading the real <video> element's own duration once its
+  // metadata loads sidesteps the missing backend field entirely — this is
+  // the actual duration of whatever's playing, regardless of whether a
+  // transcode pipeline ever fills in durationSeconds.
+  const [liveDuration, setLiveDuration] = useState(null);
   const following = Boolean(video.user?.isFollowing);
 
   useEffect(() => {
@@ -97,9 +108,11 @@ const VideoCard = forwardRef(function VideoCard(
         el.pause();
 
         // If they scrolled away well before the clip finished, count it as a skip —
-        // this is what the ranking worker penalizes.
+        // this is what the ranking worker penalizes. Falls back to the live-read
+        // duration (see liveDuration above) since video.durationSeconds is null
+        // for every video published through the immediate-publish upload path.
         const elapsed = Date.now() - watchStart;
-        const duration = (video.durationSeconds || 0) * 1000;
+        const duration = (video.durationSeconds || liveDuration || 0) * 1000;
         if (duration > 0 && elapsed < duration * 0.5) {
           api.logEvent(video.id, 'skip', elapsed).catch(() => {});
         }
@@ -107,7 +120,7 @@ const VideoCard = forwardRef(function VideoCard(
     } else {
       el.pause();
     }
-  }, [isActive, video.id, video.durationSeconds]);
+  }, [isActive, video.id, video.durationSeconds, liveDuration]);
 
   // Drives timestamp-comment highlighting (locally, for the mobile overlay
   // panel below) and reports the active card's position up to the page so
@@ -220,6 +233,13 @@ const VideoCard = forwardRef(function VideoCard(
         playsInline
         muted={!audioEnabled}
         onClick={togglePlayPause}
+        onLoadedMetadata={(e) => {
+          const d = e.currentTarget.duration;
+          // Some browsers report Infinity for a duration that isn't fully
+          // known yet (e.g. certain streamed responses mid-load) — only
+          // trust it once it's an actual finite number.
+          if (Number.isFinite(d)) setLiveDuration(d);
+        }}
         className="h-full w-full max-w-md object-cover mx-auto cursor-pointer"
         poster={video.thumbnailUrl}
       />
@@ -250,7 +270,7 @@ const VideoCard = forwardRef(function VideoCard(
       >
         {/* Type badge — reads like a film-can label */}
         <div className="absolute top-6 left-10 font-mono text-xs tracking-widest text-reel border border-reel/50 px-2 py-1 rounded-sprocket uppercase">
-          {video.videoType === 'long' ? 'Feature' : 'Short'} · {formatTimecode(video.durationSeconds)}
+          {video.videoType === 'long' ? 'Feature' : 'Short'} · {formatTimecode(video.durationSeconds || liveDuration)}
         </div>
 
         {/* Caption + creator — bottom-24 clears the fixed bottom nav on mobile */}
