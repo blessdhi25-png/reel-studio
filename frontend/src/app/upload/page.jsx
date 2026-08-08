@@ -226,8 +226,34 @@ export default function UploadPage() {
     formData.append('allowDownloads', String(allowDownloads));
 
     try {
-      await uploadWithProgress(formData, setUploadProgress, xhrRef);
+      const result = await uploadWithProgress(formData, setUploadProgress, xhrRef);
       setStatus('done');
+
+      // Real processing (HLS transcode) happens async on the backend — the
+      // video won't show up in GET /videos/feed until that finishes and
+      // flips status to 'published'. Stashing a lightweight optimistic
+      // entry (using the raw file's own immediately-servable URL from the
+      // upload response) lets the feed show it right away instead of
+      // waiting; app/page.jsx reads and clears this on mount.
+      if (result?.rawUrl) {
+        const stored = localStorage.getItem('user');
+        const me = stored ? JSON.parse(stored) : null;
+        sessionStorage.setItem(
+          'pendingUpload',
+          JSON.stringify({
+            id: result.id,
+            videoUrl: result.rawUrl,
+            caption,
+            circle: result.circle,
+            user: me,
+            likeCount: 0,
+            commentCount: 0,
+            bookmarkCount: 0,
+            processing: true,
+          })
+        );
+      }
+      setTimeout(() => router.push('/'), 600);
     } catch (err) {
       if (err.name === 'AbortError') {
         setStatus(null);
@@ -466,8 +492,16 @@ export default function UploadPage() {
         </div>
       </form>
 
-      {/* Sticky footer */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-zinc-800 bg-black/90 backdrop-blur-md">
+      {/* Sticky footer — z-50 so it's guaranteed to sit above BottomNav's z-40
+          even if BottomNav ever briefly renders during a route transition
+          (BottomNav is also hidden outright on /upload — see HIDDEN_ON in
+          components/BottomNav.jsx — this is defense-in-depth for that).
+          The extra bottom padding matches BottomNav's own safe-area handling
+          so Discard/Post don't end up in the iOS home-indicator dead zone. */}
+      <div
+        className="fixed bottom-0 left-0 right-0 z-50 border-t border-zinc-800 bg-black/90 backdrop-blur-md"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+      >
         <div className="max-w-6xl mx-auto px-4 md:px-10">
           {status === 'uploading' && (
             <div className="pt-3">
@@ -596,6 +630,15 @@ function VideoPreview({ src }) {
 
   return (
     <div className="relative w-full h-full group">
+      {/* playsInline + muted + autoPlay together is what makes mobile Safari
+          and Chrome actually load the local blob's metadata and start
+          rendering frames right away — without muted, mobile browsers block
+          autoplay entirely and often delay firing onLoadedMetadata until the
+          user manually taps play, which is what produces the stuck
+          "0:00 / 0:00" readout. controls is added too as a native fallback
+          scrubber; our own play button / time badge overlay stays as well
+          since native controls on some Android WebViews don't reliably show
+          for object URLs. */}
       <video
         ref={videoRef}
         src={src}
@@ -603,18 +646,23 @@ function VideoPreview({ src }) {
         onClick={togglePlay}
         onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
         onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
         onEnded={() => setPlaying(false)}
         playsInline
+        muted
+        autoPlay
+        controls
         loop
       />
       <button
         type="button"
         onClick={togglePlay}
-        className="absolute inset-0 flex items-center justify-center"
+        className="absolute inset-0 flex items-center justify-center pointer-events-none"
         aria-label={playing ? 'Pause' : 'Play'}
       >
         {!playing && (
-          <span className="w-14 h-14 rounded-full bg-black/60 flex items-center justify-center text-white text-2xl">
+          <span className="w-14 h-14 rounded-full bg-black/60 flex items-center justify-center text-white text-2xl pointer-events-auto">
             ▶
           </span>
         )}
