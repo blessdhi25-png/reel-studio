@@ -259,7 +259,7 @@ const VideoCard = forwardRef(function VideoCard(
       {!audioEnabled && (
         <div
           className="absolute right-6 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-ink/60 text-bone font-mono text-[10px] uppercase tracking-widest pointer-events-none z-10"
-          style={{ top: 'calc(env(safe-area-inset-top) + 9.5rem)' }}
+          style={{ top: 'calc(env(safe-area-inset-top) + 5rem)' }}
         >
           🔇 Tap for sound
         </div>
@@ -274,7 +274,7 @@ const VideoCard = forwardRef(function VideoCard(
         {/* Type badge — reads like a film-can label */}
         <div
           className="absolute left-10 font-mono text-xs tracking-widest text-reel border border-reel/50 px-2 py-1 rounded-sprocket uppercase"
-          style={{ top: 'calc(env(safe-area-inset-top) + 6.25rem)' }}
+          style={{ top: 'calc(env(safe-area-inset-top) + 5rem)' }}
         >
           {video.videoType === 'long' ? 'Feature' : 'Short'} · {formatTimecode(video.durationSeconds || liveDuration)}
         </div>
