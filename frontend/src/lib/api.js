@@ -136,6 +136,7 @@ export const api = {
   getUser: (id) => request(`/users/${id}`),
   updateProfile: (data) => request('/users/me', { method: 'PATCH', body: data }),
   uploadAvatar: (formData) => request('/users/me/avatar', { method: 'POST', body: formData, isForm: true }),
+  uploadBanner: (formData) => request('/users/me/banner', { method: 'POST', body: formData, isForm: true }),
 
   // Artist Hub
   getMyArtistProfile: () => request('/artists/me'),
