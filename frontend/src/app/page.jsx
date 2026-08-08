@@ -272,51 +272,65 @@ export default function FeedPage() {
 
   const activeVideo = videos[activeIndex];
 
+  // Single header bar — was previously two independently `fixed` pieces
+  // (a centered filter pill and a right-aligned nav-links group) that
+  // didn't reserve space for each other, so on narrow phones the right
+  // group's text ("Live" / "DMs") overlapped the filter pill and the
+  // circle chips underneath it. Now it's one flex row that lays every
+  // top action out in relation to the others, so nothing can sit on top
+  // of anything else.
   const mobileTopNav = (
-    <>
-      <div className="fixed top-6 right-6 z-20 font-mono text-xs uppercase tracking-widest flex items-center gap-4">
-        {user ? (
-          <>
-            {(user.role === 'admin' || user.role === 'moderator') && (
-              <a href="/admin" className="text-yellow-400">Admin</a>
-            )}
-            <a href="/live" className="text-smoke">Live</a>
-            <a href="/messages" className="relative text-smoke">
-              DMs
-              {unreadCount > 0 && (
-                <span className="absolute -top-2 -right-3 bg-reel text-ink rounded-full w-4 h-4 flex items-center justify-center text-[9px]">
-                  {unreadCount > 9 ? '9+' : unreadCount}
-                </span>
-              )}
-            </a>
-          </>
-        ) : (
-          <a href="/login" className="text-smoke">Log in</a>
-        )}
-        <a href="/search" aria-label="Search" className="text-bone">
-          <SearchIcon />
-        </a>
-      </div>
-
-      <div className="fixed top-6 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-2">
-        <div className="flex gap-1 bg-ink2/80 rounded-sprocket p-1 font-mono text-xs uppercase tracking-widest">
-          {FILTERS.map((opt) => (
-            <button
-              key={opt.label}
-              onClick={() => setFilter(opt.value)}
-              className={`px-3 py-1 rounded-sprocket ${
-                filter === opt.value ? 'bg-reel text-ink' : 'text-smoke'
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
+    <div
+      className="fixed top-0 inset-x-0 z-20 flex flex-col gap-2 px-4 pb-2"
+      style={{ paddingTop: 'max(1.25rem, calc(env(safe-area-inset-top) + 0.75rem))' }}
+    >
+      <div className="flex items-center gap-2">
+        <div className="flex-1 min-w-0 flex justify-center overflow-x-auto">
+          <div className="flex gap-1 bg-ink2/80 rounded-sprocket p-1 font-mono text-xs uppercase tracking-widest shrink-0">
+            {FILTERS.map((opt) => (
+              <button
+                key={opt.label}
+                onClick={() => setFilter(opt.value)}
+                className={`px-3 py-1 rounded-sprocket whitespace-nowrap ${
+                  filter === opt.value ? 'bg-reel text-ink' : 'text-smoke'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* Topic Circles — micro-community filter, only shown once at least
-            one video has been posted into a circle. */}
-        {circles.length > 0 && (
-          <div className="flex gap-1 bg-ink2/80 rounded-sprocket p-1 font-mono text-[10px] uppercase tracking-widest max-w-[90vw] overflow-x-auto">
+        <div className="shrink-0 flex items-center gap-3 font-mono text-[11px] uppercase tracking-widest">
+          {user ? (
+            <>
+              {(user.role === 'admin' || user.role === 'moderator') && (
+                <a href="/admin" className="text-yellow-400">Admin</a>
+              )}
+              <a href="/live" className="text-smoke">Live</a>
+              <a href="/messages" className="relative text-smoke">
+                DMs
+                {unreadCount > 0 && (
+                  <span className="absolute -top-2 -right-3 bg-reel text-ink rounded-full w-4 h-4 flex items-center justify-center text-[9px]">
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                )}
+              </a>
+            </>
+          ) : (
+            <a href="/login" className="text-smoke">Log in</a>
+          )}
+          <a href="/search" aria-label="Search" className="text-bone">
+            <SearchIcon />
+          </a>
+        </div>
+      </div>
+
+      {/* Topic Circles — micro-community filter, only shown once at least
+          one video has been posted into a circle. */}
+      {circles.length > 0 && (
+        <div className="flex justify-center overflow-x-auto">
+          <div className="flex gap-1 bg-ink2/80 rounded-sprocket p-1 font-mono text-[10px] uppercase tracking-widest shrink-0 max-w-full">
             <button
               onClick={() => setCircle(null)}
               className={`px-2.5 py-1 rounded-sprocket shrink-0 ${
@@ -337,9 +351,9 @@ export default function FeedPage() {
               </button>
             ))}
           </div>
-        )}
-      </div>
-    </>
+        </div>
+      )}
+    </div>
   );
 
   // Desktop-only header bar — replaces the floating pill nav with a single
@@ -407,7 +421,7 @@ export default function FeedPage() {
   );
 
   return (
-    <main className="relative h-screen w-full overflow-hidden bg-ink flex flex-col">
+    <main className="relative h-dvh w-full overflow-hidden bg-ink flex flex-col">
       {/* Deep-link param read isolated here + Suspense-wrapped: satisfies
           Next.js's requirement that useSearchParams() have a Suspense
           boundary above it during static prerendering, without suspending
@@ -428,7 +442,7 @@ export default function FeedPage() {
             className="feed-scroll h-full w-full overflow-y-scroll snap-y snap-mandatory"
           >
             {videos.map((video, i) => (
-              <div key={video.id} className="h-screen w-full snap-start">
+              <div key={video.id} className="h-dvh w-full snap-start">
                 <VideoCard
                   ref={(el) => { videoCardRefs.current[video.id] = el; }}
                   video={video}
@@ -439,7 +453,7 @@ export default function FeedPage() {
               </div>
             ))}
             {videos.length === 0 && (
-              <div className="h-screen flex items-center justify-center">
+              <div className="h-dvh flex items-center justify-center">
                 <p className="font-body text-smoke">No videos yet — be the first to post.</p>
               </div>
             )}
