@@ -5,6 +5,7 @@ import { OAuth2Client } from 'google-auth-library';
 import prisma from '../config/db.js';
 import { sendMail } from '../config/mailer.js';
 import { requireAuth } from '../middleware/auth.js';
+import { asyncHandler } from '../utils/asyncHandler.js';
 
 const router = Router();
 
@@ -127,7 +128,7 @@ async function sendVerificationCode(user) {
   });
 }
 
-router.post('/register', async (req, res) => {
+router.post('/register', asyncHandler(async (req, res) => {
   const { username, email, password, displayName } = req.body;
   if (!username || !email || !password) {
     return res.status(400).json({ error: 'username, email, and password are required' });
@@ -162,9 +163,9 @@ router.post('/register', async (req, res) => {
 
   // No token yet — the account can't log in until the code is confirmed.
   res.status(201).json({ needsVerification: true, email: user.email });
-});
+}));
 
-router.post('/verify-email', async (req, res) => {
+router.post('/verify-email', asyncHandler(async (req, res) => {
   const { email, code } = req.body;
   if (!email || !code) return res.status(400).json({ error: 'email and code are required' });
 
@@ -191,9 +192,9 @@ router.post('/verify-email', async (req, res) => {
     token,
     user: { id: verified.id, username: verified.username, displayName: verified.displayName, role: verified.role },
   });
-});
+}));
 
-router.post('/resend-verification', async (req, res) => {
+router.post('/resend-verification', asyncHandler(async (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ error: 'email is required' });
 
@@ -215,9 +216,9 @@ router.post('/resend-verification', async (req, res) => {
     return res.status(502).json({ error: 'Could not send the email right now — try again shortly.' });
   }
   res.json({ ok: true });
-});
+}));
 
-router.post('/login', async (req, res) => {
+router.post('/login', asyncHandler(async (req, res) => {
   const { email, password } = req.body;
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user) return res.status(401).json({ error: 'Invalid email or password' });
@@ -245,13 +246,17 @@ router.post('/login', async (req, res) => {
   const token = signToken(user);
   res.json({
     token,
+    // JWT_EXPIRES_IN mirrors whatever signToken() actually used, so the
+    // frontend can know when to expect the token to expire (e.g. to
+    // proactively hit /auth/refresh) without decoding the JWT itself.
+    expiresIn: process.env.JWT_EXPIRES_IN || '7d',
     user: { id: user.id, username: user.username, displayName: user.displayName, role: user.role },
   });
-});
+}));
 
 // Simple refresh: re-issues a token for a still-valid one.
 // For production, swap in a real refresh-token rotation scheme.
-router.post('/refresh', async (req, res) => {
+router.post('/refresh', asyncHandler(async (req, res) => {
   const { token } = req.body;
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET, { ignoreExpiration: true });
@@ -261,7 +266,7 @@ router.post('/refresh', async (req, res) => {
   } catch {
     res.status(401).json({ error: 'Invalid token' });
   }
-});
+}));
 
 router.post('/logout', (_req, res) => {
   // JWTs are stateless; logout is handled client-side by discarding the token.
@@ -296,7 +301,7 @@ router.get('/google', (_req, res) => {
   res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`);
 });
 
-router.get('/google/callback', async (req, res) => {
+router.get('/google/callback', asyncHandler(async (req, res) => {
   const { code, state, error: googleError } = req.query;
 
   if (googleError) {
@@ -352,7 +357,7 @@ router.get('/google/callback', async (req, res) => {
     console.error('[auth] Google OAuth error:', err);
     res.redirect(`${FRONTEND_URL}/login?error=google_failed`);
   }
-});
+}));
 
 // --- Google One-Tap / Google Identity Services (GSI) ---------------------
 //
@@ -364,7 +369,7 @@ router.get('/google/callback', async (req, res) => {
 // client, which defeats the point of using Google as an identity provider
 // at all. Accepts either `credential` (GSI's field name) or `idToken` (in
 // case a different Google SDK integration is used later) for the same value.
-router.post('/google', async (req, res) => {
+router.post('/google', asyncHandler(async (req, res) => {
   if (!googleClient || !GOOGLE_CLIENT_ID) {
     return res.status(500).json({ error: 'Google sign-in is not configured on this server.' });
   }
@@ -404,19 +409,20 @@ router.post('/google', async (req, res) => {
   const token = signToken(user);
   res.json({
     token,
+    expiresIn: process.env.JWT_EXPIRES_IN || '7d',
     user: { id: user.id, username: user.username, displayName: user.displayName, role: user.role },
   });
-});
+}));
 
 // Used by the frontend's /auth/callback page to fetch profile details
 // right after storing the token from a Google sign-in redirect.
-router.get('/me', requireAuth, async (req, res) => {
+router.get('/me', requireAuth, asyncHandler(async (req, res) => {
   const user = await prisma.user.findUnique({
     where: { id: req.userId },
     select: { id: true, username: true, displayName: true, avatarUrl: true, role: true },
   });
   if (!user) return res.status(404).json({ error: 'User not found' });
   res.json(user);
-});
+}));
 
 export default router;
