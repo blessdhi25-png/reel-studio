@@ -174,8 +174,20 @@ export default function ProfilePage({ params }) {
 
   return (
     <main className="min-h-screen bg-zinc-950 pb-28">
-      {/* Cover banner */}
-      <div className="h-40 md:h-52 w-full bg-gradient-to-r from-amber-500/20 via-zinc-900 to-zinc-900 rounded-b-3xl border-b border-zinc-800 relative">
+      {/* Cover banner — real image when the user has set one, gradient otherwise */}
+      <div className="h-40 md:h-52 w-full rounded-b-3xl border-b border-zinc-800 relative overflow-hidden bg-gradient-to-r from-amber-500/20 via-zinc-900 to-zinc-900">
+        {user.bannerUrl && (
+          <img
+            src={user.bannerUrl}
+            alt=""
+            className="absolute inset-0 w-full h-full object-cover"
+            onError={(e) => {
+              // A stale/broken cached URL shouldn't leave a blank box —
+              // fall back to the gradient underneath by just hiding the img.
+              e.currentTarget.style.display = 'none';
+            }}
+          />
+        )}
         <div className="absolute top-4 left-4 right-4 flex items-center justify-between">
           <a href="/" className="font-mono text-xs text-zinc-300 uppercase tracking-widest bg-black/30 backdrop-blur px-2.5 py-1 rounded-lg">
             ← Feed
