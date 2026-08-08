@@ -9,7 +9,8 @@ import { getSocket } from '../lib/socket';
 import VideoCard from '../components/VideoCard';
 import DesktopRail from '../components/DesktopRail';
 import SprocketRail from '../components/SprocketRail';
-import TuneFeedPanel, { loadTuningWeights } from '../components/TuneFeedPanel';
+import { loadTuningWeights } from '../components/TuneFeedPanel';
+import FeedFiltersDrawer from '../components/FeedFiltersDrawer';
 
 const FILTERS = [
   { label: 'All', value: null },
@@ -46,6 +47,7 @@ export default function FeedPage() {
   const [user, setUser] = useState(null);
   const [unreadCount, setUnreadCount] = useState(0);
   const [focusMode, setFocusMode] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [tuningWeights, setTuningWeights] = useState({ nicheWeight: 50, freshWeight: 50, localWeight: 50 });
   const [activeTime, setActiveTime] = useState(0);
   const [celebration, setCelebration] = useState(null);
@@ -272,16 +274,14 @@ export default function FeedPage() {
 
   const activeVideo = videos[activeIndex];
 
-  // Single header bar — was previously two independently `fixed` pieces
-  // (a centered filter pill and a right-aligned nav-links group) that
-  // didn't reserve space for each other, so on narrow phones the right
-  // group's text ("Live" / "DMs") overlapped the filter pill and the
-  // circle chips underneath it. Now it's one flex row that lays every
-  // top action out in relation to the others, so nothing can sit on top
-  // of anything else.
+  // Single header bar, single row — circles and feed-tuning used to render
+  // openly on the canvas below this (and, before that, as two independently
+  // `fixed` pieces that overlapped each other and the video's own overlay
+  // badges). Both now live in FeedFiltersDrawer, opened from the ⋯ button
+  // here, so the default view is just the tabs and two icons.
   const mobileTopNav = (
     <div
-      className="fixed top-0 inset-x-0 z-20 flex flex-col gap-2 px-4 pb-2"
+      className="fixed top-0 inset-x-0 z-20 px-4 pb-2"
       style={{ paddingTop: 'max(1.25rem, calc(env(safe-area-inset-top) + 0.75rem))' }}
     >
       <div className="flex items-center gap-2">
@@ -323,36 +323,18 @@ export default function FeedPage() {
           <a href="/search" aria-label="Search" className="text-bone">
             <SearchIcon />
           </a>
+          <button
+            onClick={() => setFiltersOpen(true)}
+            aria-label="Filters and feed tuning"
+            className="relative text-bone"
+          >
+            <DotsIcon />
+            {circle !== null && (
+              <span className="absolute -top-1.5 -right-1.5 w-2 h-2 rounded-full bg-reel" />
+            )}
+          </button>
         </div>
       </div>
-
-      {/* Topic Circles — micro-community filter, only shown once at least
-          one video has been posted into a circle. */}
-      {circles.length > 0 && (
-        <div className="flex justify-center overflow-x-auto">
-          <div className="flex gap-1 bg-ink2/80 rounded-sprocket p-1 font-mono text-[10px] uppercase tracking-widest shrink-0 max-w-full">
-            <button
-              onClick={() => setCircle(null)}
-              className={`px-2.5 py-1 rounded-sprocket shrink-0 ${
-                circle === null ? 'bg-reel text-ink' : 'text-smoke'
-              }`}
-            >
-              All circles
-            </button>
-            {circles.map((c) => (
-              <button
-                key={c.circle}
-                onClick={() => setCircle(c.circle)}
-                className={`px-2.5 py-1 rounded-sprocket shrink-0 ${
-                  circle === c.circle ? 'bg-reel text-ink' : 'text-smoke'
-                }`}
-              >
-                {c.circle} · {c.count}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 
@@ -416,6 +398,16 @@ export default function FeedPage() {
         <a href="/search" aria-label="Search" className="text-zinc-300 hover:text-white">
           <SearchIcon />
         </a>
+        <button
+          onClick={() => setFiltersOpen(true)}
+          aria-label="Filters and feed tuning"
+          className="relative text-zinc-300 hover:text-white"
+        >
+          <DotsIcon />
+          {circle !== null && (
+            <span className="absolute -top-1.5 -right-1.5 w-2 h-2 rounded-full bg-amber-500" />
+          )}
+        </button>
       </div>
     </header>
   );
@@ -518,9 +510,18 @@ export default function FeedPage() {
         </div>
       )}
 
-      {!focusMode && (
-        <TuneFeedPanel weights={tuningWeights} onChange={setTuningWeights} />
-      )}
+      <FeedFiltersDrawer
+        open={filtersOpen}
+        onClose={() => setFiltersOpen(false)}
+        circles={circles}
+        circle={circle}
+        onSelectCircle={(c) => {
+          setCircle(c);
+          setFiltersOpen(false);
+        }}
+        weights={tuningWeights}
+        onWeightsChange={setTuningWeights}
+      />
 
       {/* Keyboard shortcut legend — desktop only, tucked out of the way */}
       {!focusMode && (
@@ -538,6 +539,16 @@ function SearchIcon() {
       strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
       <circle cx="11" cy="11" r="7" />
       <path d="m21 21-4.3-4.3" />
+    </svg>
+  );
+}
+
+function DotsIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+      <circle cx="5" cy="12" r="1.8" />
+      <circle cx="12" cy="12" r="1.8" />
+      <circle cx="19" cy="12" r="1.8" />
     </svg>
   );
 }
