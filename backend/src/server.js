@@ -64,7 +64,7 @@ const app = express();
 //   ALLOWED_ORIGINS=http://localhost:3000,https://abcd1234.ngrok-free.app
 // The production Vercel frontend is always allowed even if ALLOWED_ORIGINS
 // is left unset on Render, so a missing env var can't silently break prod.
-const DEFAULT_ALLOWED_ORIGINS = ['https://reel-studio-wine.vercel.app'];
+const DEFAULT_ALLOWED_ORIGINS = ['https://reel-studio-wine.vercel.app', 'https://active-reel.vercel.app'];
 const envOrigins = process.env.ALLOWED_ORIGINS?.split(',').map((o) => o.trim()).filter(Boolean) || [];
 const allowedOrigins = [...new Set([...DEFAULT_ALLOWED_ORIGINS, ...envOrigins])];
 
@@ -114,8 +114,15 @@ app.use(express.json());
 // Swap for a CDN URL once you move to a managed storage service.
 app.use('/hls', express.static(path.resolve(process.env.HLS_DIR || './storage/hls')));
 
-// Serve uploaded profile photos the same way.
-app.use('/uploads', express.static(path.resolve(process.env.UPLOAD_DIR || './uploads')));
+// Serve uploaded profile photos and videos the same way. This must resolve
+// to the exact same directory upload.js writes into — using
+// process.env.UPLOAD_DIR with the same fallback here as there (see
+// utils/upload.js) keeps them from silently drifting apart if one gets
+// edited without the other.
+const uploadsPath = process.env.UPLOAD_DIR
+  ? path.resolve(process.env.UPLOAD_DIR)
+  : path.join(process.cwd(), 'uploads');
+app.use('/uploads', express.static(uploadsPath));
 
 // Render's health check hits whatever path is configured in the dashboard —
 // both are provided so it works regardless of which one is set, and so the
