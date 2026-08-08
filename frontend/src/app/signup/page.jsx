@@ -1,9 +1,9 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { api, googleAuthUrl } from '../../lib/api';
+import { api, googleAuthUrl, pingServer } from '../../lib/api';
 import AuthHero from '../../components/AuthHero';
 
 function GoogleIcon() {
@@ -79,6 +79,12 @@ export default function SignupPage() {
   const [error, setError] = useState(null);
   const [ageError, setAgeError] = useState(null);
   const [loading, setLoading] = useState(false);
+
+  // Same reasoning as the login page: start waking a cold Render instance
+  // as soon as this page loads rather than only once the form is submitted.
+  useEffect(() => {
+    pingServer();
+  }, []);
 
   function update(field) {
     return (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
