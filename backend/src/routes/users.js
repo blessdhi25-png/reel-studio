@@ -2,7 +2,7 @@ import { Router } from 'express';
 import prisma from '../config/db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { notify } from '../utils/notify.js';
-import { uploadAvatar } from '../utils/upload.js';
+import { uploadAvatar, uploadBanner } from '../utils/upload.js';
 import { isBlocked } from './privacy.js';
 import { optionalAuth } from '../middleware/auth.js';
 import { getOnlineUserIds } from '../realtime/socket.js';
@@ -85,7 +85,7 @@ router.get('/:id', optionalAuth, async (req, res) => {
   const user = await prisma.user.findUnique({
     where: { id: req.params.id },
     select: {
-      id: true, username: true, displayName: true, avatarUrl: true,
+      id: true, username: true, displayName: true, avatarUrl: true, bannerUrl: true,
       bio: true, creatorStatus: true, createdAt: true, isPrivate: true,
       _count: { select: { followers: true, following: true, videos: true } },
     },
@@ -116,12 +116,18 @@ router.get('/:id', optionalAuth, async (req, res) => {
 });
 
 router.patch('/me', requireAuth, async (req, res) => {
-  const { displayName, avatarUrl, bio } = req.body;
+  const { displayName, avatarUrl, bannerUrl, bio } = req.body;
   const user = await prisma.user.update({
     where: { id: req.userId },
-    data: { displayName, avatarUrl, bio },
+    data: { displayName, avatarUrl, bannerUrl, bio },
   });
-  res.json({ id: user.id, displayName: user.displayName, avatarUrl: user.avatarUrl, bio: user.bio });
+  res.json({
+    id: user.id,
+    displayName: user.displayName,
+    avatarUrl: user.avatarUrl,
+    bannerUrl: user.bannerUrl,
+    bio: user.bio,
+  });
 });
 
 // Real photo upload for the profile picture — separate from PATCH /me so a
@@ -135,6 +141,19 @@ router.post('/me/avatar', requireAuth, uploadAvatar.single('avatar'), async (req
     data: { avatarUrl },
   });
   res.json({ avatarUrl: user.avatarUrl });
+});
+
+// Same idea for the cover banner — persisted immediately on upload rather
+// than only living in the form's local state until Save is pressed.
+router.post('/me/banner', requireAuth, uploadBanner.single('banner'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No image uploaded' });
+
+  const bannerUrl = `${BASE_URL}/uploads/banners/${req.file.filename}`;
+  const user = await prisma.user.update({
+    where: { id: req.userId },
+    data: { bannerUrl },
+  });
+  res.json({ bannerUrl: user.bannerUrl });
 });
 
 router.get('/:id/videos', optionalAuth, async (req, res) => {
