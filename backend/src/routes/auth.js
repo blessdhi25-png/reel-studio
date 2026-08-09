@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { OAuth2Client } from 'google-auth-library';
@@ -12,6 +13,7 @@ const router = Router();
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const CODE_EXPIRY_MS = 15 * 60 * 1000; // 15 minutes
 const RESEND_COOLDOWN_MS = 60 * 1000; // 1 minute between resends
+const RESET_TOKEN_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
@@ -440,49 +442,151 @@ router.get('/me', requireAuth, asyncHandler(async (req, res) => {
   res.json(user);
 }));
 
-router.post('/change-password', requireAuth, async (req, res) => {
+// Always returns the same generic success message whether or not the email
+// exists — a distinguishable response here (e.g. 404 for unknown emails)
+// would let an attacker enumerate which addresses have accounts on this
+// app, which is exactly what password-reset flows are commonly abused for.
+router.post('/forgot-password', asyncHandler(async (req, res) => {
   try {
-    const { currentPassword, newPassword, confirmPassword } = req.body;
-    const userId = req.user.id; // Extracted from JWT token by authenticateToken
+    const { email } = req.body;
+    const GENERIC_MESSAGE = {
+      message: 'If an account with that email exists, a password reset link has been sent.',
+    };
 
-    if (!currentPassword || !newPassword || !confirmPassword) {
-      return res.status(400).json({ message: 'All fields are required.' });
+    if (!email) return res.status(400).json({ error: 'email is required' });
+
+    const user = await prisma.user.findUnique({ where: { email } });
+    // Google-only accounts have no passwordHash to reset — silently no-op
+    // rather than emailing a reset link that would just confuse someone
+    // who has never set a password on this account.
+    if (!user || !user.passwordHash) {
+      return res.json(GENERIC_MESSAGE);
     }
 
-    if (newPassword !== confirmPassword) {
-      return res.status(400).json({ message: 'New passwords do not match.' });
-    }
-
-    if (newPassword.length < 8) {
-      return res.status(400).json({ message: 'Password must be at least 8 characters long.' });
-    }
-
-    // Fetch user from DB
-    const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user || !user.password) {
-      return res.status(404).json({ message: 'User not found or uses social login.' });
-    }
-
-    // Verify current password
-    const isMatch = await bcrypt.compare(currentPassword, user.password);
-    if (!isMatch) {
-      return res.status(400).json({ message: 'Incorrect current password.' });
-    }
-
-    // Hash new password and update
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(newPassword, salt);
+    // The raw token goes out in the email and is never stored anywhere —
+    // only its SHA-256 hash is saved to the DB (see the schema comment on
+    // User.resetPasswordToken). 256 bits of entropy from randomBytes(32)
+    // is well beyond brute-forceable within the 1-hour window even if the
+    // stored hash somehow leaked.
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
 
     await prisma.user.update({
-      where: { id: userId },
-      data: { password: hashedPassword },
+      where: { id: user.id },
+      data: {
+        resetPasswordToken: hashedToken,
+        resetPasswordExpires: new Date(Date.now() + RESET_TOKEN_EXPIRY_MS),
+      },
     });
 
-    return res.status(200).json({ message: 'Password updated successfully.' });
+    const resetUrl = `${FRONTEND_URL}/reset-password?token=${rawToken}`;
+    try {
+      await sendMail({
+        to: user.email,
+        subject: 'Reset your Bledhi password',
+        text: `We got a request to reset your password. This link expires in 1 hour:\n\n${resetUrl}\n\nIf you didn't request this, you can ignore this email — your password won't change.`,
+        html: `<p>We got a request to reset your password. This link expires in 1 hour:</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>If you didn't request this, you can ignore this email — your password won't change.</p>`,
+      });
+    } catch (err) {
+      // Same reasoning as sendVerificationCode above — a mail-provider
+      // hiccup shouldn't turn into a 500 that also (via a non-generic
+      // error) reveals that the email did in fact match an account.
+      console.error('[auth/forgot-password] failed to send reset email:', err.message);
+    }
+
+    res.json(GENERIC_MESSAGE);
   } catch (err) {
-    console.error('[change-password error]:', err);
-    return res.status(500).json({ message: 'Internal server error while changing password.' });
+    console.error('[auth/forgot-password error]:', err.stack || err);
+    throw err;
   }
-});
+}));
+
+router.post('/reset-password', asyncHandler(async (req, res) => {
+  try {
+    const { token, newPassword } = req.body;
+    if (!token || !newPassword) {
+      return res.status(400).json({ error: 'token and newPassword are required' });
+    }
+    if (newPassword.length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters' });
+    }
+
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+    const user = await prisma.user.findFirst({
+      where: { resetPasswordToken: hashedToken, resetPasswordExpires: { gt: new Date() } },
+    });
+    if (!user) {
+      return res.status(400).json({ error: 'That reset link is invalid or has expired. Request a new one.' });
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash,
+        // Clearing both fields invalidates the token immediately — a used
+        // (or abandoned) reset link can never be replayed.
+        resetPasswordToken: null,
+        resetPasswordExpires: null,
+      },
+    });
+
+    res.json({ message: 'Your password has been reset. You can now log in with your new password.' });
+  } catch (err) {
+    console.error('[auth/reset-password error]:', err.stack || err);
+    throw err;
+  }
+}));
+
+// Authenticated password change from within the app (Settings), as
+// distinct from the logged-out forgot/reset pair above. Requires the
+// current password rather than just a valid session, so a hijacked/
+// left-open session alone isn't enough to lock the real owner out.
+router.post('/change-password', requireAuth, asyncHandler(async (req, res) => {
+  try {
+    const { currentPassword, newPassword, confirmPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'currentPassword and newPassword are required' });
+    }
+    // confirmPassword is optional here — the frontend should already be
+    // checking newPassword === confirmPassword client-side before this
+    // request is even sent, but this is a cheap extra guard against a
+    // client bug slipping a mismatched pair through.
+    if (confirmPassword !== undefined && newPassword !== confirmPassword) {
+      return res.status(400).json({ error: 'New passwords do not match' });
+    }
+    if (newPassword.length < 8) {
+      return res.status(400).json({ error: 'New password must be at least 8 characters' });
+    }
+
+    // req.userId (not req.user.id — requireAuth in middleware/auth.js only
+    // sets req.userId/req.userRole, it never attaches a req.user object).
+    const user = await prisma.user.findUnique({ where: { id: req.userId } });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    // The schema field is passwordHash, not password.
+    if (!user.passwordHash) {
+      return res.status(400).json({ error: 'This account signs in with Google and has no password to change.' });
+    }
+
+    const valid = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!valid) return res.status(401).json({ error: 'Current password is incorrect' });
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await prisma.user.update({
+      where: { id: user.id },
+      // Also clear any pending reset token — if one existed from an
+      // abandoned forgot-password flow, it's invalidated the moment the
+      // password actually changes through this path instead.
+      data: { passwordHash, resetPasswordToken: null, resetPasswordExpires: null },
+    });
+
+    res.json({ message: 'Password updated.' });
+  } catch (err) {
+    console.error('[auth/change-password error]:', err.stack || err);
+    throw err;
+  }
+}));
 
 export default router;
