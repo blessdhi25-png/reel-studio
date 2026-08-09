@@ -64,7 +64,6 @@ function LoginForm() {
   const [remember, setRemember] = useState(false);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [forgotNotice, setForgotNotice] = useState(false);
 
   useEffect(() => {
     const saved = typeof window !== 'undefined' ? window.localStorage.getItem(REMEMBER_KEY) : null;
@@ -184,19 +183,13 @@ function LoginForm() {
               />
               Remember me
             </label>
-            <button
-              type="button"
-              onClick={() => setForgotNotice(true)}
+            <a
+              href="/forgot-password"
               className="text-amber-400 hover:underline font-semibold"
             >
               Forgot Password?
-            </button>
+            </a>
           </div>
-          {forgotNotice && (
-            <p className="text-xs text-zinc-500">
-              Password reset isn't available yet — reach out to support for help.
-            </p>
-          )}
 
           {error && <p className="text-sm text-red-400">{error}</p>}
 
