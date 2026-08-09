@@ -129,16 +129,10 @@ async function sendVerificationCode(user) {
 }
 
 router.post('/register', asyncHandler(async (req, res) => {
-  let { username, email, password, displayName } = req.body;
+  const { username, email, password, displayName } = req.body;
   if (!username || !email || !password) {
     return res.status(400).json({ error: 'username, email, and password are required' });
   }
-
-  // Normalize once, up front, so what's checked, stored, and later matched
-  // against at login are always the same trimmed/lowercased values.
-  username = username.trim().toLowerCase();
-  email = email.trim().toLowerCase();
-
   if (!EMAIL_RE.test(email)) {
     return res.status(400).json({ error: 'Enter a valid email address' });
   }
@@ -147,12 +141,7 @@ router.post('/register', asyncHandler(async (req, res) => {
   }
 
   const existing = await prisma.user.findFirst({
-    where: {
-      OR: [
-        { email: { equals: email, mode: 'insensitive' } },
-        { username: { equals: username, mode: 'insensitive' } },
-      ],
-    },
+    where: { OR: [{ email }, { username }] },
   });
   if (existing) {
     return res.status(409).json({ error: 'Username or email already in use' });
@@ -177,11 +166,10 @@ router.post('/register', asyncHandler(async (req, res) => {
 }));
 
 router.post('/verify-email', asyncHandler(async (req, res) => {
-  let { email, code } = req.body;
+  const { email, code } = req.body;
   if (!email || !code) return res.status(400).json({ error: 'email and code are required' });
-  email = email.trim();
 
-  const user = await prisma.user.findFirst({ where: { email: { equals: email, mode: 'insensitive' } } });
+  const user = await prisma.user.findUnique({ where: { email } });
   if (!user) return res.status(404).json({ error: 'No account found for that email' });
   if (user.emailVerified) return res.status(400).json({ error: 'Email is already verified' });
 
@@ -207,11 +195,10 @@ router.post('/verify-email', asyncHandler(async (req, res) => {
 }));
 
 router.post('/resend-verification', asyncHandler(async (req, res) => {
-  let { email } = req.body;
+  const { email } = req.body;
   if (!email) return res.status(400).json({ error: 'email is required' });
-  email = email.trim();
 
-  const user = await prisma.user.findFirst({ where: { email: { equals: email, mode: 'insensitive' } } });
+  const user = await prisma.user.findUnique({ where: { email } });
   // Don't reveal whether the email exists — always return ok.
   if (!user || user.emailVerified) return res.json({ ok: true });
 
@@ -232,57 +219,49 @@ router.post('/resend-verification', asyncHandler(async (req, res) => {
 }));
 
 router.post('/login', asyncHandler(async (req, res) => {
-  const { email, password } = req.body;
-  if (!email || !password) {
-    return res.status(400).json({ error: 'Invalid email or password' });
+  try {
+    const { email, password } = req.body;
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user) return res.status(401).json({ error: 'Invalid email or password' });
+
+    if (!user.passwordHash) {
+      return res
+        .status(401)
+        .json({ error: 'This account uses Google sign-in. Continue with Google instead.' });
+    }
+
+    const valid = await bcrypt.compare(password, user.passwordHash);
+    if (!valid) return res.status(401).json({ error: 'Invalid email or password' });
+
+    if (!user.emailVerified) {
+      return res.status(403).json({ error: 'Please verify your email before logging in', needsVerification: true, email: user.email });
+    }
+
+    if (user.accountStatus === 'banned') {
+      return res.status(403).json({ error: 'This account has been banned.', reason: user.statusReason || undefined });
+    }
+    if (user.accountStatus === 'suspended') {
+      return res.status(403).json({ error: 'This account is suspended.', reason: user.statusReason || undefined });
+    }
+
+    const token = signToken(user);
+    res.json({
+      token,
+      // JWT_EXPIRES_IN mirrors whatever signToken() actually used, so the
+      // frontend can know when to expect the token to expire (e.g. to
+      // proactively hit /auth/refresh) without decoding the JWT itself.
+      expiresIn: process.env.JWT_EXPIRES_IN || '7d',
+      user: { id: user.id, username: user.username, displayName: user.displayName, role: user.role },
+    });
+  } catch (err) {
+    // asyncHandler already forwards this to the global handler either way
+    // (see utils/asyncHandler.js) — this catch exists purely so the log
+    // line is tagged with exactly which route failed and includes the full
+    // stack, since the global handler alone can't tell a Prisma "unknown
+    // field" schema-mismatch error apart from any other 500 without it.
+    console.error('[auth/login error]:', err.stack || err);
+    throw err;
   }
-
-  // "email" here is really "email or username" — the login form accepts
-  // either. Trimmed + case-insensitive on both sides so "Jane@Example.com"
-  // or "JaneDoe" match regardless of how the value was originally typed or
-  // stored. `mode: 'insensitive'` (Postgres only) is used instead of
-  // lowercasing at write-time, so this also matches accounts that already
-  // exist with mixed-case emails/usernames — no backfill migration needed.
-  const identifier = email.trim();
-  const user = await prisma.user.findFirst({
-    where: {
-      OR: [
-        { email: { equals: identifier, mode: 'insensitive' } },
-        { username: { equals: identifier, mode: 'insensitive' } },
-      ],
-    },
-  });
-  if (!user) return res.status(401).json({ error: 'Invalid email or password' });
-
-  if (!user.passwordHash) {
-    return res
-      .status(401)
-      .json({ error: 'This account uses Google sign-in. Continue with Google instead.' });
-  }
-
-  const valid = await bcrypt.compare(password, user.passwordHash);
-  if (!valid) return res.status(401).json({ error: 'Invalid email or password' });
-
-  if (!user.emailVerified) {
-    return res.status(403).json({ error: 'Please verify your email before logging in', needsVerification: true, email: user.email });
-  }
-
-  if (user.accountStatus === 'banned') {
-    return res.status(403).json({ error: 'This account has been banned.', reason: user.statusReason || undefined });
-  }
-  if (user.accountStatus === 'suspended') {
-    return res.status(403).json({ error: 'This account is suspended.', reason: user.statusReason || undefined });
-  }
-
-  const token = signToken(user);
-  res.json({
-    token,
-    // JWT_EXPIRES_IN mirrors whatever signToken() actually used, so the
-    // frontend can know when to expect the token to expire (e.g. to
-    // proactively hit /auth/refresh) without decoding the JWT itself.
-    expiresIn: process.env.JWT_EXPIRES_IN || '7d',
-    user: { id: user.id, username: user.username, displayName: user.displayName, role: user.role },
-  });
 }));
 
 // Simple refresh: re-issues a token for a still-valid one.
@@ -385,7 +364,7 @@ router.get('/google/callback', asyncHandler(async (req, res) => {
     const jwtToken = signToken(user);
     res.redirect(`${FRONTEND_URL}/auth/callback?token=${jwtToken}`);
   } catch (err) {
-    console.error('[auth] Google OAuth error:', err);
+    console.error('[auth/google-callback error]:', err.stack || err);
     res.redirect(`${FRONTEND_URL}/login?error=google_failed`);
   }
 }));
@@ -401,48 +380,53 @@ router.get('/google/callback', asyncHandler(async (req, res) => {
 // at all. Accepts either `credential` (GSI's field name) or `idToken` (in
 // case a different Google SDK integration is used later) for the same value.
 router.post('/google', asyncHandler(async (req, res) => {
-  if (!googleClient || !GOOGLE_CLIENT_ID) {
-    return res.status(500).json({ error: 'Google sign-in is not configured on this server.' });
-  }
-
-  const idToken = req.body?.credential || req.body?.idToken;
-  if (!idToken) {
-    return res.status(400).json({ error: 'credential (or idToken) is required' });
-  }
-
-  let payload;
   try {
-    const ticket = await googleClient.verifyIdToken({ idToken, audience: GOOGLE_CLIENT_ID });
-    payload = ticket.getPayload();
+    if (!googleClient || !GOOGLE_CLIENT_ID) {
+      return res.status(500).json({ error: 'Google sign-in is not configured on this server.' });
+    }
+
+    const idToken = req.body?.credential || req.body?.idToken;
+    if (!idToken) {
+      return res.status(400).json({ error: 'credential (or idToken) is required' });
+    }
+
+    let payload;
+    try {
+      const ticket = await googleClient.verifyIdToken({ idToken, audience: GOOGLE_CLIENT_ID });
+      payload = ticket.getPayload();
+    } catch (err) {
+      console.error('[auth/google error] id_token verification failed:', err.message);
+      return res.status(401).json({ error: 'Invalid or expired Google credential' });
+    }
+
+    if (!payload?.sub || !payload?.email) {
+      return res.status(401).json({ error: 'Google credential did not include the expected profile data' });
+    }
+    if (payload.email_verified === false) {
+      return res.status(401).json({ error: "Your Google email isn't verified — verify it with Google first." });
+    }
+
+    const user = await findOrCreateGoogleUser(payload);
+
+    const blocked = blockedReasonFor(user);
+    if (blocked) {
+      const messages = {
+        account_banned: 'This account has been banned.',
+        account_suspended: 'This account is suspended.',
+      };
+      return res.status(403).json({ error: messages[blocked], reason: user.statusReason || undefined });
+    }
+
+    const token = signToken(user);
+    res.json({
+      token,
+      expiresIn: process.env.JWT_EXPIRES_IN || '7d',
+      user: { id: user.id, username: user.username, displayName: user.displayName, role: user.role },
+    });
   } catch (err) {
-    console.error('[auth] Google id_token verification failed:', err.message);
-    return res.status(401).json({ error: 'Invalid or expired Google credential' });
+    console.error('[auth/google error]:', err.stack || err);
+    throw err;
   }
-
-  if (!payload?.sub || !payload?.email) {
-    return res.status(401).json({ error: 'Google credential did not include the expected profile data' });
-  }
-  if (payload.email_verified === false) {
-    return res.status(401).json({ error: "Your Google email isn't verified — verify it with Google first." });
-  }
-
-  const user = await findOrCreateGoogleUser(payload);
-
-  const blocked = blockedReasonFor(user);
-  if (blocked) {
-    const messages = {
-      account_banned: 'This account has been banned.',
-      account_suspended: 'This account is suspended.',
-    };
-    return res.status(403).json({ error: messages[blocked], reason: user.statusReason || undefined });
-  }
-
-  const token = signToken(user);
-  res.json({
-    token,
-    expiresIn: process.env.JWT_EXPIRES_IN || '7d',
-    user: { id: user.id, username: user.username, displayName: user.displayName, role: user.role },
-  });
 }));
 
 // Used by the frontend's /auth/callback page to fetch profile details
