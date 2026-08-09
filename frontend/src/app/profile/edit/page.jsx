@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '../../../lib/api';
+import { useAuth } from '../../../context/AuthContext';
 
 /* ------------------------------------------------------------------ */
 /* Icons                                                                */
@@ -102,6 +103,7 @@ function saveLocalExtras(userId, extras) {
 
 export default function EditProfilePage() {
   const router = useRouter();
+  const { updateUser } = useAuth();
   const avatarInputRef = useRef(null);
   const bannerInputRef = useRef(null);
 
@@ -199,8 +201,12 @@ export default function EditProfilePage() {
       const { avatarUrl: uploaded } = await api.uploadAvatar(body);
       setAvatarUrl(uploaded);
       URL.revokeObjectURL(localPreview);
-      const stored = JSON.parse(localStorage.getItem('user') || '{}');
-      localStorage.setItem('user', JSON.stringify({ ...stored, avatarUrl: uploaded }));
+      // updateUser() (context/AuthContext.jsx) both writes localStorage AND
+      // updates the live React state everything using useAuth() reads from
+      // — a raw localStorage.setItem() here would update the value on disk
+      // but not the in-memory Context, so BottomNav etc. wouldn't reflect
+      // the new avatar until a full page reload.
+      updateUser({ avatarUrl: uploaded });
     } catch (err) {
       setAvatarError(err.message);
     } finally {
@@ -225,8 +231,7 @@ export default function EditProfilePage() {
       const { bannerUrl: uploaded } = await api.uploadBanner(body);
       setBannerUrl(uploaded);
       URL.revokeObjectURL(localPreview);
-      const stored = JSON.parse(localStorage.getItem('user') || '{}');
-      localStorage.setItem('user', JSON.stringify({ ...stored, bannerUrl: uploaded }));
+      updateUser({ bannerUrl: uploaded });
     } catch (err) {
       flashToast(err.message || 'Could not upload banner');
     } finally {
