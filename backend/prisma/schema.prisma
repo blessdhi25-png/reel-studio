@@ -120,6 +120,7 @@ model User {
   googleId      String?  @unique
   displayName   String?
   avatarUrl     String?
+  bannerUrl     String?
   bio           String?
   creatorStatus Boolean  @default(false)
   stripeAccountId       String?  @unique
