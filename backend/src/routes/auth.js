@@ -440,7 +440,7 @@ router.get('/me', requireAuth, asyncHandler(async (req, res) => {
   res.json(user);
 }));
 
-router.post('/change-password', authenticateToken, async (req, res) => {
+router.post('/change-password', requireAuth, async (req, res) => {
   try {
     const { currentPassword, newPassword, confirmPassword } = req.body;
     const userId = req.user.id; // Extracted from JWT token by authenticateToken
