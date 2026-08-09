@@ -45,7 +45,7 @@ function getToken() {
   return window.localStorage.getItem('token');
 }
 
-async function request(path, { method = 'GET', body, isForm = false, timeoutMs = 30000, _isRetry = false } = {}) {
+async function request(path, { method = 'GET', body, isForm = false, timeoutMs = 15000 } = {}) {
   const headers = {};
   const token = getToken();
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -73,18 +73,6 @@ async function request(path, { method = 'GET', body, isForm = false, timeoutMs =
       signal: controller.signal,
     });
   } catch (networkErr) {
-    // A cold-starting free-tier backend (e.g. Render waking from sleep)
-    // can easily take 15-30s to answer its very first request, which is
-    // exactly what an AbortError here means — the timeout fired before the
-    // server ever got a chance to respond, not that anything is actually
-    // wrong. Retrying once, automatically, covers that case without making
-    // the person manually hit "Log in" again during a cold start; a second
-    // AbortError (or any other network error) still surfaces normally.
-    if (networkErr.name === 'AbortError' && !_isRetry) {
-      console.warn(`[api] Timed out requesting ${url} — retrying once (likely a cold start)`);
-      return request(path, { method, body, isForm, timeoutMs, _isRetry: true });
-    }
-
     // fetch() throws a bare TypeError ("Failed to fetch") for anything from
     // a wrong host/port to no network at all, and an AbortError when our
     // own timeout above fires — neither is self-explanatory to someone
@@ -123,7 +111,7 @@ export function googleAuthUrl() {
 
 // Render's free tier spins the backend down after ~15 minutes of
 // inactivity; the next request has to wait for a cold start, which can
-// easily take 30-50+ seconds — well past the default 30s request timeout,
+// easily take 30-50+ seconds — well past the default 15s request timeout,
 // which is exactly what produced "The server took too long to respond" on
 // login/register/Google sign-in screenshotted from production. Two things
 // address this together: auth calls below use a longer AUTH_TIMEOUT_MS, and
@@ -155,6 +143,12 @@ export const api = {
     request('/auth/verify-email', { method: 'POST', body: { email, code }, timeoutMs: AUTH_TIMEOUT_MS }),
   resendVerification: (email) =>
     request('/auth/resend-verification', { method: 'POST', body: { email }, timeoutMs: AUTH_TIMEOUT_MS }),
+  forgotPassword: (email) =>
+    request('/auth/forgot-password', { method: 'POST', body: { email }, timeoutMs: AUTH_TIMEOUT_MS }),
+  resetPassword: (token, newPassword) =>
+    request('/auth/reset-password', { method: 'POST', body: { token, newPassword }, timeoutMs: AUTH_TIMEOUT_MS }),
+  changePassword: (currentPassword, newPassword) =>
+    request('/auth/change-password', { method: 'POST', body: { currentPassword, newPassword }, timeoutMs: AUTH_TIMEOUT_MS }),
   getFeed: (type, cursor, weights, circle, following) => {
     const params = new URLSearchParams();
     if (type) params.set('type', type);
