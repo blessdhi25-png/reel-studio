@@ -2,7 +2,7 @@ import { Router } from 'express';
 import prisma from '../config/db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { notify } from '../utils/notify.js';
-import { uploadAvatar } from '../utils/upload.js';
+import { uploadAvatar, uploadBanner } from '../utils/upload.js';
 import { isBlocked } from './privacy.js';
 import { optionalAuth } from '../middleware/auth.js';
 import { getOnlineUserIds } from '../realtime/socket.js';
@@ -124,12 +124,16 @@ router.get('/:id', optionalAuth, asyncHandler(async (req, res) => {
 }));
 
 router.patch('/me', requireAuth, asyncHandler(async (req, res) => {
-  const { displayName, avatarUrl, bio } = req.body;
+  // bannerUrl was missing here before — the frontend's edit-profile page
+  // sends it (for the rare case it's set as a plain URL rather than via
+  // the file-upload route below), but Prisma only writes fields explicitly
+  // present in `data`, so it was silently discarded on every save.
+  const { displayName, avatarUrl, bannerUrl, bio } = req.body;
   const user = await prisma.user.update({
     where: { id: req.userId },
-    data: { displayName, avatarUrl, bio },
+    data: { displayName, avatarUrl, bannerUrl, bio },
   });
-  res.json({ id: user.id, displayName: user.displayName, avatarUrl: user.avatarUrl, bio: user.bio });
+  res.json({ id: user.id, displayName: user.displayName, avatarUrl: user.avatarUrl, bannerUrl: user.bannerUrl, bio: user.bio });
 }));
 
 // Real photo upload for the profile picture — separate from PATCH /me so a
@@ -143,6 +147,20 @@ router.post('/me/avatar', requireAuth, uploadAvatar.single('avatar'), asyncHandl
     data: { avatarUrl },
   });
   res.json({ avatarUrl: user.avatarUrl });
+}));
+
+// Mirrors POST /me/avatar above — this route never existed even though
+// uploadBanner (utils/upload.js) and the frontend's api.uploadBanner() call
+// already assumed it did, so every banner upload was failing outright.
+router.post('/me/banner', requireAuth, uploadBanner.single('banner'), asyncHandler(async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No image uploaded' });
+
+  const bannerUrl = `${BASE_URL}/uploads/banners/${req.file.filename}`;
+  const user = await prisma.user.update({
+    where: { id: req.userId },
+    data: { bannerUrl },
+  });
+  res.json({ bannerUrl: user.bannerUrl });
 }));
 
 router.get('/:id/videos', optionalAuth, asyncHandler(async (req, res) => {
