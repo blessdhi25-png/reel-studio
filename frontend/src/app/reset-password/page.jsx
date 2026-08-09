@@ -1,116 +1,143 @@
 'use client';
 
-import { Suspense, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { api } from '../../lib/api';
-import AuthHero from '../../components/AuthHero';
+import { useState } from 'react';
+import Link from 'next/link';
+import { ArrowLeft, Lock, Shield, CheckCircle2, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import { api } from '../../../lib/api';
 
-function ResetPasswordForm() {
-  const router = useRouter();
-  const params = useSearchParams();
-  const token = params.get('token');
+function PasswordField({ label, value, onChange, show, onToggleShow }) {
+  return (
+    <div>
+      <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">
+        {label}
+      </label>
+      <div className="relative">
+        <Lock size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-600" />
+        <input
+          type={show ? 'text' : 'password'}
+          required
+          minLength={8}
+          value={value}
+          onChange={onChange}
+          className="w-full bg-zinc-900 border border-zinc-800 rounded-xl pl-10 pr-11 py-3 text-sm text-white focus:outline-none focus:border-amber-500"
+        />
+        <button
+          type="button"
+          onClick={onToggleShow}
+          className="absolute right-3.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300"
+          aria-label={show ? `Hide ${label.toLowerCase()}` : `Show ${label.toLowerCase()}`}
+        >
+          {show ? <EyeOff size={16} /> : <Eye size={16} />}
+        </button>
+      </div>
+    </div>
+  );
+}
 
+export default function ChangePasswordPage() {
+  const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [error, setError] = useState(null);
+  const [showCurrent, setShowCurrent] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [status, setStatus] = useState({ type: '', message: '' });
   const [loading, setLoading] = useState(false);
-  const [done, setDone] = useState(false);
 
   async function handleSubmit(e) {
     e.preventDefault();
-    setError(null);
+    setStatus({ type: '', message: '' });
 
     if (newPassword.length < 8) {
-      setError('Password must be at least 8 characters.');
+      setStatus({ type: 'error', message: 'New password must be at least 8 characters.' });
       return;
     }
     if (newPassword !== confirmPassword) {
-      setError("Passwords don't match.");
+      setStatus({ type: 'error', message: 'New passwords do not match.' });
       return;
     }
 
     setLoading(true);
     try {
-      await api.resetPassword(token, newPassword);
-      setDone(true);
+      // api.changePassword() (lib/api.js) resolves to the correct
+      // /api/v1/auth/change-password endpoint and attaches the
+      // Authorization header automatically — this previously bypassed it
+      // with a raw fetch() to the wrong path (/api/auth/... instead of
+      // /api/v1/auth/...), which would 404 in every environment.
+      await api.changePassword(currentPassword, newPassword);
+      setStatus({ type: 'success', message: 'Password updated successfully.' });
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
     } catch (err) {
-      setError(err.message);
+      setStatus({ type: 'error', message: err.message });
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <main className="min-h-screen grid grid-cols-1 lg:grid-cols-12 bg-zinc-950 text-white overflow-hidden">
-      <AuthHero />
+    <div className="min-h-screen bg-[#0d0b14] text-white p-4 font-sans max-w-md mx-auto">
+      <Link
+        href="/settings"
+        className="inline-flex items-center gap-1.5 text-xs font-mono text-zinc-400 hover:text-white uppercase tracking-widest mb-6 pt-2"
+      >
+        <ArrowLeft size={14} />
+        <span>Back to Settings</span>
+      </Link>
 
-      <div className="lg:col-span-5 w-full max-w-md mx-auto p-6 sm:p-8 flex flex-col justify-center min-h-screen lg:min-h-0">
-        <div className="mb-6">
-          <h2 className="text-2xl font-extrabold">Set a new password</h2>
-          <p className="text-zinc-400 text-sm mt-1">Choose something you haven't used before.</p>
-        </div>
-
-        {!token ? (
-          <p className="text-sm text-red-400 border border-red-400/30 rounded-xl px-4 py-3.5">
-            This link is missing its reset token — make sure you opened the exact link from your email,
-            or request a new one.{' '}
-            <a href="/forgot-password" className="text-amber-400 hover:underline">
-              Request a new link
-            </a>
-          </p>
-        ) : done ? (
-          <div>
-            <p className="text-sm text-zinc-300 border border-zinc-800 bg-zinc-900/60 rounded-xl px-4 py-3.5">
-              Password reset — you can now log in with your new password.
-            </p>
-            <button
-              onClick={() => router.push('/login')}
-              className="w-full mt-6 bg-amber-500 hover:bg-amber-400 text-black font-bold py-3.5 rounded-xl transition-all shadow-lg"
-            >
-              Go to login
-            </button>
-          </div>
-        ) : (
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <input
-              type="password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              placeholder="New password"
-              required
-              minLength={8}
-              className="w-full bg-zinc-900 border border-zinc-800 text-white text-sm rounded-xl px-4 py-3.5 outline-none focus:border-amber-500/60"
-            />
-            <input
-              type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="Confirm new password"
-              required
-              minLength={8}
-              className="w-full bg-zinc-900 border border-zinc-800 text-white text-sm rounded-xl px-4 py-3.5 outline-none focus:border-amber-500/60"
-            />
-
-            {error && <p className="text-sm text-red-400">{error}</p>}
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-amber-500 hover:bg-amber-400 text-black font-bold py-3.5 rounded-xl transition-all shadow-lg disabled:opacity-50"
-            >
-              {loading ? 'Resetting…' : 'Reset password'}
-            </button>
-          </form>
-        )}
+      <div className="flex items-center gap-2.5 mb-1">
+        <Shield size={20} className="text-amber-500" />
+        <h1 className="text-2xl font-black uppercase tracking-wider text-white">Change Password</h1>
       </div>
-    </main>
-  );
-}
+      <p className="text-xs text-zinc-500 mb-6">
+        Choose a new password you haven't used before.
+      </p>
 
-export default function ResetPasswordPage() {
-  return (
-    <Suspense fallback={null}>
-      <ResetPasswordForm />
-    </Suspense>
+      {status.message && (
+        <div
+          className={`p-3 rounded-xl mb-4 text-xs font-medium flex items-center gap-2 ${
+            status.type === 'success'
+              ? 'bg-emerald-950/60 border border-emerald-800 text-emerald-400'
+              : 'bg-rose-950/60 border border-rose-800 text-rose-400'
+          }`}
+        >
+          {status.type === 'success' ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
+          <span>{status.message}</span>
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <PasswordField
+          label="Current Password"
+          value={currentPassword}
+          onChange={(e) => setCurrentPassword(e.target.value)}
+          show={showCurrent}
+          onToggleShow={() => setShowCurrent((s) => !s)}
+        />
+        <PasswordField
+          label="New Password"
+          value={newPassword}
+          onChange={(e) => setNewPassword(e.target.value)}
+          show={showNew}
+          onToggleShow={() => setShowNew((s) => !s)}
+        />
+        <PasswordField
+          label="Confirm New Password"
+          value={confirmPassword}
+          onChange={(e) => setConfirmPassword(e.target.value)}
+          show={showConfirm}
+          onToggleShow={() => setShowConfirm((s) => !s)}
+        />
+
+        <button
+          type="submit"
+          disabled={loading}
+          className="w-full mt-4 py-3 rounded-xl bg-amber-500 text-black text-xs font-extrabold uppercase tracking-wider hover:bg-amber-400 transition-all disabled:opacity-50"
+        >
+          {loading ? 'Updating…' : 'Update Password'}
+        </button>
+      </form>
+    </div>
   );
 }
