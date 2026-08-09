@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Lock, Shield, CheckCircle2, AlertCircle, Eye, EyeOff } from 'lucide-react';
-import { api } from '../../../lib/api';
+import { api } from '../../lib/api';
 
 function PasswordField({ label, value, onChange, show, onToggleShow }) {
   return (
