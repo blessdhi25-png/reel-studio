@@ -4,6 +4,7 @@ import { useEffect, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { api, googleAuthUrl, pingServer } from '../../lib/api';
+import { useAuth } from '../../context/AuthContext';
 import AuthHero from '../../components/AuthHero';
 
 function GoogleIcon() {
@@ -57,6 +58,7 @@ const OAUTH_ERROR_MESSAGES = {
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { login } = useAuth();
   const [form, setForm] = useState({ email: '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
   const [remember, setRemember] = useState(false);
@@ -101,14 +103,11 @@ function LoginForm() {
     setLoading(true);
     try {
       const data = await api.login({ email: form.email, password: form.password });
-      if (typeof window !== 'undefined') {
-        window.localStorage.setItem('token', data.token);
-        window.localStorage.setItem('user', JSON.stringify(data.user));
-        if (remember) {
-          window.localStorage.setItem(REMEMBER_KEY, form.email);
-        } else {
-          window.localStorage.removeItem(REMEMBER_KEY);
-        }
+      login(data.token, data.user);
+      if (remember) {
+        window.localStorage.setItem(REMEMBER_KEY, form.email);
+      } else {
+        window.localStorage.removeItem(REMEMBER_KEY);
       }
       router.push('/');
     } catch (err) {

@@ -3,10 +3,12 @@
 import { Suspense, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { api } from '../../lib/api';
+import { useAuth } from '../../context/AuthContext';
 
 function VerifyEmailForm() {
   const router = useRouter();
   const params = useSearchParams();
+  const { login } = useAuth();
   const [email, setEmail] = useState(params.get('email') || '');
   const [code, setCode] = useState('');
   const [error, setError] = useState(null);
@@ -21,8 +23,7 @@ function VerifyEmailForm() {
     setLoading(true);
     try {
       const data = await api.verifyEmail(email, code);
-      localStorage.setItem('token', data.token);
-      localStorage.setItem('user', JSON.stringify(data.user));
+      login(data.token, data.user);
       router.push('/');
     } catch (err) {
       setError(err.message);

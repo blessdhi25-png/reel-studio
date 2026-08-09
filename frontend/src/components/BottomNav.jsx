@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { api } from '../lib/api';
 import { getSocket } from '../lib/socket';
+import { useAuth } from '../context/AuthContext';
 
 const HIDDEN_ON = ['/login', '/signup', '/verify-email', '/upload'];
 
@@ -52,13 +53,14 @@ function ProfileIcon({ active }) {
 export default function BottomNav() {
   const pathname = usePathname();
   const router = useRouter();
-  const [user, setUser] = useState(null);
+  // Previously this component re-read localStorage.getItem('user') on every
+  // pathname change as a workaround for having no reactive auth state —
+  // that only ever caught auth changes that happened to coincide with a
+  // navigation, not ones that happened on the current page (logging in via
+  // a modal, a token expiring mid-session, etc.). useAuth() is reactive to
+  // all of those.
+  const { user, isAuthenticated } = useAuth();
   const [unreadCount, setUnreadCount] = useState(0);
-
-  useEffect(() => {
-    const stored = localStorage.getItem('user');
-    if (stored) setUser(JSON.parse(stored));
-  }, [pathname]);
 
   useEffect(() => {
     if (!user) return;
@@ -74,7 +76,7 @@ export default function BottomNav() {
   if (HIDDEN_ON.includes(pathname)) return null;
 
   function go(path, requireAuth = false) {
-    if (requireAuth && !localStorage.getItem('token')) {
+    if (requireAuth && !isAuthenticated) {
       router.push('/login');
       return;
     }

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { api } from '../../../lib/api';
+import { useAuth } from '../../../context/AuthContext';
 import ReportModal from '../../../components/ReportModal';
 
 function StudioIcon() {
@@ -40,6 +41,7 @@ export default function ProfilePage({ params }) {
   const { id } = params;
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { logout: authLogout } = useAuth();
   const [user, setUser] = useState(null);
   const [videos, setVideos] = useState([]);
   const [bookmarks, setBookmarks] = useState([]);
@@ -64,8 +66,7 @@ export default function ProfilePage({ params }) {
   const [menuOpen, setMenuOpen] = useState(false);
 
   function logout() {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
+    authLogout();
     router.push('/login');
   }
 

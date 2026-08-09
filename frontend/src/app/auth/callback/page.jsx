@@ -3,10 +3,12 @@
 import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { api } from '../../../lib/api';
+import { useAuth } from '../../../context/AuthContext';
 
 function GoogleCallbackInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { login } = useAuth();
   const [error, setError] = useState(null);
 
   useEffect(() => {
@@ -16,12 +18,16 @@ function GoogleCallbackInner() {
       return;
     }
 
-    window.localStorage.setItem('token', token);
+    // login() persists the token to localStorage immediately (with a
+    // placeholder user) — api.getMe() below reads the token synchronously
+    // from localStorage for its Authorization header, so the token has to
+    // land there before that call, not after it resolves.
+    login(token, { id: null });
 
     api
       .getMe()
       .then((user) => {
-        window.localStorage.setItem('user', JSON.stringify(user));
+        login(token, user);
         router.replace('/');
       })
       .catch(() => {
