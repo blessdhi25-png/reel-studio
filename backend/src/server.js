@@ -157,8 +157,33 @@ app.use((_req, res) => {
   res.status(404).json({ error: 'Not found' });
 });
 
-app.use((err, _req, res, _next) => {
-  console.error(err);
+app.use((err, req, res, _next) => {
+  // Logging just `err` (as this used to) prints the error's default string
+  // form, which for a Prisma error is often only the message — no stack, no
+  // indication of which query/field caused it. err.stack has both. Also
+  // logging req.method+req.originalUrl means a scroll through Render's logs
+  // shows *which* endpoint failed without having to correlate timestamps
+  // against the client-side network tab.
+  console.error(`[error] ${req.method} ${req.originalUrl}:`, err.stack || err);
+
+  // Prisma's "unknown argument"/"unknown field" errors (P2009, or a plain
+  // PrismaClientValidationError when the generated client doesn't match the
+  // schema.prisma column list) are the single most common cause of a 500
+  // right after a schema change that wasn't followed by `prisma generate` +
+  // `prisma migrate deploy` on the deployed environment. Flagging that
+  // pattern explicitly in the log saves re-deriving it from a raw stack
+  // trace every time it happens.
+  const looksLikeSchemaDrift =
+    err?.name === 'PrismaClientValidationError' ||
+    err?.name === 'PrismaClientKnownRequestError' ||
+    /Unknown (arg|field)/i.test(err?.message || '');
+  if (looksLikeSchemaDrift) {
+    console.error(
+      '[error] This looks like a Prisma schema/DB mismatch — confirm `prisma generate` and ' +
+        '`prisma migrate deploy` both ran against the DATABASE_URL this environment is actually using.'
+    );
+  }
+
   res.status(500).json({ error: 'Internal server error' });
 });
 
