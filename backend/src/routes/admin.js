@@ -1,375 +1,568 @@
 import { Router } from 'express';
+import crypto from 'crypto';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import { OAuth2Client } from 'google-auth-library';
 import prisma from '../config/db.js';
-import { requireAuth, requireRole } from '../middleware/auth.js';
-import { notify } from '../utils/notify.js';
+import { sendMail } from '../config/mailer.js';
+import { requireAuth } from '../middleware/auth.js';
+import { asyncHandler } from '../utils/asyncHandler.js';
 
 const router = Router();
 
-// Every route below requires an authenticated moderator or admin.
-router.use(requireAuth, requireRole('moderator', 'admin'));
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const CODE_EXPIRY_MS = 15 * 60 * 1000; // 15 minutes
+const RESEND_COOLDOWN_MS = 60 * 1000; // 1 minute between resends
+const RESET_TOKEN_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
 
-function logAction(adminId, actionType, targetType, targetId, reason) {
-  return prisma.adminAction.create({
-    data: { adminId, actionType, targetType, targetId, reason: reason || null },
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+const GOOGLE_REDIRECT_URI =
+  process.env.GOOGLE_REDIRECT_URI || `${process.env.BASE_URL || 'http://localhost:4000'}/api/v1/auth/google/callback`;
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
+
+// Used to verify One-Tap/GSI id_tokens (POST /google below). The redirect
+// flow (GET /google/callback) doesn't need this client — it exchanges the
+// code for tokens via plain REST calls instead — but id_token verification
+// specifically needs a signature check against Google's rotating public
+// keys, which this library handles correctly instead of us reimplementing
+// JWKS verification by hand.
+const googleClient = GOOGLE_CLIENT_ID ? new OAuth2Client(GOOGLE_CLIENT_ID) : null;
+
+function signToken(user) {
+  return jwt.sign({ sub: user.id }, process.env.JWT_SECRET, {
+    expiresIn: process.env.JWT_EXPIRES_IN || '7d',
   });
 }
 
-// ---- Reports queue ----
+function generateCode() {
+  return String(Math.floor(100000 + Math.random() * 900000)); // 6 digits
+}
 
-router.get('/reports', async (req, res) => {
-  const { status = 'pending', search } = req.query;
-  const reports = await prisma.report.findMany({
-    where: status === 'all' ? {} : { status },
-    orderBy: { createdAt: 'asc' }, // oldest first — first in, first reviewed
-    take: 100,
-    include: { reporter: { select: { id: true, username: true } } },
+// Short-lived, self-verifying OAuth state — avoids needing server-side
+// session storage just to guard against CSRF on the Google redirect.
+function signOAuthState() {
+  return jwt.sign({ purpose: 'google_oauth_state' }, process.env.JWT_SECRET, { expiresIn: '10m' });
+}
+
+function verifyOAuthState(state) {
+  try {
+    const payload = jwt.verify(state, process.env.JWT_SECRET);
+    return payload.purpose === 'google_oauth_state';
+  } catch {
+    return false;
+  }
+}
+
+// Shared by both Google auth paths (redirect callback and One-Tap/GSI) so
+// find-or-create and account-status handling can't drift between them.
+// `profile` is normalized to { sub, email, name, picture, email_verified }
+// regardless of which Google API it came from.
+async function findOrCreateGoogleUser(profile) {
+  let user = await prisma.user.findUnique({ where: { googleId: profile.sub } });
+
+  if (!user) {
+    // Link to an existing email/password account if one matches, so
+    // someone who registered with email first doesn't end up with two
+    // accounts when they later use Google sign-in.
+    const existingByEmail = await prisma.user.findUnique({ where: { email: profile.email } });
+    if (existingByEmail) {
+      user = await prisma.user.update({
+        where: { id: existingByEmail.id },
+        data: { googleId: profile.sub, emailVerified: true },
+      });
+    } else {
+      const username = await generateUniqueUsername(profile.email, profile.name);
+      user = await prisma.user.create({
+        data: {
+          username,
+          email: profile.email,
+          googleId: profile.sub,
+          displayName: profile.name || username,
+          avatarUrl: profile.picture || null,
+          emailVerified: true,
+        },
+      });
+    }
+  }
+
+  return user;
+}
+
+// Returns an error code string if the account can't sign in right now, or
+// null if it's fine to proceed.
+function blockedReasonFor(user) {
+  if (user.accountStatus === 'banned') return 'account_banned';
+  if (user.accountStatus === 'suspended') return 'account_suspended';
+  return null;
+}
+
+async function generateUniqueUsername(email, name) {
+  const base =
+    (name || email.split('@')[0])
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '')
+      .slice(0, 20) || 'user';
+  let candidate = base;
+  let suffix = 0;
+  // eslint-disable-next-line no-await-in-loop
+  while (await prisma.user.findUnique({ where: { username: candidate } })) {
+    suffix += 1;
+    candidate = `${base}${suffix}`;
+  }
+  return candidate;
+}
+
+async function sendVerificationCode(user) {
+  const code = generateCode();
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      emailVerificationCode: code,
+      emailVerificationExpires: new Date(Date.now() + CODE_EXPIRY_MS),
+    },
+  });
+  await sendMail({
+    to: user.email,
+    subject: 'Verify your Bledhi account',
+    text: `Your verification code is ${code}. It expires in 15 minutes.`,
+    html: `<p>Your verification code is <strong>${code}</strong>. It expires in 15 minutes.</p>`,
+  });
+}
+
+router.post('/register', asyncHandler(async (req, res) => {
+  const { username, email, password, displayName } = req.body;
+  if (!username || !email || !password) {
+    return res.status(400).json({ error: 'username, email, and password are required' });
+  }
+  if (!EMAIL_RE.test(email)) {
+    return res.status(400).json({ error: 'Enter a valid email address' });
+  }
+  if (password.length < 8) {
+    return res.status(400).json({ error: 'Password must be at least 8 characters' });
+  }
+
+  const existing = await prisma.user.findFirst({
+    where: { OR: [{ email }, { username }] },
+  });
+  if (existing) {
+    return res.status(409).json({ error: 'Username or email already in use' });
+  }
+
+  const passwordHash = await bcrypt.hash(password, 10);
+  const user = await prisma.user.create({
+    data: { username, email, passwordHash, displayName: displayName || username },
   });
 
-  // Report only stores a generic targetType/targetId (no typed FK), so batch
-  // -fetch a preview of whatever each report points at, grouped by type.
-  const idsByType = { video: [], user: [], comment: [] };
-  for (const r of reports) idsByType[r.targetType]?.push(r.targetId);
+  try {
+    await sendVerificationCode(user);
+  } catch (err) {
+    // The account exists either way — don't fail registration over a mail
+    // provider hiccup (e.g. bad SMTP credentials). The user can hit "Resend"
+    // once mail is fixed, or we retry on that same click.
+    console.error('[auth] failed to send verification email:', err.message);
+  }
 
-  const [videos, users, comments] = await Promise.all([
-    idsByType.video.length
-      ? prisma.video.findMany({
-          where: { id: { in: idsByType.video } },
-          select: {
-            id: true, caption: true, thumbnailUrl: true, status: true,
-            user: { select: { id: true, username: true } },
-          },
-        })
-      : [],
-    idsByType.user.length
-      ? prisma.user.findMany({
-          where: { id: { in: idsByType.user } },
-          select: { id: true, username: true, avatarUrl: true, accountStatus: true },
-        })
-      : [],
-    idsByType.comment.length
-      ? prisma.comment.findMany({
-          where: { id: { in: idsByType.comment } },
-          select: { id: true, content: true, user: { select: { id: true, username: true } } },
-        })
-      : [],
-  ]);
-  const videoMap = Object.fromEntries(videos.map((v) => [v.id, v]));
-  const userMap = Object.fromEntries(users.map((u) => [u.id, u]));
-  const commentMap = Object.fromEntries(comments.map((c) => [c.id, c]));
+  // No token yet — the account can't log in until the code is confirmed.
+  res.status(201).json({ needsVerification: true, email: user.email });
+}));
 
-  let enriched = reports.map((r) => ({
-    ...r,
-    target:
-      r.targetType === 'video' ? videoMap[r.targetId] || null
-      : r.targetType === 'user' ? userMap[r.targetId] || null
-      : r.targetType === 'comment' ? commentMap[r.targetId] || null
-      : null,
-  }));
+router.post('/verify-email', asyncHandler(async (req, res) => {
+  const { email, code } = req.body;
+  if (!email || !code) return res.status(400).json({ error: 'email and code are required' });
 
-  if (search) {
-    const q = search.toLowerCase();
-    enriched = enriched.filter((r) => {
-      const targetUsername = r.target?.username || r.target?.user?.username || '';
-      return (
-        r.reporter?.username?.toLowerCase().includes(q) ||
-        targetUsername.toLowerCase().includes(q) ||
-        r.details?.toLowerCase().includes(q) ||
-        r.target?.caption?.toLowerCase().includes(q) ||
-        r.target?.content?.toLowerCase().includes(q)
-      );
+  const user = await prisma.user.findUnique({ where: { email } });
+  if (!user) return res.status(404).json({ error: 'No account found for that email' });
+  if (user.emailVerified) return res.status(400).json({ error: 'Email is already verified' });
+
+  if (
+    !user.emailVerificationCode ||
+    user.emailVerificationCode !== code ||
+    !user.emailVerificationExpires ||
+    user.emailVerificationExpires < new Date()
+  ) {
+    return res.status(400).json({ error: 'That code is invalid or has expired' });
+  }
+
+  const verified = await prisma.user.update({
+    where: { id: user.id },
+    data: { emailVerified: true, emailVerificationCode: null, emailVerificationExpires: null },
+  });
+
+  const token = signToken(verified);
+  res.json({
+    token,
+    user: { id: verified.id, username: verified.username, displayName: verified.displayName, role: verified.role },
+  });
+}));
+
+router.post('/resend-verification', asyncHandler(async (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: 'email is required' });
+
+  const user = await prisma.user.findUnique({ where: { email } });
+  // Don't reveal whether the email exists — always return ok.
+  if (!user || user.emailVerified) return res.json({ ok: true });
+
+  const justSent =
+    user.emailVerificationExpires &&
+    user.emailVerificationExpires.getTime() - CODE_EXPIRY_MS + RESEND_COOLDOWN_MS > Date.now();
+  if (justSent) {
+    return res.status(429).json({ error: 'Please wait a bit before requesting another code' });
+  }
+
+  try {
+    await sendVerificationCode(user);
+  } catch (err) {
+    console.error('[auth] failed to resend verification email:', err.message);
+    return res.status(502).json({ error: 'Could not send the email right now — try again shortly.' });
+  }
+  res.json({ ok: true });
+}));
+
+router.post('/login', asyncHandler(async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user) return res.status(401).json({ error: 'Invalid email or password' });
+
+    if (!user.passwordHash) {
+      return res
+        .status(401)
+        .json({ error: 'This account uses Google sign-in. Continue with Google instead.' });
+    }
+
+    const valid = await bcrypt.compare(password, user.passwordHash);
+    if (!valid) return res.status(401).json({ error: 'Invalid email or password' });
+
+    if (!user.emailVerified) {
+      return res.status(403).json({ error: 'Please verify your email before logging in', needsVerification: true, email: user.email });
+    }
+
+    if (user.accountStatus === 'banned') {
+      return res.status(403).json({ error: 'This account has been banned.', reason: user.statusReason || undefined });
+    }
+    if (user.accountStatus === 'suspended') {
+      return res.status(403).json({ error: 'This account is suspended.', reason: user.statusReason || undefined });
+    }
+
+    const token = signToken(user);
+    res.json({
+      token,
+      // JWT_EXPIRES_IN mirrors whatever signToken() actually used, so the
+      // frontend can know when to expect the token to expire (e.g. to
+      // proactively hit /auth/refresh) without decoding the JWT itself.
+      expiresIn: process.env.JWT_EXPIRES_IN || '7d',
+      user: { id: user.id, username: user.username, displayName: user.displayName, role: user.role },
+    });
+  } catch (err) {
+    // asyncHandler already forwards this to the global handler either way
+    // (see utils/asyncHandler.js) — this catch exists purely so the log
+    // line is tagged with exactly which route failed and includes the full
+    // stack, since the global handler alone can't tell a Prisma "unknown
+    // field" schema-mismatch error apart from any other 500 without it.
+    console.error('[auth/login error]:', err.stack || err);
+    throw err;
+  }
+}));
+
+// Simple refresh: re-issues a token for a still-valid one.
+// For production, swap in a real refresh-token rotation scheme.
+router.post('/refresh', asyncHandler(async (req, res) => {
+  const { token } = req.body;
+  try {
+    const payload = jwt.verify(token, process.env.JWT_SECRET, { ignoreExpiration: true });
+    const user = await prisma.user.findUnique({ where: { id: payload.sub } });
+    if (!user) return res.status(401).json({ error: 'User not found' });
+    res.json({ token: signToken(user) });
+  } catch {
+    res.status(401).json({ error: 'Invalid token' });
+  }
+}));
+
+router.post('/logout', (_req, res) => {
+  // JWTs are stateless; logout is handled client-side by discarding the token.
+  // For real invalidation, maintain a token blocklist in Redis keyed by jti.
+  res.json({ ok: true });
+});
+
+// --- Google OAuth (Authorization Code flow) ---------------------------
+//
+// Flow: the frontend sends the browser here → we redirect to Google's
+// consent screen → Google redirects back to /google/callback with a code →
+// we exchange it server-side for the user's profile → find-or-create the
+// user → issue our own JWT → redirect to the frontend with the token in
+// the URL, where a small callback page picks it up and stores it.
+
+router.get('/google', (_req, res) => {
+  if (!GOOGLE_CLIENT_ID) {
+    return res
+      .status(500)
+      .send('Google sign-in is not configured on this server. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.');
+  }
+
+  const params = new URLSearchParams({
+    client_id: GOOGLE_CLIENT_ID,
+    redirect_uri: GOOGLE_REDIRECT_URI,
+    response_type: 'code',
+    scope: 'openid email profile',
+    state: signOAuthState(),
+    prompt: 'select_account',
+  });
+
+  res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`);
+});
+
+router.get('/google/callback', asyncHandler(async (req, res) => {
+  const { code, state, error: googleError } = req.query;
+
+  if (googleError) {
+    return res.redirect(`${FRONTEND_URL}/login?error=google_denied`);
+  }
+  if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
+    return res.redirect(`${FRONTEND_URL}/login?error=google_not_configured`);
+  }
+  if (!code || !state || !verifyOAuthState(state)) {
+    return res.redirect(`${FRONTEND_URL}/login?error=google_failed`);
+  }
+
+  try {
+    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        code,
+        client_id: GOOGLE_CLIENT_ID,
+        client_secret: GOOGLE_CLIENT_SECRET,
+        redirect_uri: GOOGLE_REDIRECT_URI,
+        grant_type: 'authorization_code',
+      }),
+    });
+    const tokenData = await tokenRes.json();
+    if (!tokenRes.ok || !tokenData.access_token) {
+      console.error('[auth] Google token exchange failed:', tokenData);
+      return res.redirect(`${FRONTEND_URL}/login?error=google_failed`);
+    }
+
+    const profileRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+      headers: { Authorization: `Bearer ${tokenData.access_token}` },
+    });
+    const profile = await profileRes.json();
+    if (!profileRes.ok || !profile.sub || !profile.email) {
+      console.error('[auth] Google profile fetch failed:', profile);
+      return res.redirect(`${FRONTEND_URL}/login?error=google_failed`);
+    }
+    if (profile.email_verified === false) {
+      return res.redirect(`${FRONTEND_URL}/login?error=google_email_unverified`);
+    }
+
+    const user = await findOrCreateGoogleUser(profile);
+
+    const blocked = blockedReasonFor(user);
+    if (blocked) {
+      return res.redirect(`${FRONTEND_URL}/login?error=${blocked}`);
+    }
+
+    const jwtToken = signToken(user);
+    res.redirect(`${FRONTEND_URL}/auth/callback?token=${jwtToken}`);
+  } catch (err) {
+    console.error('[auth/google-callback error]:', err.stack || err);
+    res.redirect(`${FRONTEND_URL}/login?error=google_failed`);
+  }
+}));
+
+// --- Google One-Tap / Google Identity Services (GSI) ---------------------
+//
+// Used when the frontend embeds Google's own sign-in button/One-Tap prompt
+// directly (no page redirect) and gets back a signed `credential` (a Google
+// id_token) to hand to us. We verify its signature against Google's public
+// keys — this is the part that actually needs google-auth-library, since a
+// self-issued check here would mean trusting an unverified JWT from the
+// client, which defeats the point of using Google as an identity provider
+// at all. Accepts either `credential` (GSI's field name) or `idToken` (in
+// case a different Google SDK integration is used later) for the same value.
+router.post('/google', asyncHandler(async (req, res) => {
+  try {
+    if (!googleClient || !GOOGLE_CLIENT_ID) {
+      return res.status(500).json({ error: 'Google sign-in is not configured on this server.' });
+    }
+
+    const idToken = req.body?.credential || req.body?.idToken;
+    if (!idToken) {
+      return res.status(400).json({ error: 'credential (or idToken) is required' });
+    }
+
+    let payload;
+    try {
+      const ticket = await googleClient.verifyIdToken({ idToken, audience: GOOGLE_CLIENT_ID });
+      payload = ticket.getPayload();
+    } catch (err) {
+      console.error('[auth/google error] id_token verification failed:', err.message);
+      return res.status(401).json({ error: 'Invalid or expired Google credential' });
+    }
+
+    if (!payload?.sub || !payload?.email) {
+      return res.status(401).json({ error: 'Google credential did not include the expected profile data' });
+    }
+    if (payload.email_verified === false) {
+      return res.status(401).json({ error: "Your Google email isn't verified — verify it with Google first." });
+    }
+
+    const user = await findOrCreateGoogleUser(payload);
+
+    const blocked = blockedReasonFor(user);
+    if (blocked) {
+      const messages = {
+        account_banned: 'This account has been banned.',
+        account_suspended: 'This account is suspended.',
+      };
+      return res.status(403).json({ error: messages[blocked], reason: user.statusReason || undefined });
+    }
+
+    const token = signToken(user);
+    res.json({
+      token,
+      expiresIn: process.env.JWT_EXPIRES_IN || '7d',
+      user: { id: user.id, username: user.username, displayName: user.displayName, role: user.role },
+    });
+  } catch (err) {
+    console.error('[auth/google error]:', err.stack || err);
+    throw err;
+  }
+}));
+
+// Used by the frontend's /auth/callback page to fetch profile details
+// right after storing the token from a Google sign-in redirect.
+router.get('/me', requireAuth, asyncHandler(async (req, res) => {
+  const user = await prisma.user.findUnique({
+    where: { id: req.userId },
+    select: { id: true, username: true, displayName: true, avatarUrl: true, role: true },
+  });
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  res.json(user);
+}));
+
+// --- Password reset ---------------------------------------------------
+//
+// Deliberately does not reveal whether the email exists — the response is
+// identical either way, so this can't be used to enumerate registered
+// accounts by trying emails and watching for a different message.
+router.post('/forgot-password', asyncHandler(async (req, res) => {
+  const { email } = req.body;
+  const genericResponse = {
+    ok: true,
+    message: 'If an account with that email exists, a password reset link has been sent.',
+  };
+
+  if (!email || !EMAIL_RE.test(email)) {
+    // Still a generic success — a malformed email obviously doesn't match
+    // any account, but saying so distinguishes "bad format" from "not
+    // found" less than you'd think, and it's simpler/safer to just not
+    // special-case it at all.
+    return res.json(genericResponse);
+  }
+
+  const user = await prisma.user.findUnique({ where: { email } });
+  if (!user) return res.json(genericResponse);
+
+  // Google-only accounts have no passwordHash to reset. Rather than let
+  // them "successfully" request a reset that can never work, this is the
+  // one case worth emailing a different (still non-revealing-to-outsiders)
+  // message to the account holder themselves.
+  if (!user.passwordHash) {
+    await sendMail({
+      to: user.email,
+      subject: 'Password reset requested',
+      text: `Someone requested a password reset for this account, but it was created with Google sign-in and has no password to reset. If this was you, just continue signing in with Google.`,
+      html: `<p>Someone requested a password reset for this account, but it was created with Google sign-in and has no password to reset. If this was you, just continue signing in with Google.</p>`,
+    });
+    return res.json(genericResponse);
+  }
+
+  const rawToken = crypto.randomBytes(32).toString('hex');
+  const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      resetPasswordToken: hashedToken,
+      resetPasswordExpires: new Date(Date.now() + RESET_TOKEN_EXPIRY_MS),
+    },
+  });
+
+  const resetUrl = `${FRONTEND_URL}/reset-password?token=${rawToken}`;
+  try {
+    await sendMail({
+      to: user.email,
+      subject: 'Reset your Bledhi password',
+      text: `Reset your password: ${resetUrl}\nThis link expires in 1 hour. If you didn't request this, ignore this email.`,
+      html: `<p><a href="${resetUrl}">Reset your password</a> (expires in 1 hour).</p><p>If you didn't request this, ignore this email — your password won't change.</p>`,
+    });
+  } catch (err) {
+    // Same reasoning as email verification: a mail-provider hiccup
+    // shouldn't surface as a 500 to the client, since that WOULD leak
+    // "this email exists and something broke" — just log it server-side.
+    console.error('[auth] failed to send password reset email:', err.message);
+  }
+
+  res.json(genericResponse);
+}));
+
+router.post('/reset-password', asyncHandler(async (req, res) => {
+  const { token, newPassword } = req.body;
+  if (!token || !newPassword) {
+    return res.status(400).json({ error: 'token and newPassword are required' });
+  }
+  if (newPassword.length < 8) {
+    return res.status(400).json({ error: 'Password must be at least 8 characters' });
+  }
+
+  const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+  const user = await prisma.user.findFirst({
+    where: { resetPasswordToken: hashedToken, resetPasswordExpires: { gt: new Date() } },
+  });
+  if (!user) {
+    return res.status(400).json({ error: 'This reset link is invalid or has expired.' });
+  }
+
+  const passwordHash = await bcrypt.hash(newPassword, 10);
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      passwordHash,
+      resetPasswordToken: null, // one-time use — can't be replayed after this
+      resetPasswordExpires: null,
+    },
+  });
+
+  res.json({ ok: true, message: 'Password reset — you can now log in with your new password.' });
+}));
+
+router.post('/change-password', requireAuth, asyncHandler(async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ error: 'currentPassword and newPassword are required' });
+  }
+  if (newPassword.length < 8) {
+    return res.status(400).json({ error: 'New password must be at least 8 characters' });
+  }
+
+  const user = await prisma.user.findUnique({ where: { id: req.userId } });
+  if (!user.passwordHash) {
+    return res.status(400).json({
+      error: "This account signed in with Google and has no password — there's nothing to change.",
     });
   }
 
-  res.json(enriched);
-});
-
-// Summary metrics for the Trust & Safety overview banner.
-router.get('/reports/stats', async (req, res) => {
-  const [total, pending, resolvedRecent] = await Promise.all([
-    prisma.report.count(),
-    prisma.report.count({ where: { status: 'pending' } }),
-    prisma.report.findMany({
-      where: { status: { in: ['resolved', 'dismissed'] }, resolvedAt: { not: null } },
-      orderBy: { resolvedAt: 'desc' },
-      take: 200,
-      select: { createdAt: true, resolvedAt: true },
-    }),
-  ]);
-
-  const critical = await prisma.report.count({
-    where: { status: 'pending', reason: { in: ['impersonation', 'harassment_or_abuse'] } },
-  });
-
-  let avgResolutionMinutes = null;
-  if (resolvedRecent.length > 0) {
-    const totalMinutes = resolvedRecent.reduce(
-      (sum, r) => sum + (r.resolvedAt.getTime() - r.createdAt.getTime()) / 60000,
-      0
-    );
-    avgResolutionMinutes = Math.round(totalMinutes / resolvedRecent.length);
+  const valid = await bcrypt.compare(currentPassword, user.passwordHash);
+  if (!valid) {
+    return res.status(401).json({ error: 'Current password is incorrect' });
   }
 
-  res.json({ total, pending, critical, avgResolutionMinutes });
-});
+  const passwordHash = await bcrypt.hash(newPassword, 10);
+  await prisma.user.update({ where: { id: user.id }, data: { passwordHash } });
 
-// Resolve a report with an action taken against the target.
-// action: 'dismiss' | 'warn' | 'remove_content' | 'suspend_user' | 'ban_user'
-router.post('/reports/:id/resolve', async (req, res) => {
-  const { action, note } = req.body;
-  const validActions = ['dismiss', 'warn', 'remove_content', 'suspend_user', 'ban_user'];
-  if (!validActions.includes(action)) {
-    return res.status(400).json({ error: 'invalid action' });
-  }
-
-  const report = await prisma.report.findUnique({ where: { id: req.params.id } });
-  if (!report) return res.status(404).json({ error: 'Report not found' });
-
-  if (action === 'remove_content' && report.targetType === 'video') {
-    await prisma.video.update({ where: { id: report.targetId }, data: { status: 'removed' } });
-    await logAction(req.userId, 'remove_video', 'video', report.targetId, note);
-  }
-
-  if (action === 'suspend_user') {
-    const targetUserId = report.targetType === 'user' ? report.targetId : null;
-    if (targetUserId) {
-      await prisma.user.update({
-        where: { id: targetUserId },
-        data: { accountStatus: 'suspended', statusReason: note || 'Suspended following a report' },
-      });
-      await logAction(req.userId, 'suspend_user', 'user', targetUserId, note);
-    }
-  }
-
-  if (action === 'ban_user') {
-    const targetUserId = report.targetType === 'user' ? report.targetId : null;
-    if (targetUserId) {
-      await prisma.user.update({
-        where: { id: targetUserId },
-        data: { accountStatus: 'banned', statusReason: note || 'Banned following a report' },
-      });
-      await logAction(req.userId, 'ban_user', 'user', targetUserId, note);
-    }
-  }
-
-  const updated = await prisma.report.update({
-    where: { id: req.params.id },
-    data: {
-      status: action === 'dismiss' ? 'dismissed' : 'resolved',
-      resolvedById: req.userId,
-      resolution: `${action}${note ? `: ${note}` : ''}`,
-      resolvedAt: new Date(),
-    },
-  });
-
-  if (action === 'dismiss') {
-    await logAction(req.userId, 'dismiss_report', report.targetType, report.targetId, note);
-  } else {
-    await logAction(req.userId, 'resolve_report', report.targetType, report.targetId, note);
-  }
-
-  res.json(updated);
-});
-
-// ---- User account management ----
-
-router.get('/users', async (req, res) => {
-  const { search, status } = req.query;
-  const users = await prisma.user.findMany({
-    where: {
-      ...(status ? { accountStatus: status } : {}),
-      ...(search
-        ? { OR: [{ username: { contains: search, mode: 'insensitive' } }, { email: { contains: search, mode: 'insensitive' } }] }
-        : {}),
-    },
-    select: {
-      id: true, username: true, email: true, role: true, accountStatus: true,
-      statusReason: true, createdAt: true,
-      _count: { select: { videos: true, reportsFiled: true } },
-    },
-    orderBy: { createdAt: 'desc' },
-    take: 100,
-  });
-
-  // Count reports filed *against* each user (as opposed to filed *by* them).
-  const userIds = users.map((u) => u.id);
-  const reportCounts = await prisma.report.groupBy({
-    by: ['targetId'],
-    where: { targetType: 'user', targetId: { in: userIds } },
-    _count: { _all: true },
-  });
-  const reportsAgainstMap = Object.fromEntries(reportCounts.map((r) => [r.targetId, r._count._all]));
-
-  res.json(users.map((u) => ({ ...u, reportsAgainstCount: reportsAgainstMap[u.id] || 0 })));
-});
-
-router.post('/users/:id/suspend', async (req, res) => {
-  const { reason } = req.body;
-  const user = await prisma.user.update({
-    where: { id: req.params.id },
-    data: { accountStatus: 'suspended', statusReason: reason || null },
-  });
-  await logAction(req.userId, 'suspend_user', 'user', user.id, reason);
-  notify({
-    userId: user.id,
-    type: 'moderation',
-    content: `Your account has been suspended.${reason ? ` Reason: ${reason}` : ''}`,
-  });
   res.json({ ok: true });
-});
-
-// Only full admins can ban (a permanent, high-stakes action) — moderators can suspend.
-router.post('/users/:id/ban', requireRole('admin'), async (req, res) => {
-  const { reason } = req.body;
-  const user = await prisma.user.update({
-    where: { id: req.params.id },
-    data: { accountStatus: 'banned', statusReason: reason || null },
-  });
-  await logAction(req.userId, 'ban_user', 'user', user.id, reason);
-  notify({
-    userId: user.id,
-    type: 'moderation',
-    content: `Your account has been banned.${reason ? ` Reason: ${reason}` : ''}`,
-  });
-  res.json({ ok: true });
-});
-
-router.post('/users/:id/reinstate', async (req, res) => {
-  const user = await prisma.user.update({
-    where: { id: req.params.id },
-    data: { accountStatus: 'active', statusReason: null },
-  });
-  await logAction(req.userId, 'reinstate_user', 'user', user.id, null);
-  notify({
-    userId: user.id,
-    type: 'moderation',
-    content: 'Your account has been reinstated.',
-  });
-  res.json({ ok: true });
-});
-
-// Only admins can grant/revoke moderator or admin roles.
-router.post('/users/:id/role', requireRole('admin'), async (req, res) => {
-  const { role } = req.body;
-  if (!['user', 'moderator', 'admin'].includes(role)) {
-    return res.status(400).json({ error: 'invalid role' });
-  }
-  const user = await prisma.user.update({ where: { id: req.params.id }, data: { role } });
-  await logAction(req.userId, 'change_role', 'user', user.id, `role -> ${role}`);
-  res.json({ ok: true });
-});
-
-// ---- Video moderation queue ----
-
-router.get('/videos', async (req, res) => {
-  const { status = 'published' } = req.query;
-  const videos = await prisma.video.findMany({
-    where: status === 'all' ? {} : { status },
-    orderBy: { createdAt: 'desc' },
-    take: 100,
-    include: { user: { select: { id: true, username: true } } },
-  });
-
-  const videoIds = videos.map((v) => v.id);
-  const reportCounts = await prisma.report.groupBy({
-    by: ['targetId'],
-    where: { targetType: 'video', targetId: { in: videoIds } },
-    _count: { _all: true },
-  });
-  const reportsMap = Object.fromEntries(reportCounts.map((r) => [r.targetId, r._count._all]));
-
-  res.json(videos.map((v) => ({ ...v, reportsCount: reportsMap[v.id] || 0 })));
-});
-
-router.post('/videos/:id/remove', async (req, res) => {
-  const { reason } = req.body;
-  const video = await prisma.video.update({ where: { id: req.params.id }, data: { status: 'removed' } });
-  await logAction(req.userId, 'remove_video', 'video', video.id, reason);
-  res.json({ ok: true });
-});
-
-// ---- Fraud signals ----
-// Lightweight heuristics to help a trust & safety team triage — not a
-// verdict, just surfacing accounts worth a closer look.
-router.get('/fraud-signals', async (req, res) => {
-  const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-
-  const [mostReportedUsers, rapidTippers, failedTxUsers] = await Promise.all([
-    prisma.report.groupBy({
-      by: ['targetId'],
-      where: { targetType: 'user', createdAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } },
-      _count: { _all: true },
-      orderBy: { _count: { targetId: 'desc' } },
-      take: 20,
-    }),
-    prisma.transaction.groupBy({
-      by: ['senderId'],
-      where: { type: 'tip', createdAt: { gte: dayAgo } },
-      _count: { _all: true },
-      having: { senderId: { _count: { gt: 10 } } }, // more than 10 tips sent in 24h
-      orderBy: { _count: { senderId: 'desc' } },
-      take: 20,
-    }),
-    prisma.transaction.groupBy({
-      by: ['senderId'],
-      where: { status: 'failed', createdAt: { gte: dayAgo } },
-      _count: { _all: true },
-      having: { senderId: { _count: { gt: 3 } } }, // repeated failed payments
-      orderBy: { _count: { senderId: 'desc' } },
-      take: 20,
-    }),
-  ]);
-
-  const ids = [
-    ...mostReportedUsers.map((r) => r.targetId),
-    ...rapidTippers.map((r) => r.senderId),
-    ...failedTxUsers.map((r) => r.senderId),
-  ];
-  const users = await prisma.user.findMany({
-    where: { id: { in: [...new Set(ids)] } },
-    select: { id: true, username: true, accountStatus: true },
-  });
-  const userMap = Object.fromEntries(users.map((u) => [u.id, u]));
-
-  res.json({
-    mostReported: mostReportedUsers.map((r) => ({ user: userMap[r.targetId], reportCount: r._count._all })),
-    rapidTippers: rapidTippers.map((r) => ({ user: userMap[r.senderId], tipCount24h: r._count._all })),
-    repeatedFailedPayments: failedTxUsers.map((r) => ({ user: userMap[r.senderId], failedCount24h: r._count._all })),
-  });
-});
-
-// ---- Audit log ----
-
-router.get('/audit-log', async (req, res) => {
-  const actions = await prisma.adminAction.findMany({
-    orderBy: { createdAt: 'desc' },
-    take: 200,
-    include: { admin: { select: { id: true, username: true } } },
-  });
-  res.json(actions);
-});
-
-// Confirms the caller has admin/moderator access — the frontend dashboard
-// calls this first before rendering anything.
-router.get('/me', (req, res) => {
-  res.json({ role: req.userRole });
-});
-
-// Feeds the top bar's status indicators. "Healthy" vs "Backlogged" is a real
-// heuristic off the oldest pending report's age, not a hardcoded label —
-// there's no separate incident/SLA system to pull a status from yet.
-router.get('/status', async (req, res) => {
-  const [pendingCount, oldestPending, moderatorCount] = await Promise.all([
-    prisma.report.count({ where: { status: 'pending' } }),
-    prisma.report.findFirst({ where: { status: 'pending' }, orderBy: { createdAt: 'asc' }, select: { createdAt: true } }),
-    prisma.user.count({ where: { role: { in: ['admin', 'moderator'] }, accountStatus: 'active' } }),
-  ]);
-
-  const oldestPendingMinutes = oldestPending
-    ? Math.round((Date.now() - oldestPending.createdAt.getTime()) / 60000)
-    : 0;
-  const queueStatus = oldestPendingMinutes > 120 ? 'backlogged' : 'healthy';
-
-  res.json({ queueStatus, pendingCount, oldestPendingMinutes, moderatorCount });
-});
+}));
 
 export default router;
