@@ -46,6 +46,14 @@ export default function SettingsPage() {
           <span className="flex-1 font-body text-bone">{user.email}</span>
         </div>
         <a
+          href="/settings/change-password"
+          className="w-full flex items-center gap-4 py-4 border-b border-smoke/10 text-left font-body text-bone"
+        >
+          <span className="text-xl w-6 text-center">🔑</span>
+          <span className="flex-1">Change password</span>
+          <span className="text-smoke">›</span>
+        </a>
+        <a
           href="/settings/privacy"
           className="w-full flex items-center gap-4 py-4 border-b border-smoke/10 text-left font-body text-bone"
         >
