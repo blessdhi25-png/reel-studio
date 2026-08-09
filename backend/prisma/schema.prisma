@@ -120,7 +120,6 @@ model User {
   googleId      String?  @unique
   displayName   String?
   avatarUrl     String?
-  bannerUrl     String?
   bio           String?
   creatorStatus Boolean  @default(false)
   stripeAccountId       String?  @unique
@@ -131,6 +130,13 @@ model User {
   emailVerified            Boolean   @default(false)
   emailVerificationCode    String?
   emailVerificationExpires DateTime?
+  // Stores a SHA-256 hash of the reset token, never the raw token itself —
+  // same reasoning as a password hash: if the DB ever leaked, a stored raw
+  // token would let anyone reset any account's password directly, whereas
+  // a hash is useless without the original value that only the email
+  // recipient has.
+  resetPasswordToken   String?
+  resetPasswordExpires DateTime?
   isPrivate       Boolean        @default(false)
   messagePrivacy  MessagePrivacy @default(followers)
   commentPrivacy  CommentPrivacy @default(everyone)
