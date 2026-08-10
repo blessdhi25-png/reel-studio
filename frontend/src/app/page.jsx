@@ -40,6 +40,8 @@ function CircleParamSync({ onCircle }) {
 
 export default function FeedPage() {
   const [videos, setVideos] = useState([]);
+  const [nextCursor, setNextCursor] = useState(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const [filter, setFilter] = useState(null); // null = mixed, 'short', 'long'
   const [circle, setCircle] = useState(null); // null = all circles
@@ -160,9 +162,42 @@ export default function FeedPage() {
           }
         }
         setVideos(videos);
+        // The initial batch's own cursor — a fresh filter/circle/weights
+        // change is a brand-new query, so this always resets rather than
+        // carrying over whatever cursor the previous query was on.
+        setNextCursor(data.nextCursor || null);
       })
       .catch(() => {});
   }, [filter, tuningWeights, circle]);
+
+  // Infinite scroll: previously the feed fetched exactly one batch and
+  // dead-ended — there was no code path that ever requested a second page,
+  // even though the backend (GET /videos/feed) already returns a real
+  // cursor for this. Fetches the next batch once the viewer is within 3
+  // cards of the end, using that same cursor, and appends rather than
+  // replacing so scroll position isn't disturbed.
+  useEffect(() => {
+    if (!nextCursor || loadingMore) return;
+    if (activeIndex < videos.length - 3) return;
+
+    setLoadingMore(true);
+    api
+      .getFeed(filter, nextCursor, tuningWeights, circle)
+      .then((data) => {
+        setVideos((prev) => {
+          const seen = new Set(prev.map((v) => v.id));
+          const fresh = data.videos.filter((v) => !seen.has(v.id));
+          return [...prev, ...fresh];
+        });
+        setNextCursor(data.nextCursor || null);
+      })
+      .catch(() => {
+        // Leave nextCursor as-is so scrolling further re-triggers a retry,
+        // rather than permanently giving up on this query after one
+        // transient network failure.
+      })
+      .finally(() => setLoadingMore(false));
+  }, [activeIndex, nextCursor, loadingMore, videos.length, filter, tuningWeights, circle]);
 
   // Single source of truth for follow state. VideoCard's own avatar badge and
   // DesktopRail's Follow button both show the same creator when that
@@ -439,11 +474,17 @@ export default function FeedPage() {
                   ref={(el) => { videoCardRefs.current[video.id] = el; }}
                   video={video}
                   isActive={i === activeIndex}
+                  shouldLoad={Math.abs(i - activeIndex) <= 1}
                   focusMode={focusMode}
                   onToggleFollow={handleToggleFollow}
                 />
               </div>
             ))}
+            {loadingMore && (
+              <div className="h-dvh w-full snap-start">
+                <FeedSkeletonCard />
+              </div>
+            )}
             {videos.length === 0 && (
               <div className="h-dvh flex items-center justify-center">
                 <p className="font-body text-smoke">No videos yet — be the first to post.</p>
@@ -468,12 +509,18 @@ export default function FeedPage() {
                       ref={(el) => { videoCardRefs.current[video.id] = el; }}
                       video={video}
                       isActive={i === activeIndex}
+                      shouldLoad={Math.abs(i - activeIndex) <= 1}
                       focusMode={focusMode}
                       onToggleFollow={handleToggleFollow}
                       onActiveTimeUpdate={setActiveTime}
                     />
                   </div>
                 ))}
+                {loadingMore && (
+                  <div className="h-full w-full snap-start">
+                    <FeedSkeletonCard />
+                  </div>
+                )}
                 {videos.length === 0 && (
                   <div className="h-full flex items-center justify-center">
                     <p className="font-body text-smoke text-center px-6">No videos yet — be the first to post.</p>
@@ -530,6 +577,26 @@ export default function FeedPage() {
         </div>
       )}
     </main>
+  );
+}
+
+// Shown at the end of the feed while the next infinite-scroll batch is
+// in flight — matches VideoCard's full-bleed layout so it doesn't cause a
+// layout jump when the real card swaps in.
+function FeedSkeletonCard() {
+  return (
+    <div className="relative h-full w-full flex items-center justify-center bg-ink">
+      <div className="h-full w-full max-w-md bg-zinc-900 animate-pulse" />
+      <div className="absolute bottom-24 left-4 right-20 space-y-3">
+        <div className="h-4 w-1/3 bg-zinc-800 rounded animate-pulse" />
+        <div className="h-3 w-2/3 bg-zinc-800 rounded animate-pulse" />
+      </div>
+      <div className="absolute right-3 bottom-24 flex flex-col items-center gap-5">
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="w-11 h-11 rounded-full bg-zinc-800 animate-pulse" />
+        ))}
+      </div>
+    </div>
   );
 }
 
