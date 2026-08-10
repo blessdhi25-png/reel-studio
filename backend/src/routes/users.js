@@ -95,7 +95,7 @@ router.get('/:id', optionalAuth, asyncHandler(async (req, res) => {
   const user = await prisma.user.findUnique({
     where: { id: req.params.id },
     select: {
-      id: true, username: true, displayName: true, avatarUrl: true,
+      id: true, username: true, displayName: true, avatarUrl: true, bannerUrl: true,
       bio: true, creatorStatus: true, createdAt: true, isPrivate: true,
       _count: { select: { followers: true, following: true, videos: true } },
     },
