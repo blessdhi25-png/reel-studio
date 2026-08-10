@@ -45,6 +45,23 @@ function getToken() {
   return window.localStorage.getItem('token');
 }
 
+// Reads the cached user object from localStorage, the same way
+// context/AuthContext.jsx does internally. Exported separately for the few
+// places (e.g. app/profile/[id]/page.jsx) that need a quick one-off read
+// — a self/id comparison inside a mount-only effect — without pulling in
+// the full reactive useAuth() context. Guards against both SSR (no
+// `window`) and a malformed/corrupted localStorage value so a bad cache
+// entry degrades to "logged out" instead of throwing.
+export function getStoredUser() {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem('user');
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
 async function request(path, { method = 'GET', body, isForm = false, timeoutMs = 15000 } = {}) {
   const headers = {};
   const token = getToken();
