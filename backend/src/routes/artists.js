@@ -4,7 +4,6 @@ import { requireAuth } from '../middleware/auth.js';
 import { uploadTrack } from '../utils/upload.js';
 
 const router = Router();
-const BASE_URL = process.env.BASE_URL || 'http://localhost:4000';
 const LABEL_STATUSES = ['independent', 'signed'];
 
 router.get('/me', requireAuth, async (req, res) => {
@@ -93,7 +92,7 @@ router.post('/me/tracks', requireAuth, uploadTrack.single('audio'), async (req, 
     data: {
       artistId: profile.id,
       title: req.body.title.trim(),
-      audioUrl: `${BASE_URL}/uploads/tracks/${req.file.filename}`,
+      audioUrl: req.file.path, // Cloudinary secure CDN URL — see utils/upload.js
       durationSeconds: req.body.durationSeconds ? Number(req.body.durationSeconds) : null,
     },
   });
