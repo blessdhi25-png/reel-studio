@@ -6,6 +6,12 @@ import CommentsPanel from './CommentsPanel';
 import ReportModal from './ReportModal';
 import ShareSheet from './ShareSheet';
 import { useOptimisticLike } from '../hooks/useOptimisticLike';
+import { useAutoPlayOnScroll } from '../hooks/useAutoPlayOnScroll';
+
+// A second tap/click arriving within this window counts as a double-tap
+// (like) rather than two separate single-taps (play/pause). 300ms matches
+// the double-tap window most touch UIs already train people to expect.
+const DOUBLE_TAP_MS = 300;
 
 // Whether the viewer has ever tapped a video (a real user gesture). Browsers
 // block autoplay-with-sound until one happens, so every clip starts muted
@@ -28,7 +34,10 @@ const VideoCard = forwardRef(function VideoCard(
   ref
 ) {
   const videoRef = useRef(null);
+  const containerRef = useRef(null);
   const commentsRef = useRef(null);
+  const lastTapRef = useRef(0);
+  const singleTapTimerRef = useRef(null);
   const { liked, likeCount, toggleLike } = useOptimisticLike(video.id, video.isLiked, video.likeCount);
   const [commentCount, setCommentCount] = useState(Number(video.commentCount || 0));
   const [showTip, setShowTip] = useState(false);
@@ -42,6 +51,15 @@ const VideoCard = forwardRef(function VideoCard(
   const [paused, setPaused] = useState(false);
   const [isOwnVideo, setIsOwnVideo] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
+  // Tracks whether this card's own media is still buffering (fresh load,
+  // network stall, HLS still initializing) so a loading indicator can sit
+  // over the poster instead of a video that just looks frozen. Starts true
+  // — nothing has proven itself ready to play yet.
+  const [buffering, setBuffering] = useState(true);
+  // Bumped (not just toggled) on every double-tap so a second double-tap
+  // mid-animation restarts the pop cleanly via a fresh `key` rather than
+  // fighting the still-running CSS animation from the first one.
+  const [heartPopId, setHeartPopId] = useState(0);
   // video.durationSeconds is only ever populated by the transcode worker's
   // completion callback (POST /:id/complete) — which, per the immediate-
   // publish upload flow (see backend/src/routes/videos.js), never runs in
@@ -54,6 +72,13 @@ const VideoCard = forwardRef(function VideoCard(
   // transcode pipeline ever fills in durationSeconds.
   const [liveDuration, setLiveDuration] = useState(null);
   const following = Boolean(video.user?.isFollowing);
+
+  // Drives actual play()/pause() off real on-screen visibility (see the
+  // hook for why 60% specifically) instead of the parent's discretized
+  // activeIndex — enabled only once shouldLoad has given this card a real
+  // src to play, so an off-screen, unloaded card's observer never tries to
+  // play a video with nothing loaded into it.
+  const inView = useAutoPlayOnScroll(containerRef, videoRef, { threshold: 0.6, enabled: shouldLoad });
 
   useEffect(() => {
     const stored = localStorage.getItem('user');
@@ -101,40 +126,45 @@ const VideoCard = forwardRef(function VideoCard(
     return () => hls?.destroy();
   }, [video.videoUrl, shouldLoad]);
 
+  // A fresh src (new video, or shouldLoad just turned on for this card) is
+  // presumed to need buffering again — cleared once onCanPlay/onPlaying/
+  // onLoadedData fires below.
+  useEffect(() => {
+    setBuffering(true);
+  }, [video.videoUrl, shouldLoad]);
+
+  // Actual play()/pause() calls live inside useAutoPlayOnScroll now — this
+  // effect only handles the side effects of a card becoming genuinely
+  // visible: resetting the paused-icon, view/impression logging, and
+  // watch-time tracking for the ranking worker's skip signal.
   useEffect(() => {
     const el = videoRef.current;
-    if (!el) return;
+    if (!el || !inView) return;
 
-    if (isActive) {
-      setPaused(false);
-      el.play().catch(() => {});
-      api.logView(video.id).catch(() => {});
-      api.logEvent(video.id, 'impression').catch(() => {});
+    setPaused(false);
+    api.logView(video.id).catch(() => {});
+    api.logEvent(video.id, 'impression').catch(() => {});
 
-      const watchStart = Date.now();
-      const onEnded = () => {
-        api.logEvent(video.id, 'watch_complete', Date.now() - watchStart).catch(() => {});
-      };
-      el.addEventListener('ended', onEnded);
+    const watchStart = Date.now();
+    const onEnded = () => {
+      api.logEvent(video.id, 'watch_complete', Date.now() - watchStart).catch(() => {});
+    };
+    el.addEventListener('ended', onEnded);
 
-      return () => {
-        el.removeEventListener('ended', onEnded);
-        el.pause();
+    return () => {
+      el.removeEventListener('ended', onEnded);
 
-        // If they scrolled away well before the clip finished, count it as a skip —
-        // this is what the ranking worker penalizes. Falls back to the live-read
-        // duration (see liveDuration above) since video.durationSeconds is null
-        // for every video published through the immediate-publish upload path.
-        const elapsed = Date.now() - watchStart;
-        const duration = (video.durationSeconds || liveDuration || 0) * 1000;
-        if (duration > 0 && elapsed < duration * 0.5) {
-          api.logEvent(video.id, 'skip', elapsed).catch(() => {});
-        }
-      };
-    } else {
-      el.pause();
-    }
-  }, [isActive, video.id, video.durationSeconds, liveDuration]);
+      // If they scrolled away well before the clip finished, count it as a skip —
+      // this is what the ranking worker penalizes. Falls back to the live-read
+      // duration (see liveDuration above) since video.durationSeconds is null
+      // for every video published through the immediate-publish upload path.
+      const elapsed = Date.now() - watchStart;
+      const duration = (video.durationSeconds || liveDuration || 0) * 1000;
+      if (duration > 0 && elapsed < duration * 0.5) {
+        api.logEvent(video.id, 'skip', elapsed).catch(() => {});
+      }
+    };
+  }, [inView, video.id, video.durationSeconds, liveDuration]);
 
   // Drives timestamp-comment highlighting (locally, for the mobile overlay
   // panel below) and reports the active card's position up to the page so
@@ -185,6 +215,45 @@ const VideoCard = forwardRef(function VideoCard(
     }
   }
 
+  // Double-tap-to-like: always *likes*, never toggles off — matches the
+  // Instagram/TikTok convention where tapping an already-liked video twice
+  // just re-plays the heart animation rather than unliking it.
+  function likeWithHeartPop() {
+    if (!liked) toggleLike();
+    setHeartPopId((id) => id + 1);
+  }
+
+  // A single handler covers both mouse double-click (desktop) and touch
+  // double-tap (mobile) — touch taps already fire regular `click` events,
+  // so timing between two clicks is all that's needed to tell one gesture
+  // from two, without separate touch-event plumbing. A lone tap is held
+  // for DOUBLE_TAP_MS before actually toggling play/pause, in case a
+  // second tap is about to arrive and turn it into a like instead.
+  function handleVideoTap() {
+    const now = Date.now();
+    const sinceLastTap = now - lastTapRef.current;
+    lastTapRef.current = now;
+
+    if (sinceLastTap > 0 && sinceLastTap < DOUBLE_TAP_MS) {
+      if (singleTapTimerRef.current) {
+        clearTimeout(singleTapTimerRef.current);
+        singleTapTimerRef.current = null;
+      }
+      likeWithHeartPop();
+    } else {
+      singleTapTimerRef.current = setTimeout(() => {
+        togglePlayPause();
+        singleTapTimerRef.current = null;
+      }, DOUBLE_TAP_MS);
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      if (singleTapTimerRef.current) clearTimeout(singleTapTimerRef.current);
+    };
+  }, []);
+
   function handleFollow(e) {
     e.stopPropagation();
     if (!video.user?.id) return;
@@ -228,13 +297,17 @@ const VideoCard = forwardRef(function VideoCard(
   }));
 
   return (
-    <div className="relative h-full w-full flex items-center justify-center bg-ink">
+    <div ref={containerRef} className="relative h-full w-full flex items-center justify-center bg-ink">
       <video
         ref={videoRef}
         loop
         playsInline
         muted={!audioEnabled}
-        onClick={togglePlayPause}
+        onClick={handleVideoTap}
+        onWaiting={() => setBuffering(true)}
+        onPlaying={() => setBuffering(false)}
+        onCanPlay={() => setBuffering(false)}
+        onLoadedData={() => setBuffering(false)}
         onLoadedMetadata={(e) => {
           const d = e.currentTarget.duration;
           // Some browsers report Infinity for a duration that isn't fully
@@ -245,6 +318,28 @@ const VideoCard = forwardRef(function VideoCard(
         className="h-full w-full max-w-md object-cover mx-auto cursor-pointer"
         poster={video.thumbnailUrl}
       />
+
+      {/* Buffering indicator — only for a card that's actually trying to
+          load (shouldLoad); far-off cards with no src deliberately show
+          nothing here rather than a permanent, misleading spinner. */}
+      {shouldLoad && buffering && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-[5]">
+          <div className="w-10 h-10 rounded-full border-2 border-bone/25 border-t-bone animate-spin" />
+        </div>
+      )}
+
+      {/* Double-tap-to-like heart — key={heartPopId} forces a fresh mount
+          (and so a fresh animation run) on every double-tap, even ones
+          that land mid-animation. */}
+      {heartPopId > 0 && (
+        <div
+          key={heartPopId}
+          className="absolute inset-0 flex items-center justify-center pointer-events-none z-20"
+          onAnimationEnd={() => setHeartPopId(0)}
+        >
+          <span className="text-8xl text-reel drop-shadow-lg animate-heart-pop">♥</span>
+        </div>
+      )}
 
       {/* Explicit mute toggle — audioEnabled previously only ever turned on
           implicitly via the first tap-to-play (see togglePlayPause) with no
