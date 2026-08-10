@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
+import { standardLimiter } from './middleware/rateLimiter.js';
 import cors from 'cors';
 import path from 'path';
 import { createServer } from 'http';
@@ -52,6 +53,16 @@ import privacyRoutes from './routes/privacy.js';
 import artistRoutes from './routes/artists.js';
 
 const app = express();
+
+// Render (and most PaaS hosts) sit the app behind a reverse proxy — without
+// this, req.ip is always the proxy's own internal IP for every request, so
+// express-rate-limit would bucket every single user on this deployment
+// together under one shared limit instead of limiting per real client.
+// `1` means "trust exactly one hop" (Render's own edge proxy), which is
+// the correct value here; trusting an arbitrary number of hops would let a
+// client spoof X-Forwarded-For to fake a different IP on each request and
+// evade the limiter entirely.
+app.set('trust proxy', 1);
 
 // CORS: the sign-up "Failed to fetch" seen on mobile/ngrok is caused by the
 // frontend calling the wrong URL (see resolveApiBase() in frontend's
@@ -109,6 +120,15 @@ app.use(
 app.use('/api/v1/webhooks/stripe', webhookRoutes);
 
 app.use(express.json());
+
+// Standard rate limit for all API traffic (100 req/15min per IP — see
+// middleware/rateLimiter.js). Mounted once here, ahead of every route
+// below, rather than per-router, so nothing new added later silently ships
+// unlimited. The four auth endpoints called out in the security review
+// (login, forgot-password, reset-password, change-password) layer the
+// much stricter authLimiter on top of this in routes/auth.js — this one
+// alone would be far too loose for those.
+app.use('/api/v1', standardLimiter);
 
 // Serve transcoded HLS files directly (self-hosted MVP).
 // Swap for a CDN URL once you move to a managed storage service.

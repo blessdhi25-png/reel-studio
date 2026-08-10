@@ -7,6 +7,8 @@ import { isBlocked } from './privacy.js';
 import { optionalAuth } from '../middleware/auth.js';
 import { getOnlineUserIds } from '../realtime/socket.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
+import { validate } from '../middleware/validate.js';
+import { updateProfileSchema } from '../schemas/user.js';
 
 const router = Router();
 const BASE_URL = process.env.BASE_URL || 'http://localhost:4000';
@@ -123,7 +125,7 @@ router.get('/:id', optionalAuth, asyncHandler(async (req, res) => {
   res.json({ ...user, totalLikes: likeSum._sum.likeCount || 0, blockedByMe });
 }));
 
-router.patch('/me', requireAuth, asyncHandler(async (req, res) => {
+router.patch('/me', requireAuth, validate(updateProfileSchema), asyncHandler(async (req, res) => {
   // bannerUrl was missing here before — the frontend's edit-profile page
   // sends it (for the rare case it's set as a plain URL rather than via
   // the file-upload route below), but Prisma only writes fields explicitly

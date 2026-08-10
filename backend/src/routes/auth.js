@@ -7,6 +7,15 @@ import prisma from '../config/db.js';
 import { sendMail } from '../config/mailer.js';
 import { requireAuth } from '../middleware/auth.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
+import { authLimiter } from '../middleware/rateLimiter.js';
+import { validate } from '../middleware/validate.js';
+import {
+  registerSchema,
+  loginSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
+  changePasswordSchema,
+} from '../schemas/auth.js';
 
 const router = Router();
 
@@ -130,7 +139,7 @@ async function sendVerificationCode(user) {
   });
 }
 
-router.post('/register', asyncHandler(async (req, res) => {
+router.post('/register', validate(registerSchema), asyncHandler(async (req, res) => {
   const { username, email, password, displayName } = req.body;
   if (!username || !email || !password) {
     return res.status(400).json({ error: 'username, email, and password are required' });
@@ -220,7 +229,7 @@ router.post('/resend-verification', asyncHandler(async (req, res) => {
   res.json({ ok: true });
 }));
 
-router.post('/login', asyncHandler(async (req, res) => {
+router.post('/login', authLimiter, validate(loginSchema), asyncHandler(async (req, res) => {
   try {
     const { email, password } = req.body;
     const user = await prisma.user.findUnique({ where: { email } });
@@ -446,7 +455,7 @@ router.get('/me', requireAuth, asyncHandler(async (req, res) => {
 // exists — a distinguishable response here (e.g. 404 for unknown emails)
 // would let an attacker enumerate which addresses have accounts on this
 // app, which is exactly what password-reset flows are commonly abused for.
-router.post('/forgot-password', asyncHandler(async (req, res) => {
+router.post('/forgot-password', authLimiter, validate(forgotPasswordSchema), asyncHandler(async (req, res) => {
   try {
     const { email } = req.body;
     const GENERIC_MESSAGE = {
@@ -501,7 +510,7 @@ router.post('/forgot-password', asyncHandler(async (req, res) => {
   }
 }));
 
-router.post('/reset-password', asyncHandler(async (req, res) => {
+router.post('/reset-password', authLimiter, validate(resetPasswordSchema), asyncHandler(async (req, res) => {
   try {
     const { token, newPassword } = req.body;
     if (!token || !newPassword) {
@@ -542,7 +551,7 @@ router.post('/reset-password', asyncHandler(async (req, res) => {
 // distinct from the logged-out forgot/reset pair above. Requires the
 // current password rather than just a valid session, so a hijacked/
 // left-open session alone isn't enough to lock the real owner out.
-router.post('/change-password', requireAuth, asyncHandler(async (req, res) => {
+router.post('/change-password', requireAuth, authLimiter, validate(changePasswordSchema), asyncHandler(async (req, res) => {
   try {
     const { currentPassword, newPassword, confirmPassword } = req.body;
 
