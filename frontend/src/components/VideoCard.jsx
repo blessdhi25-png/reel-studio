@@ -5,6 +5,7 @@ import { api } from '../lib/api';
 import CommentsPanel from './CommentsPanel';
 import ReportModal from './ReportModal';
 import ShareSheet from './ShareSheet';
+import { useOptimisticLike } from '../hooks/useOptimisticLike';
 
 // Whether the viewer has ever tapped a video (a real user gesture). Browsers
 // block autoplay-with-sound until one happens, so every clip starts muted
@@ -28,8 +29,7 @@ const VideoCard = forwardRef(function VideoCard(
 ) {
   const videoRef = useRef(null);
   const commentsRef = useRef(null);
-  const [liked, setLiked] = useState(Boolean(video.isLiked));
-  const [likeCount, setLikeCount] = useState(Number(video.likeCount || 0));
+  const { liked, likeCount, toggleLike } = useOptimisticLike(video.id, video.isLiked, video.likeCount);
   const [commentCount, setCommentCount] = useState(Number(video.commentCount || 0));
   const [showTip, setShowTip] = useState(false);
   const [showTipUnavailable, setShowTipUnavailable] = useState(false);
@@ -182,18 +182,6 @@ const VideoCard = forwardRef(function VideoCard(
     } else {
       el.pause();
       setPaused(true);
-    }
-  }
-
-  async function toggleLike() {
-    setLiked((prev) => !prev);
-    setLikeCount((c) => (liked ? c - 1 : c + 1));
-    try {
-      liked ? await api.unlikeVideo(video.id) : await api.likeVideo(video.id);
-    } catch {
-      // revert on failure
-      setLiked((prev) => !prev);
-      setLikeCount((c) => (liked ? c + 1 : c - 1));
     }
   }
 

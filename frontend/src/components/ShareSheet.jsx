@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
+import { useToast } from '../context/ToastContext';
 
 function shareUrlFor(video) {
   if (typeof window === 'undefined') return '';
@@ -11,19 +12,14 @@ function shareUrlFor(video) {
 export default function ShareSheet({ video, onClose, onReport }) {
   const [conversations, setConversations] = useState([]);
   const [sentTo, setSentTo] = useState(new Set());
-  const [toast, setToast] = useState(null);
   const [showWhy, setShowWhy] = useState(false);
   const loggedIn = typeof window !== 'undefined' && !!localStorage.getItem('token');
+  const toast = useToast();
 
   useEffect(() => {
     if (!loggedIn) return;
     api.getConversations().then(setConversations).catch(() => {});
   }, [loggedIn]);
-
-  function flashToast(msg) {
-    setToast(msg);
-    setTimeout(() => setToast(null), 1800);
-  }
 
   function logShare() {
     api.logEvent(video.id, 'share').catch(() => {});
@@ -36,21 +32,21 @@ export default function ShareSheet({ video, onClose, onReport }) {
       await api.sendMessage(otherId, `Check this out: ${shareUrlFor(video)}`);
       setSentTo((prev) => new Set(prev).add(otherId));
       logShare();
-      flashToast(`Sent to @${convo.user?.username || 'user'}`);
+      toast.success(`Sent to @${convo.user?.username || 'user'}`);
     } catch {
-      flashToast("Couldn't send — try again");
+      toast.error("Couldn't send — try again");
     }
   }
 
   function copyLink() {
     navigator.clipboard.writeText(shareUrlFor(video)).then(() => {
       logShare();
-      flashToast('Link copied');
+      toast.success('Link copied to clipboard');
     });
   }
 
   function copyCaption() {
-    navigator.clipboard.writeText(video.caption || '').then(() => flashToast('Caption copied'));
+    navigator.clipboard.writeText(video.caption || '').then(() => toast.success('Caption copied'));
   }
 
   function openExternal(url) {
@@ -65,7 +61,7 @@ export default function ShareSheet({ video, onClose, onReport }) {
 
   function download() {
     if (!video.videoUrl) {
-      flashToast('Download not available for this post');
+      toast.error('Download not available for this post');
       return;
     }
     const a = document.createElement('a');
@@ -79,7 +75,7 @@ export default function ShareSheet({ video, onClose, onReport }) {
 
   function notInterested() {
     api.logEvent(video.id, 'skip', 0).catch(() => {});
-    flashToast("Got it — we'll show you less like this");
+    toast("Got it — we'll show you less like this");
     setTimeout(onClose, 700);
   }
 
@@ -92,7 +88,7 @@ export default function ShareSheet({ video, onClose, onReport }) {
     { label: 'SMS', icon: '💬', bg: 'bg-smoke/40', onClick: shareSMS },
     { label: 'Telegram', icon: '➤', bg: 'bg-[#229ED9]', onClick: () => openExternal(`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${text}`) },
     { label: 'Facebook', icon: 'f', bg: 'bg-[#1877F2]', onClick: () => openExternal(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`) },
-    { label: 'Repost', icon: '⟲', bg: 'bg-smoke/20', onClick: () => flashToast('Repost is coming soon') },
+    { label: 'Repost', icon: '⟲', bg: 'bg-smoke/20', onClick: () => toast('Repost is coming soon') },
     { label: 'Report', icon: '⚑', bg: 'bg-smoke/20', onClick: () => { onReport(); onClose(); } },
     { label: 'Not interested', icon: '𝗑', bg: 'bg-smoke/20', onClick: notInterested },
     { label: 'Download', icon: '⬇', bg: 'bg-smoke/20', onClick: download },
@@ -160,12 +156,6 @@ export default function ShareSheet({ video, onClose, onReport }) {
           </div>
         </div>
       </div>
-
-      {toast && (
-        <div className="absolute bottom-24 left-1/2 -translate-x-1/2 bg-ink text-bone font-body text-xs px-4 py-2 rounded-sprocket border border-smoke/20 z-40">
-          {toast}
-        </div>
-      )}
 
       {showWhy && (
         <div className="absolute inset-0 bg-ink/90 flex items-center justify-center z-40 px-6" onClick={() => setShowWhy(false)}>

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '../../../lib/api';
 import { useAuth } from '../../../context/AuthContext';
+import { useToast } from '../../../context/ToastContext';
 
 /* ------------------------------------------------------------------ */
 /* Icons                                                                */
@@ -112,7 +113,7 @@ export default function EditProfilePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
-  const [toast, setToast] = useState(null);
+  const toast = useToast();
 
   // Public profile
   const [avatarUrl, setAvatarUrl] = useState('');
@@ -178,11 +179,6 @@ export default function EditProfilePage() {
       .finally(() => setLoading(false));
   }, [router]);
 
-  function flashToast(message) {
-    setToast(message);
-    setTimeout(() => setToast(null), 2500);
-  }
-
   /* ---------------- Avatar upload (real API) ---------------- */
 
   async function handleAvatarSelect(e) {
@@ -233,7 +229,7 @@ export default function EditProfilePage() {
       URL.revokeObjectURL(localPreview);
       updateUser({ bannerUrl: uploaded });
     } catch (err) {
-      flashToast(err.message || 'Could not upload banner');
+      toast.error(err.message || 'Could not upload banner');
     } finally {
       setBannerUploading(false);
     }
@@ -274,22 +270,21 @@ export default function EditProfilePage() {
       const updated = await api.updateProfile({ displayName, avatarUrl, bannerUrl, bio });
       await api.updatePrivacySettings({ isPrivate, messagePrivacy });
 
-      const stored = JSON.parse(localStorage.getItem('user') || '{}');
-      localStorage.setItem(
-        'user',
-        JSON.stringify({
-          ...stored,
-          displayName: updated.displayName,
-          avatarUrl: updated.avatarUrl,
-          bannerUrl: updated.bannerUrl,
-        })
-      );
+      // Goes through AuthContext's updateUser() (rather than writing
+      // localStorage directly) so it's reactive — BottomNav's avatar and
+      // anywhere else reading useAuth().user update immediately instead of
+      // only after a reload re-reads localStorage from scratch.
+      updateUser({
+        displayName: updated.displayName,
+        avatarUrl: updated.avatarUrl,
+        bannerUrl: updated.bannerUrl,
+      });
 
       // Fields not yet backed by the API — persisted locally so the hub
       // stays consistent across reloads.
       saveLocalExtras(userId, { website, dob, allowDownloads, showOnlineStatus });
 
-      flashToast('Changes saved');
+      toast.success('Profile changes saved');
     } catch (err) {
       setError(err.message);
     } finally {
@@ -417,17 +412,6 @@ export default function EditProfilePage() {
           </button>
         </div>
       </div>
-
-      {/* Toast — sits above the footer bar above */}
-      {toast && (
-        <div
-          className="fixed left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-zinc-900 text-white text-sm font-medium px-4 py-3 rounded-xl border border-amber-500/40 shadow-2xl"
-          style={{ bottom: 'calc(9.5rem + env(safe-area-inset-bottom))' }}
-        >
-          <CheckCircleIcon className="text-amber-400" />
-          {toast}
-        </div>
-      )}
     </main>
   );
 }

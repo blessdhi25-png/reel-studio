@@ -1,6 +1,7 @@
 import './globals.css';
 import BottomNav from '../components/BottomNav';
 import { AuthProvider } from '../context/AuthContext';
+import { ToastProvider } from '../context/ToastContext';
 
 export const metadata = {
   title: 'Reel — short and long video, one feed',
@@ -20,12 +21,14 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en">
       <body>
-        {/* AuthProvider is a Client Component; Next.js's App Router allows a
-            Server Component layout like this one to render it as a wrapper
-            with no extra "use client" needed here. */}
+        {/* AuthProvider/ToastProvider are Client Components; Next.js's App
+            Router allows a Server Component layout like this one to render
+            them as wrappers with no extra "use client" needed here. */}
         <AuthProvider>
-          {children}
-          <BottomNav />
+          <ToastProvider>
+            {children}
+            <BottomNav />
+          </ToastProvider>
         </AuthProvider>
       </body>
     </html>

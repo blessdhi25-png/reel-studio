@@ -123,6 +123,17 @@ export default function InboxPage() {
         setNotifications(n);
         setConversations(c);
         setUnreadCount(u.count);
+
+        // Auto-mark-as-read on visiting the Inbox, not just via the manual
+        // button below — the person is looking at these right now, so
+        // there's no reason to still count them as unread the next time
+        // they check the bottom nav badge. The manual button stays too,
+        // since re-marking after new items arrive mid-visit (via the
+        // socket listener below) is still useful without leaving the page.
+        if (u.count > 0) {
+          api.markAllNotificationsRead().catch(() => {});
+          window.dispatchEvent(new Event('notifications:read'));
+        }
       })
       .finally(() => setLoading(false));
 
@@ -140,6 +151,13 @@ export default function InboxPage() {
     setUnreadCount(0);
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
     api.markAllNotificationsRead().catch(() => {});
+    // BottomNav keeps its own independent unreadCount (fetched on its own
+    // mount + incremented via its own socket listener) — it has no way to
+    // know this page just zeroed things out server-side without being told
+    // directly. A plain window CustomEvent is a lightweight way to notify
+    // it without introducing a shared notifications context just for this
+    // one signal.
+    window.dispatchEvent(new Event('notifications:read'));
   };
 
   const handleFollowToggle = async (actorId, isFollowing) => {

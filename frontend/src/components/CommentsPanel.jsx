@@ -2,6 +2,8 @@
 
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { api } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
 
 // Matches M:SS or MM:SS timestamps like "0:14" or "1:25" written in a
 // comment. Capped at 59 seconds in the SS group so we don't match things
@@ -58,6 +60,12 @@ const CommentsPanel = forwardRef(function CommentsPanel(
   const [posting, setPosting] = useState(false);
   const inputRef = useRef(null);
   const activeCommentRef = useRef(null);
+  const { user } = useAuth();
+  const toast = useToast();
+  // Plain incrementing counter for temp-comment ids — Date.now() would
+  // collide if handlePost fired twice within the same millisecond (e.g. a
+  // very fast double-submit before `posting` disables the button).
+  const tempIdRef = useRef(0);
 
   useImperativeHandle(ref, () => ({
     focusInput: () => inputRef.current?.focus(),
@@ -74,21 +82,42 @@ const CommentsPanel = forwardRef(function CommentsPanel(
 
   async function handlePost(e) {
     e.preventDefault();
-    if (!text.trim()) return;
+    const content = text.trim();
+    if (!content) return;
 
     if (!localStorage.getItem('token')) {
       window.location.href = '/login';
       return;
     }
 
+    // Optimistic append: show it in the list immediately using what we
+    // already know locally (the signed-in user's own identity, from
+    // AuthContext — no need to wait on the server to tell us our own
+    // username/avatar), then reconcile once the real request resolves.
+    const tempId = `temp-${tempIdRef.current++}`;
+    const optimisticComment = {
+      id: tempId,
+      content,
+      createdAt: new Date().toISOString(),
+      user: { id: user?.id, username: user?.username, avatarUrl: user?.avatarUrl },
+      pending: true,
+    };
+    setComments((prev) => [optimisticComment, ...prev]);
+    setText('');
+    onCountChange?.((c) => c + 1);
+
     setPosting(true);
     try {
-      const comment = await api.postComment(videoId, text.trim());
-      setComments((prev) => [comment, ...prev]);
-      setText('');
-      onCountChange?.((c) => c + 1);
+      const saved = await api.postComment(videoId, content);
+      // Swap the optimistic placeholder for the real server record (real
+      // id, server-assigned createdAt, etc.) rather than leaving the fake
+      // one in place — later features keying off comment.id (replies,
+      // deletion) need the real id.
+      setComments((prev) => prev.map((c) => (c.id === tempId ? saved : c)));
     } catch {
-      // silently ignore for MVP; could surface a toast here
+      setComments((prev) => prev.filter((c) => c.id !== tempId));
+      onCountChange?.((c) => Math.max(0, c - 1));
+      toast.error("Couldn't post your comment — try again.");
     } finally {
       setPosting(false);
     }
@@ -146,7 +175,7 @@ const CommentsPanel = forwardRef(function CommentsPanel(
               ref={isActive ? activeCommentRef : null}
               className={`flex gap-3 -mx-2 px-2 py-1.5 rounded-sprocket transition-colors ${
                 isActive ? 'bg-reel/10 ring-1 ring-reel/40' : ''
-              }`}
+              } ${c.pending ? 'opacity-60' : ''}`}
             >
               <div className="w-8 h-8 rounded-full bg-reel/20 flex items-center justify-center font-mono text-xs text-reel shrink-0">
                 {c.user?.username?.[0]?.toUpperCase() || '?'}
@@ -174,7 +203,7 @@ const CommentsPanel = forwardRef(function CommentsPanel(
                   )}
                 </p>
                 <p className="font-mono text-[10px] text-smoke mt-1">
-                  {new Date(c.createdAt).toLocaleDateString()}
+                  {c.pending ? 'Posting…' : new Date(c.createdAt).toLocaleDateString()}
                 </p>
               </div>
             </div>

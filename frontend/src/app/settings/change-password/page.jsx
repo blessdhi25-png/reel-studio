@@ -2,46 +2,44 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Lock, CheckCircle, AlertCircle } from 'lucide-react';
+import { ArrowLeft, AlertCircle } from 'lucide-react';
+import { api } from '../../../lib/api';
+import { useToast } from '../../../context/ToastContext';
 
 export default function ChangePasswordPage() {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [status, setStatus] = useState({ type: '', message: '' });
+  const [formError, setFormError] = useState(null);
   const [loading, setLoading] = useState(false);
+  const toast = useToast();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (newPassword !== confirmPassword) {
-      setStatus({ type: 'error', message: 'New passwords do not match.' });
+      setFormError('New passwords do not match.');
       return;
     }
 
     setLoading(true);
-    setStatus({ type: '', message: '' });
+    setFormError(null);
 
     try {
-      const token = localStorage.getItem('token');
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/api/auth/change-password`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ currentPassword, newPassword }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) throw new Error(data.message || 'Failed to update password');
-
-      setStatus({ type: 'success', message: 'Password updated successfully!' });
+      // Previously this hit fetch(`${NEXT_PUBLIC_API_URL}/api/auth/change-password`)
+      // directly — missing the /v1 prefix every other endpoint in this app
+      // goes through via api.js's API_BASE, and reimplementing its own
+      // token attachment instead of using the shared request() helper
+      // (which already has the cold-start-aware AUTH_TIMEOUT_MS this
+      // endpoint needs just as much as login/register do). That mismatch
+      // meant this form was hitting a URL that doesn't exist.
+      await api.changePassword(currentPassword, newPassword);
+      toast.success('Password updated');
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
     } catch (err) {
-      setStatus({ type: 'error', message: err.message });
+      setFormError(err.message);
+      toast.error(err.message || 'Could not update password');
     } finally {
       setLoading(false);
     }
@@ -61,16 +59,15 @@ export default function ChangePasswordPage() {
         Change Password
       </h1>
 
-      {status.message && (
-        <div
-          className={`p-3 rounded-xl mb-4 text-xs font-medium flex items-center gap-2 ${
-            status.type === 'success'
-              ? 'bg-emerald-950/60 border border-emerald-800 text-emerald-400'
-              : 'bg-rose-950/60 border border-rose-800 text-rose-400'
-          }`}
-        >
-          {status.type === 'success' ? <CheckCircle size={16} /> : <AlertCircle size={16} />}
-          <span>{status.message}</span>
+      {/* Success now surfaces as a toast (global system) rather than an
+          inline banner — inline stays only for the validation error that
+          blocks submission (mismatched passwords), since that needs to
+          persist next to the fields it refers to, not disappear after a
+          few seconds like a toast does. */}
+      {formError && (
+        <div className="p-3 rounded-xl mb-4 text-xs font-medium flex items-center gap-2 bg-rose-950/60 border border-rose-800 text-rose-400">
+          <AlertCircle size={16} />
+          <span>{formError}</span>
         </div>
       )}
 

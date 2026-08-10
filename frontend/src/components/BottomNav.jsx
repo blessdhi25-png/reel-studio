@@ -67,10 +67,18 @@ export default function BottomNav() {
     api.getUnreadCount().then((d) => setUnreadCount(d.count)).catch(() => {});
 
     const socket = getSocket();
-    if (!socket) return;
     const onNew = () => setUnreadCount((c) => c + 1);
-    socket.on('notification:new', onNew);
-    return () => socket.off('notification:new', onNew);
+    // Fired by the notifications page (on visit, and on manual "Mark all as
+    // read") — this component has no other way to know that happened,
+    // since it fetches/tracks unreadCount completely independently.
+    const onRead = () => setUnreadCount(0);
+
+    socket?.on('notification:new', onNew);
+    window.addEventListener('notifications:read', onRead);
+    return () => {
+      socket?.off('notification:new', onNew);
+      window.removeEventListener('notifications:read', onRead);
+    };
   }, [user]);
 
   if (HIDDEN_ON.includes(pathname)) return null;
