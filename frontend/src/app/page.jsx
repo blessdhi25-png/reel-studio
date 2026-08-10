@@ -43,6 +43,11 @@ export default function FeedPage() {
   const [nextCursor, setNextCursor] = useState(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
+  // True only until the very first getFeed() call settles — distinguishes
+  // "haven't heard back yet" from "heard back, and there really are zero
+  // videos," so the empty-state message doesn't flash for a moment on
+  // every load before the real feed arrives.
+  const [initialLoading, setInitialLoading] = useState(true);
   const [filter, setFilter] = useState(null); // null = mixed, 'short', 'long'
   const [circle, setCircle] = useState(null); // null = all circles
   const [circles, setCircles] = useState([]);
@@ -121,6 +126,7 @@ export default function FeedPage() {
   }, []);
 
   useEffect(() => {
+    setInitialLoading(true);
     api
       .getFeed(filter, undefined, tuningWeights, circle)
       .then((data) => {
@@ -167,7 +173,8 @@ export default function FeedPage() {
         // carrying over whatever cursor the previous query was on.
         setNextCursor(data.nextCursor || null);
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setInitialLoading(false));
   }, [filter, tuningWeights, circle]);
 
   // Infinite scroll: previously the feed fetched exactly one batch and
@@ -485,7 +492,12 @@ export default function FeedPage() {
                 <FeedSkeletonCard />
               </div>
             )}
-            {videos.length === 0 && (
+            {videos.length === 0 && initialLoading && (
+              <div className="h-dvh w-full snap-start">
+                <FeedSkeletonCard />
+              </div>
+            )}
+            {videos.length === 0 && !initialLoading && (
               <div className="h-dvh flex items-center justify-center">
                 <p className="font-body text-smoke">No videos yet — be the first to post.</p>
               </div>
@@ -521,7 +533,12 @@ export default function FeedPage() {
                     <FeedSkeletonCard />
                   </div>
                 )}
-                {videos.length === 0 && (
+                {videos.length === 0 && initialLoading && (
+                  <div className="h-full w-full snap-start">
+                    <FeedSkeletonCard />
+                  </div>
+                )}
+                {videos.length === 0 && !initialLoading && (
                   <div className="h-full flex items-center justify-center">
                     <p className="font-body text-smoke text-center px-6">No videos yet — be the first to post.</p>
                   </div>
