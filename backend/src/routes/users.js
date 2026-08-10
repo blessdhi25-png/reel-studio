@@ -11,7 +11,6 @@ import { validate } from '../middleware/validate.js';
 import { updateProfileSchema } from '../schemas/user.js';
 
 const router = Router();
-const BASE_URL = process.env.BASE_URL || 'http://localhost:4000';
 
 // Every handler below is wrapped in asyncHandler(...) — see
 // utils/asyncHandler.js for why: on Express 4, a rejected promise inside a
@@ -143,7 +142,10 @@ router.patch('/me', requireAuth, validate(updateProfileSchema), asyncHandler(asy
 router.post('/me/avatar', requireAuth, uploadAvatar.single('avatar'), asyncHandler(async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No image uploaded' });
 
-  const avatarUrl = `${BASE_URL}/uploads/avatars/${req.file.filename}`;
+  // req.file.path is Cloudinary's permanent secure CDN URL (see
+  // utils/upload.js) — no longer a filename served from this server's own
+  // disk, so it doesn't need BASE_URL prepended.
+  const avatarUrl = req.file.path;
   const user = await prisma.user.update({
     where: { id: req.userId },
     data: { avatarUrl },
@@ -157,7 +159,7 @@ router.post('/me/avatar', requireAuth, uploadAvatar.single('avatar'), asyncHandl
 router.post('/me/banner', requireAuth, uploadBanner.single('banner'), asyncHandler(async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No image uploaded' });
 
-  const bannerUrl = `${BASE_URL}/uploads/banners/${req.file.filename}`;
+  const bannerUrl = req.file.path; // Cloudinary secure CDN URL — see note above
   const user = await prisma.user.update({
     where: { id: req.userId },
     data: { bannerUrl },
