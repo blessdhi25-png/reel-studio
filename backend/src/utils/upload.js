@@ -1,50 +1,16 @@
 import multer from 'multer';
-import path from 'path';
-import fs from 'fs';
+import { CloudinaryStorage } from 'multer-storage-cloudinary';
+import cloudinary from '../config/cloudinary.js';
 
-// A bare relative path like './uploads' resolves against process.cwd() at
-// whatever moment Node happened to be started from — which is usually fine
-// locally, but on some hosts/process managers cwd isn't guaranteed to be
-// the project root. Anchoring explicitly to process.cwd() here makes the
-// resolution obvious and consistent instead of implicit, and matches what
-// server.js uses when mounting the /uploads static route (see server.js).
-const uploadDir = process.env.UPLOAD_DIR
-  ? path.resolve(process.env.UPLOAD_DIR)
-  : path.join(process.cwd(), 'uploads');
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, uploadDir),
-  filename: (_req, file, cb) => {
-    const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-    cb(null, `${unique}${path.extname(file.originalname)}`);
-  },
-});
-
-function fileFilter(_req, file, cb) {
-  const allowed = ['video/mp4', 'video/quicktime', 'video/webm'];
-  if (allowed.includes(file.mimetype)) cb(null, true);
-  else cb(new Error('Unsupported video format'));
-}
-
-export const upload = multer({
-  storage,
-  fileFilter,
-  limits: { fileSize: 2 * 1024 * 1024 * 1024 }, // 2GB cap
-});
-
-// Separate config for profile photos — its own subdirectory, image mimetypes
-// only, and a much smaller size cap than raw video uploads.
-const avatarDir = path.join(uploadDir, 'avatars');
-if (!fs.existsSync(avatarDir)) fs.mkdirSync(avatarDir, { recursive: true });
-
-const avatarStorage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, avatarDir),
-  filename: (req, file, cb) => {
-    const unique = `${req.userId}-${Date.now()}`;
-    cb(null, `${unique}${path.extname(file.originalname) || '.jpg'}`);
-  },
-});
+// All four upload types below (raw video, avatars, banners, artist tracks)
+// used to write to local disk via multer.diskStorage(). That broke the
+// moment this app moved onto Vercel/Render, since neither guarantees the
+// filesystem survives a redeploy — see config/cloudinary.js for the full
+// explanation. Every one of these now streams straight to Cloudinary
+// instead via multer-storage-cloudinary, which never touches this server's
+// disk; what comes back on `req.file` is a permanent HTTPS CDN URL
+// (`req.file.path`) rather than a local filename, and `req.file.filename`
+// is Cloudinary's public_id rather than a name on disk.
 
 function imageFileFilter(_req, file, cb) {
   const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
@@ -52,24 +18,69 @@ function imageFileFilter(_req, file, cb) {
   else cb(new Error('Unsupported image format — use JPG, PNG, WEBP, or GIF'));
 }
 
+function videoFileFilter(_req, file, cb) {
+  const allowed = ['video/mp4', 'video/quicktime', 'video/webm'];
+  if (allowed.includes(file.mimetype)) cb(null, true);
+  else cb(new Error('Unsupported video format'));
+}
+
+function audioFileFilter(_req, file, cb) {
+  const allowed = ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/mp4', 'audio/aac'];
+  if (allowed.includes(file.mimetype)) cb(null, true);
+  else cb(new Error('Unsupported audio format — use MP3, WAV, M4A, or AAC'));
+}
+
+// Raw video uploads. resource_type: 'video' is required — without it
+// Cloudinary tries to run the file through its image pipeline and rejects
+// it. chunk_size streams the upload in pieces instead of buffering the
+// whole file in memory first, which matters at the 2GB cap below.
+// req.userId is set by requireAuth, which runs before multer in every
+// route this is mounted on (see routes/videos.js).
+const videoStorage = new CloudinaryStorage({
+  cloudinary,
+  params: async (req) => ({
+    folder: 'reel/videos',
+    resource_type: 'video',
+    public_id: `${req.userId}-${Date.now()}`,
+    chunk_size: 6 * 1024 * 1024,
+  }),
+});
+
+export const upload = multer({
+  storage: videoStorage,
+  fileFilter: videoFileFilter,
+  limits: { fileSize: 2 * 1024 * 1024 * 1024 }, // 2GB cap
+});
+
+// Profile photos. The frontend now compresses/resizes these client-side
+// before they're ever sent (see lib/imageCompression.js) — the
+// transformation below is a server-side backstop for anyone hitting this
+// endpoint directly, not the primary size control.
+const avatarStorage = new CloudinaryStorage({
+  cloudinary,
+  params: async (req) => ({
+    folder: 'reel/avatars',
+    resource_type: 'image',
+    public_id: `${req.userId}-${Date.now()}`,
+    transformation: [{ width: 1200, height: 1200, crop: 'limit' }],
+  }),
+});
+
 export const uploadAvatar = multer({
   storage: avatarStorage,
   fileFilter: imageFileFilter,
   limits: { fileSize: 8 * 1024 * 1024 }, // 8MB cap
 });
 
-// Cover/profile banners — same image-type restriction as avatars, its own
-// subdirectory, and a slightly bigger cap since banners are typically wider
-// and higher-resolution than a profile photo.
-const bannerDir = path.join(uploadDir, 'banners');
-if (!fs.existsSync(bannerDir)) fs.mkdirSync(bannerDir, { recursive: true });
-
-const bannerStorage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, bannerDir),
-  filename: (req, file, cb) => {
-    const unique = `${req.userId}-${Date.now()}`;
-    cb(null, `${unique}${path.extname(file.originalname) || '.jpg'}`);
-  },
+// Cover/profile banners — same treatment as avatars, separate folder.
+const bannerStorage = new CloudinaryStorage({
+  cloudinary,
+  params: async (req) => ({
+    folder: 'reel/banners',
+    resource_type: 'image',
+    public_id: `${req.userId}-${Date.now()}`,
+    transformation: [{ width: 1200, height: 1200, crop: 'limit' }],
+  }),
 });
 
 export const uploadBanner = multer({
@@ -78,23 +89,16 @@ export const uploadBanner = multer({
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB cap
 });
 
-// Audio tracks distributed by verified artists for other creators to use.
-const trackDir = path.join(uploadDir, 'tracks');
-if (!fs.existsSync(trackDir)) fs.mkdirSync(trackDir, { recursive: true });
-
-const trackStorage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, trackDir),
-  filename: (req, file, cb) => {
-    const unique = `${req.userId}-${Date.now()}`;
-    cb(null, `${unique}${path.extname(file.originalname) || '.mp3'}`);
-  },
+// Audio tracks distributed by verified artists. Cloudinary has no distinct
+// "audio" resource type — 'video' covers audio-only files too.
+const trackStorage = new CloudinaryStorage({
+  cloudinary,
+  params: async (req) => ({
+    folder: 'reel/tracks',
+    resource_type: 'video',
+    public_id: `${req.userId}-${Date.now()}`,
+  }),
 });
-
-function audioFileFilter(_req, file, cb) {
-  const allowed = ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/mp4', 'audio/aac'];
-  if (allowed.includes(file.mimetype)) cb(null, true);
-  else cb(new Error('Unsupported audio format — use MP3, WAV, M4A, or AAC'));
-}
 
 export const uploadTrack = multer({
   storage: trackStorage,
