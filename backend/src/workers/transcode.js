@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import ffmpeg from 'fluent-ffmpeg';
 import prisma from '../config/db.js';
+import cloudinary from '../config/cloudinary.js';
 
 const HLS_DIR = process.env.HLS_DIR || './storage/hls';
 const THUMBNAILS_DIR = process.env.THUMBNAILS_DIR || './storage/thumbnails';
@@ -63,10 +64,22 @@ function getDuration(inputPath) {
 async function processOne(video) {
   console.log(`[worker] transcoding video ${video.id}`);
   try {
+    // video.rawPath is now Cloudinary's secure CDN URL rather than a local
+    // path (routes/videos.js switched the raw upload to Cloudinary storage
+    // — see utils/upload.js). ffmpeg/ffprobe both accept an https:// URL
+    // directly as input, so nothing else below needed to change for that.
     const outputDir = path.join(HLS_DIR, video.id);
     const duration = await getDuration(video.rawPath);
     await transcodeToHLS(video.rawPath, outputDir);
     const videoUrl = `${BASE_URL}/hls/${video.id}/master.m3u8`;
+    // NOTE: the HLS output itself (playlist + .ts segments) is still
+    // written to local disk and served from here — that's a separate,
+    // larger piece of ephemeral-storage work than this pass covers (moving
+    // it means either mounting a persistent volume for HLS_DIR, or
+    // replacing this whole ffmpeg step with Cloudinary's own adaptive
+    // streaming, which can generate HLS automatically from a single
+    // uploaded video). Flagging it here so it doesn't get mistaken for
+    // already being covered by the avatar/banner/track/raw-video fix.
 
     // Thumbnail extraction is best-effort: a failure here (corrupt frame at
     // the 1s mark, ffmpeg missing a codec, etc.) should never stop the video
@@ -75,7 +88,18 @@ async function processOne(video) {
     let thumbnailUrl = null;
     try {
       const filename = await extractThumbnail(video.rawPath, THUMBNAILS_DIR, video.id);
-      thumbnailUrl = `${BASE_URL}/thumbnails/${filename}`;
+      const localThumbPath = path.join(THUMBNAILS_DIR, filename);
+      // Uploaded to Cloudinary rather than served from THUMBNAILS_DIR —
+      // this worker's local disk is exactly as ephemeral as the API
+      // server's (see utils/upload.js). The local file is a scratch copy
+      // ffmpeg needs to write to; once Cloudinary has it, it's deleted.
+      const result = await cloudinary.uploader.upload(localThumbPath, {
+        folder: 'reel/thumbnails',
+        public_id: video.id,
+        overwrite: true,
+      });
+      thumbnailUrl = result.secure_url;
+      fs.unlink(localThumbPath, () => {}); // best-effort cleanup; Cloudinary upload already succeeded regardless
     } catch (thumbErr) {
       console.warn(`[worker] thumbnail generation failed for ${video.id} (video will still publish):`, thumbErr.message);
     }
