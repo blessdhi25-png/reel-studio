@@ -27,3 +27,24 @@ body {
 .animate-float {
   animation: float 5s ease-in-out infinite;
 }
+
+/* Toast enter animation — small upward slide + fade, matching the .animate-float
+   pattern above rather than an arbitrary untracked Tailwind value. */
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Double-tap-to-like heart — pops up and slightly out, then fades, matching
+   the Instagram/TikTok double-tap gesture viewers already expect. */
+@keyframes heart-pop {
+  0% { opacity: 0; transform: scale(0.4); }
+  15% { opacity: 1; transform: scale(1.15); }
+  30% { transform: scale(0.95); }
+  40% { transform: scale(1); }
+  75% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.05); }
+}
+.animate-heart-pop {
+  animation: heart-pop 0.9s ease-out forwards;
+}
