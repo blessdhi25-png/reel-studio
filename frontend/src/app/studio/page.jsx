@@ -154,8 +154,8 @@ export default function StudioPage() {
           <section>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-white">Analytics</h2>
-              <a href="#video-performance" className="text-xs text-amber-400 hover:text-amber-300">
-                View all ›
+              <a href="/analytics" className="text-xs text-amber-400 hover:text-amber-300">
+                Full analytics ›
               </a>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

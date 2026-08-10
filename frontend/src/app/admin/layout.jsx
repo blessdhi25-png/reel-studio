@@ -6,6 +6,7 @@ import { api } from '../../lib/api';
 
 const NAV_ITEMS = [
   { href: '/admin', label: 'Overview', icon: '📊' },
+  { href: '/admin/moderation', label: 'Moderation Queue', icon: '🎬' },
   { href: '/admin/reports', label: 'Moderation Reports', icon: '🚩' },
   { href: '/admin/users', label: 'User Management', icon: '👥' },
   { href: '/admin/videos', label: 'Video Queue', icon: '🎥' },
