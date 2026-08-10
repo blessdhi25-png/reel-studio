@@ -1,15 +1,20 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, MoreHorizontal, Settings, Menu as MenuIcon, Share2, Home, Lock } from 'lucide-react';
 import { api, getStoredUser } from '../../../lib/api';
+import { useAuth } from '../../../context/AuthContext';
+import { useToast } from '../../../context/ToastContext';
 import ReportModal from '../../../components/ReportModal';
+import ConfirmModal from '../../../components/ConfirmModal';
 
 export default function ProfilePage({ params }) {
   const { id } = params;
   const router = useRouter();
+  const { logout } = useAuth();
+  const toast = useToast();
 
   const [user, setUser] = useState(null);
   const [videos, setVideos] = useState([]);
@@ -22,6 +27,20 @@ export default function ProfilePage({ params }) {
   const [activeTab, setActiveTab] = useState('videos');
   const [showMenu, setShowMenu] = useState(false);
   const [showReport, setShowReport] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const menuRef = useRef(null);
+
+  // Close the ⋯ dropdown on an outside click, not just its own options.
+  useEffect(() => {
+    if (!showMenu) return;
+    function onClickOutside(e) {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setShowMenu(false);
+      }
+    }
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, [showMenu]);
 
   useEffect(() => {
     const storedUser = getStoredUser();
@@ -65,11 +84,15 @@ export default function ProfilePage({ params }) {
     }
   }
 
-  function handleLogout() {
-    if (!confirm('Are you sure you want to log out?')) return;
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    window.location.href = '/login';
+  function confirmLogout() {
+    setShowLogoutConfirm(false);
+    // logout() (context/AuthContext.jsx) clears localStorage AND the live
+    // Context state in one call — a raw localStorage.removeItem() here
+    // would leave every other useAuth() consumer on this page (BottomNav,
+    // etc.) still thinking there's a signed-in user until a full reload.
+    logout();
+    toast.success('Logged out');
+    router.push('/login');
   }
 
   const activeVideos = activeTab === 'videos' ? videos : activeTab === 'saved' ? savedVideos : likedVideos;
@@ -106,32 +129,36 @@ export default function ProfilePage({ params }) {
             <span>Feed</span>
           </Link>
 
-          <div className="flex items-center gap-2 relative">
-            {isSelf ? (
-              <button
-                onClick={handleLogout}
-                className="px-4 py-1.5 rounded-xl border border-zinc-800 bg-black/40 text-rose-400 text-xs hover:bg-zinc-800 transition-colors"
-              >
-                Log out
-              </button>
-            ) : null}
+          <div className="flex items-center gap-2 relative" ref={menuRef}>
             <button
               onClick={() => setShowMenu((v) => !v)}
               className="p-1 text-zinc-200 hover:text-white bg-black/40 rounded-lg"
             >
               <MoreHorizontal size={20} />
             </button>
-            {showMenu && !isSelf && (
+            {showMenu && (
               <div className="absolute right-0 top-9 bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden z-10 w-40">
-                <button
-                  onClick={() => {
-                    setShowMenu(false);
-                    setShowReport(true);
-                  }}
-                  className="w-full text-left px-4 py-2.5 text-xs text-zinc-200 hover:bg-zinc-800"
-                >
-                  Report
-                </button>
+                {isSelf ? (
+                  <button
+                    onClick={() => {
+                      setShowMenu(false);
+                      setShowLogoutConfirm(true);
+                    }}
+                    className="w-full text-left px-4 py-2.5 text-xs text-rose-400 hover:bg-zinc-800"
+                  >
+                    Log out
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setShowMenu(false);
+                      setShowReport(true);
+                    }}
+                    className="w-full text-left px-4 py-2.5 text-xs text-zinc-200 hover:bg-zinc-800"
+                  >
+                    Report
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -139,9 +166,14 @@ export default function ProfilePage({ params }) {
       </div>
 
       <div className="px-4 pt-2">
-        {/* User Identity */}
-        <div className="flex items-center gap-4 mb-3 -mt-10">
-          <div className="w-20 h-20 rounded-full border-2 border-[#0a090e] bg-zinc-900 flex items-center justify-center shrink-0 overflow-hidden">
+        {/* User Identity — the avatar wrapper is a sibling of (not nested
+            inside) the banner div above, with its own relative + negative
+            top margin, so it stacks above the banner regardless of the
+            banner's own overflow-hidden. z-10 keeps it above the banner's
+            image layer; border-4 in the page background color is what
+            visually separates the circle from the banner photo behind it. */}
+        <div className="relative z-10 -mt-12 mb-3 inline-block">
+          <div className="w-20 h-20 rounded-full border-4 border-[#0a090e] bg-zinc-900 flex items-center justify-center shrink-0 overflow-hidden">
             {user.avatarUrl ? (
               <img src={user.avatarUrl} alt="" className="w-full h-full object-cover" />
             ) : (
@@ -324,6 +356,16 @@ export default function ProfilePage({ params }) {
 
       {showReport && (
         <ReportModal targetType="user" targetId={user.id} onClose={() => setShowReport(false)} />
+      )}
+
+      {showLogoutConfirm && (
+        <ConfirmModal
+          title="Log out?"
+          message="You'll need to sign back in to access your account."
+          confirmLabel="Log out"
+          onConfirm={confirmLogout}
+          onCancel={() => setShowLogoutConfirm(false)}
+        />
       )}
     </div>
   );
