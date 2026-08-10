@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { api } from '../../../lib/api';
 import { useAuth } from '../../../context/AuthContext';
 import { useToast } from '../../../context/ToastContext';
+import { compressImage } from '../../../lib/imageCompression';
 
 /* ------------------------------------------------------------------ */
 /* Icons                                                                */
@@ -192,8 +193,12 @@ export default function EditProfilePage() {
     setAvatarUrl(localPreview);
 
     try {
+      // Resize/re-encode client-side first — keeps the upload small (and
+      // quick on slow networks) without waiting on a server round trip to
+      // find out the file was 8MB straight off a phone camera.
+      const compressed = await compressImage(file, { maxDimension: 1200, quality: 0.82 });
       const body = new FormData();
-      body.append('avatar', file);
+      body.append('avatar', compressed);
       const { avatarUrl: uploaded } = await api.uploadAvatar(body);
       setAvatarUrl(uploaded);
       URL.revokeObjectURL(localPreview);
@@ -222,8 +227,9 @@ export default function EditProfilePage() {
     setBannerUrl(localPreview);
 
     try {
+      const compressed = await compressImage(file, { maxDimension: 1200, quality: 0.82 });
       const body = new FormData();
-      body.append('banner', file);
+      body.append('banner', compressed);
       const { bannerUrl: uploaded } = await api.uploadBanner(body);
       setBannerUrl(uploaded);
       URL.revokeObjectURL(localPreview);
