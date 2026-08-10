@@ -23,7 +23,7 @@ function formatTimecode(seconds = 0) {
 }
 
 const VideoCard = forwardRef(function VideoCard(
-  { video, isActive, focusMode = false, onToggleFollow, onActiveTimeUpdate },
+  { video, isActive, shouldLoad = true, focusMode = false, onToggleFollow, onActiveTimeUpdate },
   ref
 ) {
   const videoRef = useRef(null);
@@ -71,6 +71,20 @@ const VideoCard = forwardRef(function VideoCard(
     const el = videoRef.current;
     if (!el || !video.videoUrl) return;
 
+    // Previously every VideoCard set a real src the moment it mounted,
+    // regardless of isActive — meaning every video in the feed (the whole
+    // fetched batch, and now every page appended by infinite scroll) would
+    // start downloading/buffering at once. shouldLoad restricts a real src
+    // to a small window around the active card (see page.jsx, which passes
+    // true only for |i - activeIndex| <= 1); everything else gets its src
+    // cleared and, for HLS, its instance destroyed so decoded buffers don't
+    // pile up as the feed grows.
+    if (!shouldLoad) {
+      el.removeAttribute('src');
+      el.load();
+      return;
+    }
+
     let hls;
     if (video.videoUrl.endsWith('.m3u8') && !el.canPlayType('application/vnd.apple.mpegurl')) {
       import('hls.js').then(({ default: Hls }) => {
@@ -85,7 +99,7 @@ const VideoCard = forwardRef(function VideoCard(
     }
 
     return () => hls?.destroy();
-  }, [video.videoUrl]);
+  }, [video.videoUrl, shouldLoad]);
 
   useEffect(() => {
     const el = videoRef.current;
@@ -243,6 +257,37 @@ const VideoCard = forwardRef(function VideoCard(
         className="h-full w-full max-w-md object-cover mx-auto cursor-pointer"
         poster={video.thumbnailUrl}
       />
+
+      {/* Explicit mute toggle — audioEnabled previously only ever turned on
+          implicitly via the first tap-to-play (see togglePlayPause) with no
+          visible control and no way to mute again afterward. */}
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setAudioEnabled((prev) => {
+            const next = !prev;
+            window.localStorage.setItem('feedAudioEnabled', String(next));
+            return next;
+          });
+        }}
+        className="absolute top-4 right-4 z-10 w-9 h-9 rounded-full bg-ink/50 flex items-center justify-center text-bone"
+        aria-label={audioEnabled ? 'Mute' : 'Unmute'}
+      >
+        {audioEnabled ? (
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+            <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+            <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+          </svg>
+        ) : (
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+            <line x1="23" y1="9" x2="17" y2="15" />
+            <line x1="17" y1="9" x2="23" y2="15" />
+          </svg>
+        )}
+      </button>
 
       {/* Paused indicator — appears when the viewer taps the video to pause it */}
       {paused && (
