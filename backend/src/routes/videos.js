@@ -26,16 +26,15 @@ router.post('/', requireAuth, upload.single('video'), async (req, res) => {
     if (track) validTrackId = track.id;
   }
 
-  // The raw upload is immediately servable from /uploads (see the static
-  // route in server.js) even before the transcode worker finishes and calls
-  // POST /:id/complete with the real HLS videoUrl — returning this now lets
-  // the frontend show the just-posted clip right away instead of waiting on
-  // background processing. APP_URL is preferred when set (the deployed
-  // backend origin, e.g. https://reel-backend-a2sz.onrender.com); falling
-  // back to building it from the incoming request works for local dev
-  // without needing APP_URL set at all.
-  const appOrigin = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
-  const rawUrl = `${appOrigin}/uploads/${req.file.filename}`;
+  // req.file.path is Cloudinary's permanent secure CDN URL (see
+  // utils/upload.js) — the raw file was never written to this server's own
+  // disk, so this no longer needs building from APP_URL/req.host. It's
+  // immediately watchable this way even before the transcode worker
+  // finishes and calls POST /:id/complete with the real HLS videoUrl, and
+  // it's what the worker reads from (rawPath, below) as ffmpeg's input —
+  // ffmpeg accepts an https:// URL directly, so nothing in
+  // workers/transcode.js needed to change for this.
+  const rawUrl = req.file.path;
 
   // This app has no transcode worker running in local dev (nothing ever
   // calls POST /:id/complete), so leaving status as 'processing' meant
