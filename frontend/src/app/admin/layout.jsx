@@ -56,7 +56,7 @@ export default function AdminLayout({ children }) {
 
   if (status === 'checking') {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-zinc-950">
+      <main className="min-h-screen flex items-center justify-center bg-[#0a090e]">
         <p className="font-body text-zinc-400">Checking access…</p>
       </main>
     );
@@ -64,7 +64,7 @@ export default function AdminLayout({ children }) {
 
   if (status === 'denied') {
     return (
-      <main className="min-h-screen flex items-center justify-center px-6 text-center bg-zinc-950">
+      <main className="min-h-screen flex items-center justify-center px-6 text-center bg-[#0a090e]">
         <div>
           <p className="font-display text-3xl text-white tracking-wide mb-2">Not authorized</p>
           <p className="font-body text-zinc-400 text-sm mb-6">
@@ -78,10 +78,12 @@ export default function AdminLayout({ children }) {
     );
   }
 
+  const activeItem = NAV_ITEMS.find((item) => isActiveHref(pathname, item.href));
+
   return (
-    <div className="min-h-screen bg-zinc-950 flex">
+    <div className="min-h-screen bg-[#0a090e] flex">
       {/* Persistent sidebar — desktop only, collapses to a horizontal scroller below md */}
-      <aside className="hidden md:flex w-60 shrink-0 flex-col border-r border-zinc-800 bg-zinc-950">
+      <aside className="hidden md:flex w-60 shrink-0 flex-col border-r border-zinc-800 bg-[#0a090e]">
         <div className="px-5 py-5 border-b border-zinc-800">
           <p className="font-display text-lg text-white tracking-wide">Trust &amp; Safety</p>
           <p className="font-mono text-[10px] text-zinc-500 uppercase tracking-widest mt-0.5">
@@ -118,9 +120,23 @@ export default function AdminLayout({ children }) {
       </aside>
 
       <div className="flex-1 min-w-0 flex flex-col">
-        {/* Top bar — status indicators, global search, quick exit */}
-        <header className="h-16 shrink-0 border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-md flex items-center gap-3 md:gap-5 px-4 md:px-6">
+        {/* Top bar — breadcrumb, status indicators, global search, quick exit */}
+        <header className="h-16 shrink-0 border-b border-zinc-800 bg-[#0a090e]/80 backdrop-blur-md flex items-center gap-3 md:gap-5 px-4 md:px-6">
           <span className="md:hidden font-display text-base text-white shrink-0">T&amp;S</span>
+
+          {/* Breadcrumb — desktop only; the mobile horizontal nav below
+              already communicates "where am I" at that width. */}
+          <nav aria-label="Breadcrumb" className="hidden md:flex items-center gap-1.5 font-mono text-xs shrink-0">
+            <a href="/admin" className="text-zinc-500 hover:text-zinc-300">
+              Admin
+            </a>
+            {activeItem && activeItem.href !== '/admin' && (
+              <>
+                <span className="text-zinc-700">/</span>
+                <span className="text-zinc-300">{activeItem.label}</span>
+              </>
+            )}
+          </nav>
 
           <form onSubmit={handleSearch} className="flex-1 max-w-sm">
             <input
@@ -165,7 +181,7 @@ export default function AdminLayout({ children }) {
         </header>
 
         {/* Mobile nav */}
-        <nav className="md:hidden flex gap-2 overflow-x-auto px-4 py-3 border-b border-zinc-800 bg-zinc-950">
+        <nav className="md:hidden flex gap-2 overflow-x-auto px-4 py-3 border-b border-zinc-800 bg-[#0a090e]">
           {NAV_ITEMS.map((item) => {
             const active = isActiveHref(pathname, item.href);
             return (
@@ -184,14 +200,14 @@ export default function AdminLayout({ children }) {
         </nav>
 
         {/* Mobile-only status strip, since the top bar hides it below lg */}
-        <div className="lg:hidden flex items-center gap-4 px-4 py-2 border-b border-zinc-800 bg-zinc-950 font-mono text-[10px] uppercase tracking-widest">
+        <div className="lg:hidden flex items-center gap-4 px-4 py-2 border-b border-zinc-800 bg-[#0a090e] font-mono text-[10px] uppercase tracking-widest">
           <span className={sysStatus?.queueStatus === 'healthy' ? 'text-emerald-400' : 'text-red-400'}>
             Queue: {sysStatus ? (sysStatus.queueStatus === 'healthy' ? 'Healthy' : 'Backlogged') : '—'}
           </span>
           <span className="text-zinc-500">Mods: {sysStatus?.moderatorCount ?? '—'}</span>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6 pb-28 md:pb-6">{children}</div>
+        <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6">{children}</div>
       </div>
     </div>
   );
