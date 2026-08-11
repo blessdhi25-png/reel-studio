@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../lib/api';
+import { LoadingSpinner } from '../../components/LoadingScreen';
 
 const TABS = [
   { value: 'following', label: 'Following' },
@@ -317,7 +318,7 @@ export default function FriendsPage() {
           </div>
 
           {/* Content */}
-          {loading && <p className="font-body text-zinc-500 text-sm">Loading…</p>}
+          {loading && <LoadingSpinner label="Loading…" />}
 
           {!loading && tab === 'suggested' && (
             <SuggestedGrid

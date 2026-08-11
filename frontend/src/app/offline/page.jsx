@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '../../lib/api';
 import {
+import { LoadingSpinner } from '../../components/LoadingScreen';
   isOfflineSupported,
   getOfflineVideos,
   isDownloaded,
@@ -109,7 +110,7 @@ export default function OfflineVideosPage() {
       )}
 
       <Section title="Saved videos">
-        {loading && <p className="font-body text-smoke text-sm">Loading…</p>}
+        {loading && <LoadingSpinner label="Loading…" />}
         {!loading && bookmarks.length === 0 && (
           <p className="font-body text-smoke text-sm">
             Bookmark videos from the feed to download them for offline viewing.

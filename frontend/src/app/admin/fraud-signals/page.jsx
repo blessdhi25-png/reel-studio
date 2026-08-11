@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '../../../lib/api';
+import { LoadingSpinner } from '../../../components/LoadingScreen';
 
 function Section({ title, items, renderRow, empty }) {
   return (
@@ -24,7 +25,7 @@ export default function FraudSignalsPage() {
     api.adminGetFraudSignals().then(setData).finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <p className="font-body text-smoke text-sm">Loading…</p>;
+  if (loading) return <LoadingSpinner label="Loading…" />;
   if (!data) return null;
 
   return (

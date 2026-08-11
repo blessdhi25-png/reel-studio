@@ -4,6 +4,7 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState }
 import { api } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
+import { LoadingSpinner } from './LoadingScreen';
 
 // Matches M:SS or MM:SS timestamps like "0:14" or "1:25" written in a
 // comment. Capped at 59 seconds in the SS group so we don't match things
@@ -155,7 +156,7 @@ const CommentsPanel = forwardRef(function CommentsPanel(
   const body = (
     <>
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-        {loading && <p className="font-body text-smoke text-sm">Loading…</p>}
+        {loading && <LoadingSpinner label="Loading…" />}
         {!loading && comments.length === 0 && (
           <div className="h-full flex flex-col items-center justify-center text-center py-12 gap-2">
             <span className="text-4xl text-zinc-400">💬</span>

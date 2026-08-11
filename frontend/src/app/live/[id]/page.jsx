@@ -6,6 +6,7 @@ import { api } from '../../../lib/api';
 import { getSocket } from '../../../lib/socket';
 import { useCameraDevices } from '../../../lib/useCameraDevices';
 import CameraDeviceSelect from '../../../components/CameraDeviceSelect';
+import { LoadingSpinner } from '../../../components/LoadingScreen';
 
 const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
 
@@ -204,7 +205,11 @@ export default function LiveRoomPage({ params }) {
   if (!stream) {
     return (
       <main className="min-h-screen flex items-center justify-center">
-        <p className="font-body text-smoke text-sm">{error || 'Loading…'}</p>
+        {error ? (
+          <p className="font-body text-smoke text-sm">{error}</p>
+        ) : (
+          <LoadingSpinner label="Loading…" />
+        )}
       </main>
     );
   }

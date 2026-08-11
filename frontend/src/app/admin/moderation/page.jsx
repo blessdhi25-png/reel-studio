@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '../../../lib/api';
+import { LoadingSpinner } from '../../../components/LoadingScreen';
 
 const REASON_LABELS = {
   spam: 'Spam',
@@ -101,7 +102,7 @@ export default function ModerationQueuePage() {
         </button>
       </div>
 
-      {loading && <p className="text-sm text-zinc-400">Loading…</p>}
+      {loading && <LoadingSpinner label="Loading…" />}
       {error && <p className="text-sm text-red-400">{error}</p>}
       {!loading && groups.length === 0 && (
         <p className="text-sm text-zinc-400">No reported videos pending review.</p>

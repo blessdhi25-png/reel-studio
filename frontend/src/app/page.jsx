@@ -11,6 +11,7 @@ import DesktopRail from '../components/DesktopRail';
 import SprocketRail from '../components/SprocketRail';
 import { loadTuningWeights } from '../components/TuneFeedPanel';
 import FeedFiltersDrawer from '../components/FeedFiltersDrawer';
+import LoadingScreen from '../components/LoadingScreen';
 
 const FILTERS = [
   { label: 'All', value: null },
@@ -492,11 +493,15 @@ export default function FeedPage() {
                 <FeedSkeletonCard />
               </div>
             )}
+<<<<<<< HEAD
             {videos.length === 0 && initialLoading && (
               <div className="h-dvh w-full snap-start">
                 <FeedSkeletonCard />
               </div>
             )}
+=======
+            {videos.length === 0 && initialLoading && <LoadingScreen />}
+>>>>>>> 2017457 (Update the frontend with the new emplentation)
             {videos.length === 0 && !initialLoading && (
               <div className="h-dvh flex items-center justify-center">
                 <p className="font-body text-smoke">No videos yet — be the first to post.</p>
@@ -533,11 +538,15 @@ export default function FeedPage() {
                     <FeedSkeletonCard />
                   </div>
                 )}
+<<<<<<< HEAD
                 {videos.length === 0 && initialLoading && (
                   <div className="h-full w-full snap-start">
                     <FeedSkeletonCard />
                   </div>
                 )}
+=======
+                {videos.length === 0 && initialLoading && <LoadingScreen />}
+>>>>>>> 2017457 (Update the frontend with the new emplentation)
                 {videos.length === 0 && !initialLoading && (
                   <div className="h-full flex items-center justify-center">
                     <p className="font-body text-smoke text-center px-6">No videos yet — be the first to post.</p>

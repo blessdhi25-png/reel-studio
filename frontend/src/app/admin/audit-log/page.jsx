@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '../../../lib/api';
+import { LoadingSpinner } from '../../../components/LoadingScreen';
 
 export default function AuditLogPage() {
   const [actions, setActions] = useState([]);
@@ -17,7 +18,7 @@ export default function AuditLogPage() {
         Every moderation action taken on the platform, most recent first — for accountability.
       </p>
 
-      {loading && <p className="font-body text-smoke text-sm">Loading…</p>}
+      {loading && <LoadingSpinner label="Loading…" />}
 
       <div className="space-y-2">
         {actions.map((a) => (

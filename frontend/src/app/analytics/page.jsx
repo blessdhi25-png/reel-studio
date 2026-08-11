@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '../../lib/api';
+import { LoadingSpinner } from '../../components/LoadingScreen';
 
 function MetricCard({ label, value, icon }) {
   return (
@@ -51,7 +52,7 @@ export default function AnalyticsPage() {
 
       <h1 className="text-3xl font-extrabold">Analytics</h1>
 
-      {loading && <p className="text-sm text-zinc-400">Loading…</p>}
+      {loading && <LoadingSpinner label="Loading…" />}
       {error && <p className="text-sm text-red-400">{error}</p>}
 
       {data && (

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '../../lib/api';
+import { LoadingSpinner } from '../../components/LoadingScreen';
 
 export default function PromotePage() {
   const router = useRouter();
@@ -45,7 +46,7 @@ export default function PromotePage() {
         </p>
       )}
 
-      {loading && <p className="font-body text-smoke text-sm">Loading…</p>}
+      {loading && <LoadingSpinner label="Loading…" />}
       {error && <p className="font-body text-sm text-red-400">{error}</p>}
       {!loading && videos.length === 0 && (
         <p className="font-body text-smoke text-sm">

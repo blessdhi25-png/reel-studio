@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '../../../lib/api';
+import { LoadingSpinner } from '../../../components/LoadingScreen';
 
 export default function AdminVideosPage() {
   const [videos, setVideos] = useState([]);
@@ -43,7 +44,7 @@ export default function AdminVideosPage() {
         ))}
       </div>
 
-      {loading && <p className="font-body text-smoke text-sm">Loading…</p>}
+      {loading && <LoadingSpinner label="Loading…" />}
 
       <div className="space-y-3">
         {videos.map((v) => (

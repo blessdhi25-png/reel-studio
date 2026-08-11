@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '../../../lib/api';
+import { LoadingSpinner } from '../../../components/LoadingScreen';
 
 function centsToDollars(cents) {
   return `$${(cents / 100).toFixed(2)}`;
@@ -79,7 +80,7 @@ export default function ArtistHubPage() {
   if (loading) {
     return (
       <main className="min-h-screen flex items-center justify-center bg-zinc-950">
-        <p className="text-zinc-500 text-sm">Loading…</p>
+        <LoadingSpinner label="Loading…" />
       </main>
     );
   }

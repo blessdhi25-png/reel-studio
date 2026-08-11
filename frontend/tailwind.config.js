@@ -14,6 +14,12 @@ module.exports = {
         reel2: '#C97B2E',    // deeper amber for hover/pressed states
         bone: '#F2EBE2',     // primary text — warm off-white, not stark white
         smoke: '#9A8FA8',    // secondary text — muted lavender-grey
+        // Brand-mark-only palette (ActiveReelLogo / LoadingScreen). Deliberately
+        // separate from the ink/reel theme above rather than replacing reel —
+        // this is a distinct "splash/loading" identity, not a reskin of the
+        // app's own accent color.
+        volt: '#A3FF12',
+        charcoal: '#121212',
       },
       fontFamily: {
         display: ['"Bebas Neue"', 'sans-serif'],

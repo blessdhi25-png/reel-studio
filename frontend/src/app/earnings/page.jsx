@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '../../lib/api';
+import { LoadingSpinner } from '../../components/LoadingScreen';
 
 function formatCents(cents) {
   return `$${(cents / 100).toFixed(2)}`;
@@ -53,7 +54,7 @@ export default function EarningsPage() {
   if (loading) {
     return (
       <main className="min-h-screen flex items-center justify-center">
-        <p className="font-body text-smoke">Loading…</p>
+        <LoadingSpinner label="Loading…" />
       </main>
     );
   }

@@ -35,6 +35,21 @@ body {
   to { opacity: 1; transform: translateY(0); }
 }
 
+<<<<<<< HEAD
+=======
+/* ActiveReelLogo's play-mark "alive while loading" pulse — smooth scale
+   between 95% and 105% every 1.5s, matching the TikTok-style splash the
+   loading screen is going for. Scale only (no opacity/color change) keeps
+   it reading as a solid, confident brand mark rather than a fade-flicker. */
+@keyframes mark-pulse {
+  0%, 100% { transform: scale(0.95); }
+  50% { transform: scale(1.05); }
+}
+.animate-mark-pulse {
+  animation: mark-pulse 1.5s ease-in-out infinite;
+}
+
+>>>>>>> 2017457 (Update the frontend with the new emplentation)
 /* Double-tap-to-like heart — pops up and slightly out, then fades, matching
    the Instagram/TikTok double-tap gesture viewers already expect. */
 @keyframes heart-pop {

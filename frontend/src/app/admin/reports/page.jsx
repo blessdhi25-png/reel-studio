@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { api } from '../../../lib/api';
+import { LoadingSpinner } from '../../../components/LoadingScreen';
 
 const REASON_LABELS = {
   spam: 'Spam',
@@ -398,7 +399,7 @@ function AdminReportsInner() {
         </div>
       </div>
 
-      {loading && <p className="font-body text-zinc-500 text-sm">Loading…</p>}
+      {loading && <LoadingSpinner label="Loading…" />}
       {!loading && reports.length === 0 && (
         <p className="font-body text-zinc-500 text-sm">No {status === 'all' ? '' : status} reports match.</p>
       )}
@@ -427,7 +428,7 @@ function AdminReportsInner() {
 
 export default function AdminReportsPage() {
   return (
-    <Suspense fallback={<p className="font-body text-zinc-500 text-sm">Loading…</p>}>
+    <Suspense fallback={<LoadingSpinner label="Loading…" />}>
       <AdminReportsInner />
     </Suspense>
   );

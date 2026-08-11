@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '../../lib/api';
+import { LoadingSpinner } from '../../components/LoadingScreen';
 
 export default function CirclesPage() {
   const router = useRouter();
@@ -24,7 +25,7 @@ export default function CirclesPage() {
         Micro-communities inside the feed — tap one to jump into the feed filtered to just that circle.
       </p>
 
-      {loading && <p className="font-body text-smoke text-sm">Loading…</p>}
+      {loading && <LoadingSpinner label="Loading…" />}
 
       {!loading && circles.length === 0 && (
         <p className="font-body text-smoke text-sm">

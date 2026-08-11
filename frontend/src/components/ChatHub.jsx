@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { api } from '../lib/api';
 import { getSocket } from '../lib/socket';
 import ReportModal from './ReportModal';
+import { LoadingSpinner } from './LoadingScreen';
 
 const EMOJIS = ['😀', '😂', '❤️', '🔥', '👍', '🙏', '😍', '😅', '🎉', '👏', '😢', '😮'];
 
@@ -280,7 +281,7 @@ export default function ChatHub({ initialUserId }) {
           </div>
 
           <div className="flex-1 overflow-y-auto p-2">
-            {loadingConvos && <p className="font-body text-zinc-500 text-xs p-3">Loading…</p>}
+            {loadingConvos && <LoadingSpinner label="Loading…" />}
             {!loadingConvos && filteredConvos.length === 0 && (
               <p className="font-body text-zinc-500 text-xs p-3">
                 {search ? 'No matches.' : "No conversations yet — tap ✎ to start one."}
@@ -323,7 +324,7 @@ export default function ChatHub({ initialUserId }) {
                 <button onClick={() => setComposeOpen(false)} className="text-zinc-400 text-sm">Close</button>
               </div>
               <div className="flex-1 overflow-y-auto p-2">
-                {composeCandidates === null && <p className="font-body text-zinc-500 text-xs p-3">Loading…</p>}
+                {composeCandidates === null && <LoadingSpinner label="Loading…" />}
                 {composeCandidates?.length === 0 && (
                   <p className="font-body text-zinc-500 text-xs p-3">
                     Follow people (or have followers) to message them.
@@ -418,7 +419,7 @@ export default function ChatHub({ initialUserId }) {
               </div>
 
               <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                {loadingThread && <p className="font-body text-zinc-500 text-sm">Loading…</p>}
+                {loadingThread && <LoadingSpinner label="Loading…" />}
                 {!loadingThread && messages.length === 0 && (
                   <p className="font-body text-zinc-500 text-sm">Say hello 👋</p>
                 )}
@@ -452,7 +453,7 @@ export default function ChatHub({ initialUserId }) {
               {sharePickerOpen && (
                 <div className="absolute bottom-20 left-4 right-4 bg-zinc-900 border border-zinc-800 rounded-2xl p-3 shadow-2xl max-h-56 overflow-y-auto z-20">
                   <p className="font-mono text-[10px] text-zinc-500 uppercase tracking-widest mb-2 px-1">Share one of your videos</p>
-                  {myVideos === null && <p className="font-body text-zinc-500 text-xs px-1">Loading…</p>}
+                  {myVideos === null && <LoadingSpinner label="Loading…" />}
                   {myVideos?.length === 0 && <p className="font-body text-zinc-500 text-xs px-1">You haven't posted anything yet.</p>}
                   <div className="grid grid-cols-4 gap-2">
                     {myVideos?.map((v) => (

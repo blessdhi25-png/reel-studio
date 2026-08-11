@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '../../../lib/api';
+import { LoadingSpinner } from '../../../components/LoadingScreen';
 
 const STATUS_COLOR = {
   active: 'text-reel',
@@ -53,7 +54,7 @@ export default function AdminUsersPage() {
         />
       </form>
 
-      {loading && <p className="font-body text-smoke text-sm">Loading…</p>}
+      {loading && <LoadingSpinner label="Loading…" />}
 
       <div className="space-y-3">
         {users.map((u) => (

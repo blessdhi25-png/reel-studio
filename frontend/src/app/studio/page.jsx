@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '../../lib/api';
+import { LoadingSpinner } from '../../components/LoadingScreen';
 
 // Small inline icon set — no icon library dependency, kept minimal/monoline
 // to match the premium dashboard look without pulling in a new package.
@@ -145,7 +146,7 @@ export default function StudioPage() {
         </div>
       </div>
 
-      {loading && <p className="text-sm text-zinc-400">Loading…</p>}
+      {loading && <LoadingSpinner label="Loading…" />}
       {error && <p className="text-sm text-red-400">{error}</p>}
 
       {data && (

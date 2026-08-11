@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '../../lib/api';
 import { getSocket } from '../../lib/socket';
+import { LoadingSpinner } from '../../components/LoadingScreen';
 
 // ---------------------------------------------------------------------------
 // Config
@@ -240,7 +241,7 @@ export default function InboxPage() {
           ))}
         </div>
 
-        {loading && <p className="text-zinc-500 text-sm py-8 text-center">Loading…</p>}
+        {loading && <LoadingSpinner label="Loading…" />}
 
         {!loading && activeTab === 'messages' && (
           <MessagesSection

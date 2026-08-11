@@ -9,6 +9,10 @@ import { useAuth } from '../../../context/AuthContext';
 import { useToast } from '../../../context/ToastContext';
 import ReportModal from '../../../components/ReportModal';
 import ConfirmModal from '../../../components/ConfirmModal';
+<<<<<<< HEAD
+=======
+import { LoadingSpinner } from '../../../components/LoadingScreen';
+>>>>>>> 2017457 (Update the frontend with the new emplentation)
 
 export default function ProfilePage({ params }) {
   const { id } = params;
@@ -100,7 +104,11 @@ export default function ProfilePage({ params }) {
   if (loading) {
     return (
       <div className="min-h-screen bg-[#0a090e] text-white flex items-center justify-center">
+<<<<<<< HEAD
         <p className="text-xs text-zinc-500 font-mono">Loading…</p>
+=======
+        <LoadingSpinner label="Loading…" />
+>>>>>>> 2017457 (Update the frontend with the new emplentation)
       </div>
     );
   }
