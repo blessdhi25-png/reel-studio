@@ -136,3 +136,22 @@ export const uploadTrack = multer({
   fileFilter: audioFileFilter,
   limits: { fileSize: 25 * 1024 * 1024 }, // 25MB cap
 });
+
+// The Video/thumbnail records only ever stored the full Cloudinary
+// secure_url (see routes/videos.js and workers/transcode.js) — there's no
+// separate public_id column. cloudinary.uploader.destroy() needs the
+// public_id though, not the URL, so this pulls it back out: a Cloudinary
+// delivery URL is always
+//   https://res.cloudinary.com/<cloud>/<resource_type>/upload/[v<version>/]<public_id>.<ext>
+// and since folders are just a prefix baked into public_id, capturing
+// everything between "/upload/" (skipping an optional version segment) and
+// the final extension recovers exactly the public_id upload.js set at
+// upload time (e.g. "reel/videos/<userId>-<timestamp>").
+// Returns null for anything that isn't a recognizable Cloudinary URL —
+// callers should treat that as "nothing to delete" rather than an error,
+// since older/legacy records may predate the Cloudinary migration.
+export function cloudinaryPublicIdFromUrl(url) {
+  if (!url || typeof url !== 'string') return null;
+  const match = url.match(/\/upload\/(?:v\d+\/)?(.+?)(?:\.[a-zA-Z0-9]+)?(?:\?.*)?$/);
+  return match ? match[1] : null;
+}
