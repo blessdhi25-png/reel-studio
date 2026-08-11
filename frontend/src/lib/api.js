@@ -250,6 +250,7 @@ export const api = {
   adminGetVideos: (status = 'published') => request(`/admin/videos?status=${status}`),
   adminRemoveVideo: (id, reason) =>
     request(`/admin/videos/${id}/remove`, { method: 'POST', body: { reason } }),
+  adminGetVideoFlags: (id) => request(`/admin/videos/${id}/flags`),
   adminGetFraudSignals: () => request('/admin/fraud-signals'),
   adminGetAuditLog: () => request('/admin/audit-log'),
 
