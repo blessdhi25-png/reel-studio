@@ -1,7 +1,7 @@
 import './globals.css';
-import BottomNav from '../components/BottomNav';
 import { AuthProvider } from '../context/AuthContext';
 import { ToastProvider } from '../context/ToastContext';
+import AppShell from '../components/AppShell';
 
 export const metadata = {
   title: 'Reel — short and long video, one feed',
@@ -21,13 +21,15 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en">
       <body>
-        {/* AuthProvider/ToastProvider are Client Components; Next.js's App
-            Router allows a Server Component layout like this one to render
-            them as wrappers with no extra "use client" needed here. */}
+        {/* AuthProvider/ToastProvider/AppShell are Client Components;
+            Next.js's App Router allows a Server Component layout like this
+            one to render them as wrappers with no extra "use client"
+            needed here. AppShell holds the branded LoadingScreen until
+            auth state has hydrated, and renders BottomNav itself once
+            ready — see components/AppShell.jsx. */}
         <AuthProvider>
           <ToastProvider>
-            {children}
-            <BottomNav />
+            <AppShell>{children}</AppShell>
           </ToastProvider>
         </AuthProvider>
       </body>
