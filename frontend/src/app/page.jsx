@@ -230,6 +230,15 @@ export default function FeedPage() {
     }
   }
 
+  // Feed-level counterpart to VideoCard's delete flow: the video record and
+  // Cloudinary assets are already gone server-side by the time this fires
+  // (see confirmDelete in VideoCard.jsx) — this just drops it from the
+  // array that's actually driving the feed, so it disappears from view
+  // immediately without needing a full feed refetch.
+  function handleVideoDeleted(videoId) {
+    setVideos((prev) => prev.filter((v) => v.id !== videoId));
+  }
+
   // Active-index tracking — mobile and desktop each scroll their own
   // container (only one is ever mounted per breakpoint at a time), both
   // feeding the same activeIndex state.
@@ -484,6 +493,7 @@ export default function FeedPage() {
                   shouldLoad={Math.abs(i - activeIndex) <= 1}
                   focusMode={focusMode}
                   onToggleFollow={handleToggleFollow}
+                  onDeleted={handleVideoDeleted}
                 />
               </div>
             ))}
@@ -524,6 +534,7 @@ export default function FeedPage() {
                       shouldLoad={Math.abs(i - activeIndex) <= 1}
                       focusMode={focusMode}
                       onToggleFollow={handleToggleFollow}
+                      onDeleted={handleVideoDeleted}
                       onActiveTimeUpdate={setActiveTime}
                     />
                   </div>
