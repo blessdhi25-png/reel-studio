@@ -7,6 +7,7 @@ import ReportModal from './ReportModal';
 import ShareSheet from './ShareSheet';
 import { useOptimisticLike } from '../hooks/useOptimisticLike';
 import { useAutoPlayOnScroll } from '../hooks/useAutoPlayOnScroll';
+import { useToast } from '../context/ToastContext';
 
 // A second tap/click arriving within this window counts as a double-tap
 // (like) rather than two separate single-taps (play/pause). 300ms matches
@@ -30,14 +31,16 @@ function formatTimecode(seconds = 0) {
 }
 
 const VideoCard = forwardRef(function VideoCard(
-  { video, isActive, shouldLoad = true, focusMode = false, onToggleFollow, onActiveTimeUpdate },
+  { video, isActive, shouldLoad = true, focusMode = false, onToggleFollow, onActiveTimeUpdate, onDeleted },
   ref
 ) {
   const videoRef = useRef(null);
   const containerRef = useRef(null);
   const commentsRef = useRef(null);
+  const menuRef = useRef(null);
   const lastTapRef = useRef(0);
   const singleTapTimerRef = useRef(null);
+  const toast = useToast();
   const { liked, likeCount, toggleLike } = useOptimisticLike(video.id, video.isLiked, video.likeCount);
   const [commentCount, setCommentCount] = useState(Number(video.commentCount || 0));
   const [showTip, setShowTip] = useState(false);
@@ -45,6 +48,9 @@ const VideoCard = forwardRef(function VideoCard(
   const [showComments, setShowComments] = useState(false);
   const [showReport, setShowReport] = useState(false);
   const [showShare, setShowShare] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [bookmarked, setBookmarked] = useState(Boolean(video.isBookmarked));
   const [bookmarkCount, setBookmarkCount] = useState(Number(video.bookmarkCount || 0));
   const [audioEnabled, setAudioEnabled] = useState(false);
@@ -253,6 +259,36 @@ const VideoCard = forwardRef(function VideoCard(
       if (singleTapTimerRef.current) clearTimeout(singleTapTimerRef.current);
     };
   }, []);
+
+  // Close the ⋯ menu on an outside click, matching the same pattern used
+  // for the profile page's ⋯ dropdown.
+  useEffect(() => {
+    if (!showMenu) return;
+    function onClickOutside(e) {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setShowMenu(false);
+      }
+    }
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, [showMenu]);
+
+  async function confirmDelete() {
+    setDeleting(true);
+    try {
+      await api.deleteVideo(video.id);
+      setShowDeleteConfirm(false);
+      toast.success('Post deleted');
+      // The feed array itself lives in the parent (page.jsx) — this just
+      // reports success up so the parent can drop it from state
+      // immediately, the same way handleToggleFollow reports follow
+      // changes up rather than owning follow state locally.
+      onDeleted?.(video.id);
+    } catch (err) {
+      setDeleting(false);
+      toast.error(err.message || "Couldn't delete this post — try again.");
+    }
+  }
 
   function handleFollow(e) {
     e.stopPropagation();
@@ -472,9 +508,40 @@ const VideoCard = forwardRef(function VideoCard(
               <span className="font-mono text-xs text-smoke/40">Tip</span>
             </button>
           )}
-          <button onClick={() => setShowReport(true)} className="flex flex-col items-center gap-1">
-            <span className="text-lg text-smoke/60">⚑</span>
-          </button>
+          <div className="relative" ref={menuRef}>
+            <button
+              onClick={() => setShowMenu((v) => !v)}
+              className="flex flex-col items-center gap-1"
+              aria-label="More options"
+            >
+              <span className="text-2xl text-bone">⋯</span>
+            </button>
+            {showMenu && (
+              <div className="absolute bottom-full right-0 mb-2 bg-ink2 border border-smoke/20 rounded-sprocket overflow-hidden z-10 w-40">
+                {isOwnVideo ? (
+                  <button
+                    onClick={() => {
+                      setShowMenu(false);
+                      setShowDeleteConfirm(true);
+                    }}
+                    className="w-full text-left px-4 py-2.5 text-xs text-red-400 hover:bg-smoke/10 font-body"
+                  >
+                    Delete Post
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setShowMenu(false);
+                      setShowReport(true);
+                    }}
+                    className="w-full text-left px-4 py-2.5 text-xs text-bone hover:bg-smoke/10 font-body"
+                  >
+                    Report
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
           <button
             onClick={() => {
               api.logEvent(video.id, 'share').catch(() => {});
@@ -510,6 +577,13 @@ const VideoCard = forwardRef(function VideoCard(
       {showReport && (
         <ReportModal targetType="video" targetId={video.id} onClose={() => setShowReport(false)} />
       )}
+      {showDeleteConfirm && (
+        <DeleteConfirmModal
+          deleting={deleting}
+          onConfirm={confirmDelete}
+          onCancel={() => setShowDeleteConfirm(false)}
+        />
+      )}
       {showShare && (
         <ShareSheet
           video={video}
@@ -522,6 +596,33 @@ const VideoCard = forwardRef(function VideoCard(
 });
 
 export default VideoCard;
+
+function DeleteConfirmModal({ deleting, onConfirm, onCancel }) {
+  return (
+    <div className="absolute inset-0 bg-ink/90 flex items-center justify-center z-30">
+      <div className="bg-ink2 rounded-sprocket p-6 w-72 border border-smoke/20 text-center">
+        <p className="font-display text-xl text-bone mb-2 tracking-wide">Delete this post?</p>
+        <p className="font-body text-sm text-smoke mb-5">
+          Are you sure you want to delete this video? This action cannot be undone.
+        </p>
+        <button
+          onClick={onConfirm}
+          disabled={deleting}
+          className="w-full bg-red-500 text-ink font-body font-semibold py-2 rounded-sprocket disabled:opacity-50"
+        >
+          {deleting ? 'Deleting…' : 'Delete Post'}
+        </button>
+        <button
+          onClick={onCancel}
+          disabled={deleting}
+          className="w-full mt-3 text-smoke text-sm font-body disabled:opacity-50"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function TipUnavailableModal({ onClose }) {
   return (
