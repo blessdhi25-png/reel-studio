@@ -3,8 +3,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '../../lib/api';
-import {
 import { LoadingSpinner } from '../../components/LoadingScreen';
+import {
   isOfflineSupported,
   getOfflineVideos,
   isDownloaded,
