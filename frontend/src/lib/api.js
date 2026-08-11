@@ -182,6 +182,7 @@ export const api = {
   getCircles: () => request('/videos/circles'),
   likeVideo: (id) => request(`/videos/${id}/like`, { method: 'POST' }),
   unlikeVideo: (id) => request(`/videos/${id}/like`, { method: 'DELETE' }),
+  deleteVideo: (id) => request(`/videos/${id}`, { method: 'DELETE' }),
   bookmarkVideo: (id) => request(`/videos/${id}/bookmark`, { method: 'POST' }),
   unbookmarkVideo: (id) => request(`/videos/${id}/bookmark`, { method: 'DELETE' }),
   getBookmarks: () => request('/users/me/bookmarks'),
