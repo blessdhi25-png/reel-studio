@@ -7,6 +7,13 @@ import { getSocket } from '../lib/socket';
 import { useAuth } from '../context/AuthContext';
 
 const HIDDEN_ON = ['/login', '/signup', '/verify-email', '/upload'];
+// Prefix-matched separately from HIDDEN_ON above: /admin has many
+// sub-routes (users, videos, fraud-signals, audit-log, ...) and the admin
+// portal has its own dedicated layout/nav (see app/admin/layout.jsx) — the
+// user-facing bottom nav has no business appearing underneath it. Root
+// layout.jsx always renders <BottomNav /> via AppShell regardless of
+// route, so this is the one place that actually can hide it per-path.
+const HIDDEN_PREFIXES = ['/admin'];
 
 function HomeIcon({ active }) {
   return (
@@ -81,7 +88,7 @@ export default function BottomNav() {
     };
   }, [user]);
 
-  if (HIDDEN_ON.includes(pathname)) return null;
+  if (HIDDEN_ON.includes(pathname) || HIDDEN_PREFIXES.some((p) => pathname.startsWith(p))) return null;
 
   function go(path, requireAuth = false) {
     if (requireAuth && !isAuthenticated) {
