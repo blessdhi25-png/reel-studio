@@ -144,7 +144,10 @@ router.get('/feed', optionalAuth, async (req, res) => {
       where: { ...visibilityFilter, ...(type ? { videoType: type } : {}), ...circleFilter, ...followingFilter },
       orderBy: [{ rankingScore: 'desc' }, { createdAt: 'desc' }],
       take: poolSize,
-      include: { user: { select: { id: true, username: true, avatarUrl: true, stripeOnboarded: true } } },
+      include: {
+        user: { select: { id: true, username: true, avatarUrl: true, stripeOnboarded: true } },
+        track: { include: { artist: { select: { stageName: true } } } },
+      },
     });
     videos = applyFeedTuning(pool, { nicheWeight, freshWeight }).slice(0, Number(limit));
     nextCursor = null;
@@ -154,7 +157,10 @@ router.get('/feed', optionalAuth, async (req, res) => {
       orderBy,
       take: Number(limit),
       ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
-      include: { user: { select: { id: true, username: true, avatarUrl: true, stripeOnboarded: true } } },
+      include: {
+        user: { select: { id: true, username: true, avatarUrl: true, stripeOnboarded: true } },
+        track: { include: { artist: { select: { stageName: true } } } },
+      },
     });
     nextCursor = videos.length === Number(limit) ? videos[videos.length - 1].id : null;
   }
@@ -188,6 +194,18 @@ router.get('/feed', optionalAuth, async (req, res) => {
     isLiked: likedVideoIds.has(v.id),
     isBookmarked: bookmarkedVideoIds.has(v.id),
     user: { ...v.user, isFollowing: followedIds.has(v.userId) },
+    // Flatten to the same { id, title, audioUrl, artistName, durationSeconds }
+    // shape GET /artists/tracks/search already returns, rather than leaking
+    // Prisma's nested `track.artist.stageName` onto the wire.
+    track: v.track
+      ? {
+          id: v.track.id,
+          title: v.track.title,
+          audioUrl: v.track.audioUrl,
+          artistName: v.track.artist.stageName,
+          durationSeconds: v.track.durationSeconds,
+        }
+      : null,
   }));
 
   res.json({ videos: videosWithFollow, nextCursor });
@@ -196,10 +214,24 @@ router.get('/feed', optionalAuth, async (req, res) => {
 router.get('/:id', async (req, res) => {
   const video = await prisma.video.findUnique({
     where: { id: req.params.id },
-    include: { user: { select: { id: true, username: true, avatarUrl: true, stripeOnboarded: true } } },
+    include: {
+      user: { select: { id: true, username: true, avatarUrl: true, stripeOnboarded: true } },
+      track: { include: { artist: { select: { stageName: true } } } },
+    },
   });
   if (!video) return res.status(404).json({ error: 'Video not found' });
-  res.json(video);
+  res.json({
+    ...video,
+    track: video.track
+      ? {
+          id: video.track.id,
+          title: video.track.title,
+          audioUrl: video.track.audioUrl,
+          artistName: video.track.artist.stageName,
+          durationSeconds: video.track.durationSeconds,
+        }
+      : null,
+  });
 });
 
 router.delete('/:id', requireAuth, asyncHandler(async (req, res) => {
