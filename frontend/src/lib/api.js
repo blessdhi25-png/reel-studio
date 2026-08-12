@@ -232,6 +232,8 @@ export const api = {
 
   // Admin
   adminMe: () => request('/admin/me'),
+  // Add this inside your api object in frontend/src/lib/api.js
+adminGetStats: () => request('/admin/stats'),
   adminGetStatus: () => request('/admin/status'),
   adminGetReports: (status = 'pending', search = '') =>
     request(`/admin/reports?status=${status}${search ? `&search=${encodeURIComponent(search)}` : ''}`),
