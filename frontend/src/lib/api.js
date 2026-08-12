@@ -210,6 +210,15 @@ export const api = {
   getMyTracks: () => request('/artists/me/tracks'),
   uploadTrack: (formData) => request('/artists/me/tracks', { method: 'POST', body: formData, isForm: true }),
   searchTracks: (q) => request(`/artists/tracks/search${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+  getTrendingSounds: ({ query, limit } = {}) => {
+    const params = new URLSearchParams();
+    if (query) params.set('q', query);
+    if (limit) params.set('limit', limit);
+    const qs = params.toString();
+    return request(`/artists/tracks/trending${qs ? `?${qs}` : ''}`);
+  },
+  getTrackVideos: (trackId) => request(`/artists/tracks/${trackId}/videos`),
+  getTrack: (trackId) => request(`/artists/tracks/${trackId}`),
   getUserVideos: (id) => request(`/users/${id}/videos`),
   followUser: (id) => request(`/users/${id}/follow`, { method: 'POST' }),
   unfollowUser: (id) => request(`/users/${id}/follow`, { method: 'DELETE' }),
