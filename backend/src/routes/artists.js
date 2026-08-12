@@ -102,6 +102,45 @@ router.post('/me/tracks', requireAuth, uploadTrack.single('audio'), async (req, 
 
 // Lets any creator browse distributed tracks to attach to a new post —
 // this is the actual "for other creators to use in their reels" mechanism.
+// Trending sounds — ranked by how many *published* reels currently use
+// each track (a real signal, unlike tracks/search above which is just
+// createdAt desc) with an optional title/artist filter. Powers
+// SoundPicker's default (no-query) list; api.js's getTrendingSounds falls
+// through to tracks/search if this ever isn't reachable, so nothing breaks
+// if this route changes shape later.
+router.get('/tracks/trending', async (req, res) => {
+  const q = (req.query.q || '').trim();
+  const limit = Math.min(Number(req.query.limit) || 30, 50);
+
+  const tracks = await prisma.track.findMany({
+    where: q
+      ? {
+          OR: [
+            { title: { contains: q, mode: 'insensitive' } },
+            { artist: { stageName: { contains: q, mode: 'insensitive' } } },
+          ],
+        }
+      : {},
+    include: {
+      artist: { select: { stageName: true } },
+      _count: { select: { videos: { where: { status: 'published' } } } },
+    },
+  });
+
+  tracks.sort((a, b) => b._count.videos - a._count.videos || b.createdAt - a.createdAt);
+
+  res.json(
+    tracks.slice(0, limit).map((t) => ({
+      id: t.id,
+      title: t.title,
+      audioUrl: t.audioUrl,
+      artistName: t.artist.stageName,
+      durationSeconds: t.durationSeconds,
+      useCount: t._count.videos,
+    }))
+  );
+});
+
 router.get('/tracks/search', async (req, res) => {
   const q = (req.query.q || '').trim();
   const tracks = await prisma.track.findMany({
@@ -120,4 +159,49 @@ router.get('/tracks/search', async (req, res) => {
   res.json(tracks.map((t) => ({ id: t.id, title: t.title, audioUrl: t.audioUrl, artistName: t.artist.stageName })));
 });
 
-export default router;
+// Other reels using this same sound — powers the SoundPicker's "Reels
+// using this sound" grid, opened by tapping a video's vinyl badge in the
+// feed (see frontend/src/components/VideoCard.jsx). Public, same as
+// tracks/search above — no auth needed just to browse. Declared before the
+// generic /tracks/:id below so Express doesn't try to match the trailing
+// /videos segment as part of an :id.
+router.get('/tracks/:id/videos', async (req, res) => {
+  const videos = await prisma.video.findMany({
+    where: { trackId: req.params.id, status: 'published' },
+    orderBy: { createdAt: 'desc' },
+    take: 30,
+    include: { user: { select: { id: true, username: true, avatarUrl: true } } },
+  });
+  res.json(
+    videos.map((v) => ({
+      id: v.id,
+      thumbnailUrl: v.thumbnailUrl,
+      caption: v.caption,
+      user: v.user,
+    }))
+  );
+});
+
+// A single track by id — used to preselect a sound handed off via
+// /upload?trackId=... (see the SoundPicker "Use This Sound" flow in
+// VideoCard.jsx) without re-running a search just to resolve one id.
+// Declared LAST among /tracks/* routes: as a catch-all :id param it would
+// otherwise shadow the literal /tracks/trending and /tracks/search routes
+// above (Express matches route order, and "trending"/"search" would just
+// get captured as :id).
+router.get('/tracks/:id', async (req, res) => {
+  const track = await prisma.track.findUnique({
+    where: { id: req.params.id },
+    include: { artist: { select: { stageName: true } } },
+  });
+  if (!track) return res.status(404).json({ error: 'Track not found' });
+  res.json({
+    id: track.id,
+    title: track.title,
+    audioUrl: track.audioUrl,
+    artistName: track.artist.stageName,
+    durationSeconds: track.durationSeconds,
+  });
+});
+
+export default router;v
