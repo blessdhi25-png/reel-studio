@@ -5,6 +5,7 @@ import { api } from '../lib/api';
 import CommentsPanel from './CommentsPanel';
 import ReportModal from './ReportModal';
 import ShareSheet from './ShareSheet';
+import SoundPicker from './SoundPicker';
 import { useOptimisticLike } from '../hooks/useOptimisticLike';
 import { useAutoPlayOnScroll } from '../hooks/useAutoPlayOnScroll';
 import { useToast } from '../context/ToastContext';
@@ -59,6 +60,16 @@ function MoreDotsIcon({ className = '' }) {
   );
 }
 
+function MusicNoteIcon({ className = '' }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="currentColor" stroke="none">
+      <path d="M9 18V5l11-2v13" />
+      <circle cx="6" cy="18" r="3" />
+      <circle cx="17" cy="16" r="3" />
+    </svg>
+  );
+}
+
 function ShareIcon({ className = '' }) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -102,6 +113,7 @@ const VideoCard = forwardRef(function VideoCard(
   const [showComments, setShowComments] = useState(false);
   const [showReport, setShowReport] = useState(false);
   const [showShare, setShowShare] = useState(false);
+  const [showSoundPicker, setShowSoundPicker] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -503,6 +515,29 @@ const VideoCard = forwardRef(function VideoCard(
             @{video.user?.username}
           </a>
           <p className="font-body text-sm text-smoke mt-1">{video.caption}</p>
+
+          {/* Sound ticker — only renders once video.track is actually
+              populated. Today's feed endpoint doesn't include the track
+              relation on each video (see backend/src/routes/videos.js /
+              artists.js's Track model), so this stays hidden until that
+              route's Prisma query adds `include: { track: { include: {
+              artist: true } } }` and maps it onto the response the same
+              way GET /artists/tracks/search already does. */}
+          {video.track && (
+            <div className="mt-2 flex items-center gap-1.5 max-w-full overflow-hidden">
+              <MusicNoteIcon className="w-3.5 h-3.5 text-bone shrink-0 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]" />
+              <div className="overflow-hidden">
+                <div className="flex w-max animate-marquee font-body text-xs text-bone whitespace-nowrap drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
+                  <span className="pr-8">
+                    {video.track.artistName} - {video.track.title}
+                  </span>
+                  <span className="pr-8" aria-hidden="true">
+                    {video.track.artistName} - {video.track.title}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Engagement rail — bottom-24 clears the fixed bottom nav on mobile.
@@ -636,6 +671,32 @@ const VideoCard = forwardRef(function VideoCard(
               Share
             </span>
           </button>
+
+          {/* Spinning vinyl badge — only shows once video.track is
+              populated (see the sound-ticker comment above for why that's
+              not the case yet on the live feed). Rotation state mirrors
+              `paused`, the same local play/pause flag the tap-to-pause
+              overlay above already uses, so the disc always matches what's
+              actually on screen. */}
+          {video.track && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowSoundPicker(true);
+              }}
+              aria-label="View sound"
+              className={`mt-1 w-11 h-11 rounded-full border-2 border-white/80 shadow-[0_2px_6px_rgba(0,0,0,0.6)] overflow-hidden bg-ink2 flex items-center justify-center text-reel animate-[spin_4s_linear_infinite] ${
+                paused ? '[animation-play-state:paused]' : ''
+              }`}
+            >
+              {video.track.coverUrl ? (
+                <img src={video.track.coverUrl} alt="" className="w-full h-full object-cover" />
+              ) : (
+                <MusicNoteIcon className="w-4 h-4" />
+              )}
+            </button>
+          )}
         </div>
       </div>
 
@@ -673,6 +734,21 @@ const VideoCard = forwardRef(function VideoCard(
           video={video}
           onClose={() => setShowShare(false)}
           onReport={() => setShowReport(true)}
+        />
+      )}
+      {showSoundPicker && video.track && (
+        <SoundPicker
+          mode="track-videos"
+          activeTrack={video.track}
+          onClose={() => setShowSoundPicker(false)}
+          // "Use this sound" from someone else's reel hands off to Upload
+          // with the track preselected, TikTok-style, rather than trying
+          // to attach it to this card. Upload doesn't read a trackId query
+          // param yet, so this is a no-op there until that's wired up —
+          // tracked separately, out of scope for the feed overlay itself.
+          onSelect={({ soundId }) => {
+            window.location.href = `/upload?trackId=${soundId}`;
+          }}
         />
       )}
     </div>
