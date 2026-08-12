@@ -30,6 +30,80 @@ function formatTimecode(seconds = 0) {
   return `${m}:${s}`;
 }
 
+/* ------------------------------------------------------------------ */
+/* Engagement-rail icons — solid fill, sized for w-7/w-8 drop-shadowed  */
+/* buttons over bright/busy video backgrounds (see engagement rail      */
+/* below). Emoji glyphs render at inconsistent sizes/weights across     */
+/* platforms and can't take a fill color, which is why the rail was     */
+/* switched to real SVGs here instead.                                  */
+/* ------------------------------------------------------------------ */
+
+function HeartIcon({ filled, className }) {
+  return filled ? (
+    <svg viewBox="0 0 24 24" className={className} fill="#ef4444" stroke="none">
+      <path d="M12 21s-6.716-4.29-9.428-8.06C.86 10.42 1.2 6.9 3.99 5.16A6.02 6.02 0 0 1 12 6.36a6.02 6.02 0 0 1 8.01-1.2c2.79 1.74 3.13 5.26 1.42 7.78C18.716 16.71 12 21 12 21Z" />
+    </svg>
+  ) : (
+    <svg viewBox="0 0 24 24" className={className} fill="#ffffff" stroke="none">
+      <path d="M12 21s-6.716-4.29-9.428-8.06C.86 10.42 1.2 6.9 3.99 5.16A6.02 6.02 0 0 1 12 6.36a6.02 6.02 0 0 1 8.01-1.2c2.79 1.74 3.13 5.26 1.42 7.78C18.716 16.71 12 21 12 21Z" />
+    </svg>
+  );
+}
+
+function CommentIcon({ className }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="#ffffff" stroke="none">
+      <path d="M12 2C6.48 2 2 5.94 2 10.8c0 2.62 1.32 4.96 3.4 6.57-.12 1.2-.53 2.65-1.32 3.98a.5.5 0 0 0 .58.73c1.98-.6 3.6-1.5 4.72-2.27.83.19 1.7.29 2.62.29 5.52 0 10-3.94 10-8.8S17.52 2 12 2Z" />
+    </svg>
+  );
+}
+
+function BookmarkIcon({ filled, className }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill={filled ? '#ffffff' : 'none'} stroke="#ffffff" strokeWidth="2" strokeLinejoin="round">
+      <path d="M6 3.5h12a1 1 0 0 1 1 1V21l-7-4.2L5 21V4.5a1 1 0 0 1 1-1Z" />
+    </svg>
+  );
+}
+
+function GiftIcon({ dimmed, className }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke={dimmed ? 'rgba(255,255,255,0.4)' : '#ffffff'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="8" width="18" height="13" rx="1" fill={dimmed ? 'rgba(255,255,255,0.15)' : '#ffffff'} stroke="none" />
+      <path d="M3 12h18" stroke={dimmed ? 'rgba(0,0,0,0.3)' : '#000000'} />
+      <path d="M12 8v13" stroke={dimmed ? 'rgba(0,0,0,0.3)' : '#000000'} />
+      <path d="M12 8H7.5a2.5 2.5 0 0 1 0-5C10 3 12 8 12 8Z" />
+      <path d="M12 8h4.5a2.5 2.5 0 0 0 0-5C14 3 12 8 12 8Z" />
+    </svg>
+  );
+}
+
+function MoreIcon({ className }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="#ffffff" stroke="none">
+      <circle cx="5" cy="12" r="2.2" />
+      <circle cx="12" cy="12" r="2.2" />
+      <circle cx="19" cy="12" r="2.2" />
+    </svg>
+  );
+}
+
+function ShareIcon({ className }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="#ffffff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7" />
+      <path d="M16 6l-4-4-4 4" />
+      <path d="M12 2v14" />
+    </svg>
+  );
+}
+
+// Every icon button + its count label shares this drop-shadow so both stay
+// readable over bright/high-key video frames, not just dark ones.
+const ICON_SHADOW = 'drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]';
+const LABEL_SHADOW = 'drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]';
+
+
 const VideoCard = forwardRef(function VideoCard(
   { video, isActive, shouldLoad = true, focusMode = false, onToggleFollow, onActiveTimeUpdate, onDeleted },
   ref
@@ -468,15 +542,19 @@ const VideoCard = forwardRef(function VideoCard(
           <p className="font-body text-sm text-smoke mt-1">{video.caption}</p>
         </div>
 
-        {/* Engagement rail — bottom-24 clears the fixed bottom nav on mobile */}
+        {/* Engagement rail — bottom-24 clears the fixed bottom nav on mobile.
+            Pure white icons/labels with a heavy drop shadow (rather than the
+            theme's muted bone/smoke tones) so the rail stays readable over
+            bright, high-key video frames — the same reason mono count labels
+            switched from text-smoke to text-white here. */}
         <div className="absolute bottom-24 right-6 flex flex-col items-center gap-5">
           {!isOwnVideo && (
-            <a href={`/profile/${video.user?.id}`} className="relative block w-11 h-11 mb-1">
-              <span className="block w-11 h-11 rounded-full overflow-hidden border-2 border-bone bg-ink2">
+            <a href={`/profile/${video.user?.id}`} className="relative block w-12 h-12 mb-1">
+              <span className="block w-12 h-12 rounded-full overflow-hidden border-2 border-white bg-ink2 shadow-[0_2px_6px_rgba(0,0,0,0.6)]">
                 {video.user?.avatarUrl ? (
                   <img src={video.user.avatarUrl} alt="" className="w-full h-full object-cover" />
                 ) : (
-                  <span className="w-full h-full flex items-center justify-center font-display text-bone text-lg">
+                  <span className="w-full h-full flex items-center justify-center font-display text-white text-lg">
                     {video.user?.username?.[0]?.toUpperCase()}
                   </span>
                 )}
@@ -485,53 +563,79 @@ const VideoCard = forwardRef(function VideoCard(
                 <button
                   onClick={handleFollow}
                   aria-label="Follow"
-                  className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-5 h-5 rounded-full bg-reel text-ink flex items-center justify-center text-xs font-bold border-2 border-ink"
+                  className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-6 h-6 rounded-full bg-reel text-ink flex items-center justify-center text-sm font-bold border-2 border-white shadow-[0_2px_4px_rgba(0,0,0,0.6)]"
                 >
                   +
                 </button>
               )}
             </a>
           )}
-          <button onClick={toggleLike} className="flex flex-col items-center gap-1">
-            <span className={`text-2xl ${liked ? 'text-reel' : 'text-bone'}`}>♥</span>
-            <span className="font-mono text-xs text-smoke">{likeCount}</span>
-          </button>
-          <button
-            onClick={() => {
-              // On desktop the comments are already visible in the persistent
-              // rail — no need to also pop the mobile sheet over the video.
-              if (window.innerWidth < 768) setShowComments(true);
-            }}
-            className="flex flex-col items-center gap-1"
-          >
-            <span className="text-2xl text-bone">💬</span>
-            <span className="font-mono text-xs text-smoke">{commentCount}</span>
-          </button>
-          <button onClick={toggleBookmark} className="flex flex-col items-center gap-1">
-            <span className={`text-2xl ${bookmarked ? 'text-reel' : 'text-bone'}`}>🔖</span>
-            <span className="font-mono text-xs text-smoke">{bookmarkCount}</span>
-          </button>
-          {video.user?.stripeOnboarded ? (
-            <button onClick={() => setShowTip(true)} className="flex flex-col items-center gap-1">
-              <span className="text-2xl text-reel">$</span>
-              <span className="font-mono text-xs text-smoke">Tip</span>
-            </button>
-          ) : (
+
+          <div className="flex flex-col items-center gap-1">
             <button
-              onClick={() => setShowTipUnavailable(true)}
-              className="flex flex-col items-center gap-1"
+              onClick={toggleLike}
+              aria-label={liked ? 'Unlike' : 'Like'}
+              className={`p-2 hover:scale-110 transition-transform filter ${ICON_SHADOW}`}
             >
-              <span className="text-2xl text-smoke/40">$</span>
-              <span className="font-mono text-xs text-smoke/40">Tip</span>
+              <HeartIcon filled={liked} className="w-8 h-8" />
             </button>
-          )}
+            <span className={`text-xs font-bold text-white ${LABEL_SHADOW}`}>{likeCount}</span>
+          </div>
+
+          <div className="flex flex-col items-center gap-1">
+            <button
+              onClick={() => {
+                // On desktop the comments are already visible in the persistent
+                // rail — no need to also pop the mobile sheet over the video.
+                if (window.innerWidth < 768) setShowComments(true);
+              }}
+              aria-label="Comments"
+              className={`p-2 hover:scale-110 transition-transform filter ${ICON_SHADOW}`}
+            >
+              <CommentIcon className="w-8 h-8" />
+            </button>
+            <span className={`text-xs font-bold text-white ${LABEL_SHADOW}`}>{commentCount}</span>
+          </div>
+
+          <div className="flex flex-col items-center gap-1">
+            <button
+              onClick={toggleBookmark}
+              aria-label={bookmarked ? 'Remove bookmark' : 'Save'}
+              className={`p-2 hover:scale-110 transition-transform filter ${ICON_SHADOW}`}
+            >
+              <BookmarkIcon filled={bookmarked} className="w-7 h-7" />
+            </button>
+            <span className={`text-xs font-bold text-white ${LABEL_SHADOW}`}>{bookmarkCount}</span>
+          </div>
+
+          <div className="flex flex-col items-center gap-1">
+            {video.user?.stripeOnboarded ? (
+              <button
+                onClick={() => setShowTip(true)}
+                aria-label="Send a tip"
+                className={`p-2 hover:scale-110 transition-transform filter ${ICON_SHADOW}`}
+              >
+                <GiftIcon className="w-7 h-7" />
+              </button>
+            ) : (
+              <button
+                onClick={() => setShowTipUnavailable(true)}
+                aria-label="Tipping unavailable"
+                className="p-2"
+              >
+                <GiftIcon dimmed className="w-7 h-7" />
+              </button>
+            )}
+            <span className={`text-xs font-bold text-white ${LABEL_SHADOW}`}>Tip</span>
+          </div>
+
           <div className="relative" ref={menuRef}>
             <button
               onClick={() => setShowMenu((v) => !v)}
-              className="flex flex-col items-center gap-1"
+              className={`p-2 hover:scale-110 transition-transform filter ${ICON_SHADOW}`}
               aria-label="More options"
             >
-              <span className="text-2xl text-bone">⋯</span>
+              <MoreIcon className="w-7 h-7" />
             </button>
             {showMenu && (
               <div className="absolute bottom-full right-0 mb-2 bg-ink2 border border-smoke/20 rounded-sprocket overflow-hidden z-10 w-40">
@@ -559,16 +663,20 @@ const VideoCard = forwardRef(function VideoCard(
               </div>
             )}
           </div>
-          <button
-            onClick={() => {
-              api.logEvent(video.id, 'share').catch(() => {});
-              setShowShare(true);
-            }}
-            className="flex flex-col items-center gap-1"
-          >
-            <span className="text-2xl text-bone">↗</span>
-            <span className="font-mono text-xs text-smoke">Share</span>
-          </button>
+
+          <div className="flex flex-col items-center gap-1">
+            <button
+              onClick={() => {
+                api.logEvent(video.id, 'share').catch(() => {});
+                setShowShare(true);
+              }}
+              aria-label="Share"
+              className={`p-2 hover:scale-110 transition-transform filter ${ICON_SHADOW}`}
+            >
+              <ShareIcon className="w-7 h-7" />
+            </button>
+            <span className={`text-xs font-bold text-white ${LABEL_SHADOW}`}>Share</span>
+          </div>
         </div>
       </div>
 
