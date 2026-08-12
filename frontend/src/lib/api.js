@@ -252,11 +252,6 @@ export const api = {
   adminGetVideos: (status = 'published') => request(`/admin/videos?status=${status}`),
   adminRemoveVideo: (id, reason) =>
     request(`/admin/videos/${id}/remove`, { method: 'POST', body: { reason } }),
-<<<<<<< HEAD
-=======
-  adminDeleteVideo: (id, reason) =>
-    request(`/admin/videos/${id}`, { method: 'DELETE', body: { reason } }),
->>>>>>> f194879 (Add admin user status/role routes, hard video delete, paginated audit log)
   adminGetVideoFlags: (id) => request(`/admin/videos/${id}/flags`),
   adminGetFraudSignals: () => request('/admin/fraud-signals'),
   adminGetAuditLog: (page = 1, limit = 50) =>
