@@ -1,18 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { api } from '../../../lib/api';
-import { LoadingSpinner } from '../../../components/LoadingScreen';
+import { useState, useEffect } from 'react';
+import { api } from '@/lib/api';
 
-const ACTION_COLOR = {
-  suspend_user: 'text-amber-400',
+const ACTION_COLORS = {
   ban_user: 'text-red-400',
   reinstate_user: 'text-emerald-400',
-  remove_video: 'text-red-400',
-<<<<<<< HEAD
-=======
   delete_video: 'text-red-400',
->>>>>>> f194879 (Add admin user status/role routes, hard video delete, paginated audit log)
   resolve_report: 'text-emerald-400',
   dismiss_report: 'text-zinc-400',
   change_role: 'text-blue-400',
@@ -21,106 +15,81 @@ const ACTION_COLOR = {
 export default function AuditLogPage() {
   const [actions, setActions] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
 
   useEffect(() => {
-<<<<<<< HEAD
-    api.adminGetAuditLog().then(setActions).catch(() => setActions([])).finally(() => setLoading(false));
-=======
     api
       .adminGetAuditLog(1)
       .then((res) => {
-        setActions(res.data);
-        setHasMore(res.hasMore);
+        const logs = Array.isArray(res) ? res : res?.data || res?.logs || [];
+        setActions(logs);
+        setHasMore(res?.hasMore || false);
       })
       .catch(() => setActions([]))
       .finally(() => setLoading(false));
->>>>>>> f194879 (Add admin user status/role routes, hard video delete, paginated audit log)
   }, []);
 
   async function loadMore() {
-    setLoadingMore(true);
+    const nextPage = page + 1;
     try {
-      const res = await api.adminGetAuditLog(page + 1);
-      setActions((prev) => [...prev, ...res.data]);
-      setHasMore(res.hasMore);
-      setPage((p) => p + 1);
-    } finally {
-      setLoadingMore(false);
+      const res = await api.adminGetAuditLog(nextPage);
+      const logs = Array.isArray(res) ? res : res?.data || res?.logs || [];
+      setActions((prev) => [...prev, ...logs]);
+      setPage(nextPage);
+      setHasMore(res?.hasMore || false);
+    } catch (err) {
+      console.error(err);
     }
   }
 
   return (
-    <div>
-      <h1 className="font-display text-2xl text-white tracking-wide mb-1">System Audit Logs</h1>
-      <p className="font-body text-zinc-500 text-sm mb-6">
-        Every moderation action taken on the platform, most recent first — for accountability.
-      </p>
+    <div className="p-6">
+      <h1 className="text-2xl font-bold text-white mb-6">Audit Log</h1>
 
-      {loading && <LoadingSpinner label="Loading…" />}
-
-      {!loading && (
-        <div className="overflow-x-auto rounded-xl border border-zinc-800">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-zinc-900/60 border-b border-zinc-800">
-                <th className="px-4 py-3 font-mono text-[10px] uppercase tracking-widest text-zinc-500">Timestamp</th>
-                <th className="px-4 py-3 font-mono text-[10px] uppercase tracking-widest text-zinc-500">Moderator</th>
-                <th className="px-4 py-3 font-mono text-[10px] uppercase tracking-widest text-zinc-500">Action</th>
-                <th className="px-4 py-3 font-mono text-[10px] uppercase tracking-widest text-zinc-500">Target</th>
-                <th className="px-4 py-3 font-mono text-[10px] uppercase tracking-widest text-zinc-500">Reason</th>
+      {loading ? (
+        <p className="text-zinc-400">Loading audit logs...</p>
+      ) : actions.length === 0 ? (
+        <p className="text-zinc-400">No recorded audit events found.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm text-zinc-300">
+            <thead className="border-b border-zinc-800 text-xs uppercase text-zinc-500">
+              <tr>
+                <th className="py-3 px-4">Action</th>
+                <th className="py-3 px-4">Admin</th>
+                <th className="py-3 px-4">Target ID</th>
+                <th className="py-3 px-4">Reason</th>
+                <th className="py-3 px-4">Timestamp</th>
               </tr>
             </thead>
             <tbody>
-              {actions.map((a) => (
-                <tr key={a.id} className="border-b border-zinc-800/60 last:border-0 hover:bg-zinc-900/40">
-                  <td className="px-4 py-3 font-mono text-xs text-zinc-500 whitespace-nowrap">
-                    {new Date(a.createdAt).toLocaleString()}
+              {actions.map((log) => (
+                <tr key={log.id || log._id} className="border-b border-zinc-800/50 hover:bg-zinc-900/50">
+                  <td className={`py-3 px-4 font-mono font-semibold ${ACTION_COLORS[log.action] || 'text-zinc-300'}`}>
+                    {log.action}
                   </td>
-                  <td className="px-4 py-3">
-                    <span className="font-body text-sm text-amber-400">@{a.admin?.username || 'unknown'}</span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`font-mono text-xs uppercase tracking-widest ${ACTION_COLOR[a.actionType] || 'text-zinc-300'}`}>
-                      {a.actionType.replace(/_/g, ' ')}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 font-mono text-xs text-zinc-400">
-                    {a.targetType}:{a.targetId.slice(0, 8)}…
-                  </td>
-                  <td className="px-4 py-3 font-body text-sm text-zinc-400 max-w-xs truncate">
-                    {a.reason || <em className="text-zinc-600">No note</em>}
-                  </td>
+                  <td className="py-3 px-4">{log.admin?.email || log.adminId || 'System'}</td>
+                  <td className="py-3 px-4 font-mono text-zinc-400">{log.targetId || 'N/A'}</td>
+                  <td className="py-3 px-4 text-zinc-400">{log.reason || '-'}</td>
+                  <td className="py-3 px-4 text-zinc-500">{new Date(log.createdAt).toLocaleString()}</td>
                 </tr>
               ))}
-              {actions.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-4 py-10 text-center font-body text-sm text-zinc-500">
-                    No moderation actions recorded yet.
-                  </td>
-                </tr>
-              )}
             </tbody>
           </table>
         </div>
       )}
-<<<<<<< HEAD
-=======
 
       {!loading && hasMore && (
         <div className="mt-4 flex justify-center">
           <button
             onClick={loadMore}
-            disabled={loadingMore}
-            className="font-mono text-[10px] uppercase tracking-widest px-4 py-2 rounded-lg border border-zinc-700 text-zinc-300 hover:bg-zinc-800 transition-colors disabled:opacity-50"
+            className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white rounded-md text-sm font-medium transition"
           >
-            {loadingMore ? 'Loading…' : 'Load more'}
+            Load More
           </button>
         </div>
       )}
->>>>>>> f194879 (Add admin user status/role routes, hard video delete, paginated audit log)
     </div>
   );
 }
