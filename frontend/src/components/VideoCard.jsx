@@ -339,7 +339,6 @@ const VideoCard = forwardRef(function VideoCard(
         loop
         playsInline
         muted={!audioEnabled}
-        onClick={handleVideoTap}
         onWaiting={() => setBuffering(true)}
         onPlaying={() => setBuffering(false)}
         onCanPlay={() => setBuffering(false)}
@@ -351,8 +350,26 @@ const VideoCard = forwardRef(function VideoCard(
           // trust it once it's an actual finite number.
           if (Number.isFinite(d)) setLiveDuration(d);
         }}
-        className="h-full w-full max-w-md object-cover mx-auto cursor-pointer"
+        className="h-full w-full max-w-md object-cover mx-auto"
         poster={video.thumbnailUrl}
+      />
+
+      {/* Full-bleed tap target for single-tap play/pause and double-tap-to-
+          like. The <video> itself is capped at max-w-md and centered
+          (object-cover) inside a full-width/height container, so on any
+          viewport wider than ~448px there's letterboxed dead space on
+          either side of it that isn't part of the <video> element at all —
+          a click handler on the video itself misses taps that land there.
+          This sits in its own layer directly on top of the video (no
+          explicit z-index, so it still paints under the heart pop, mute
+          button, and engagement rail below, all of which are either
+          pointer-events-none or come later in the DOM) and covers the
+          entire card so a tap/click always registers no matter where on
+          the card it lands. */}
+      <div
+        className="absolute inset-0 cursor-pointer"
+        onClick={handleVideoTap}
+        aria-hidden="true"
       />
 
       {/* Buffering indicator — only for a card that's actually trying to
