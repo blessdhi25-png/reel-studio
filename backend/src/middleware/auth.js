@@ -32,11 +32,19 @@ export async function requireAuth(req, res, next) {
 
     req.userId = user.id;
     req.userRole = user.role;
+    // Convenience alias for code written against a req.user.role shape
+    // (see authorizeRoles below) — req.userId/req.userRole above remain the
+    // canonical fields every existing route in this codebase already reads.
+    req.user = { id: user.id, role: user.role };
     next();
   } catch (err) {
     return res.status(401).json({ error: 'Invalid or expired token' });
   }
 }
+
+// Alias for requireAuth — identical behavior, just named to match
+// "authenticateUser" for anyone wiring routes against that convention.
+export const authenticateUser = requireAuth;
 
 // Optional auth: attaches userId if present, but doesn't block the request
 export async function optionalAuth(req, _res, next) {
@@ -61,3 +69,14 @@ export function requireRole(...allowedRoles) {
     next();
   };
 }
+
+// Alias for requireRole — identical behavior, named to match
+// "authorizeRoles" for anyone wiring routes against that convention.
+//
+// Role values are stored lowercase in the database (see the UserRole enum
+// in prisma/schema.prisma: 'user' | 'moderator' | 'admin') — call this
+// with those exact lowercase strings, e.g. authorizeRoles('admin',
+// 'moderator'), not 'ADMIN'/'MODERATOR'. Passing uppercase strings would
+// silently lock every real admin out, since req.userRole is compared
+// case-sensitively against whatever's passed in here.
+export const authorizeRoles = requireRole;
