@@ -2,12 +2,8 @@ import { Router } from 'express';
 import prisma from '../config/db.js';
 import cloudinary from '../config/cloudinary.js';
 import { requireAuth, optionalAuth } from '../middleware/auth.js';
-<<<<<<< HEAD
-import { upload, cloudinaryPublicIdFromUrl } from '../utils/upload.js';
-=======
 import { upload } from '../utils/upload.js';
 import { deleteVideoCascade } from '../utils/deleteVideoCascade.js';
->>>>>>> f194879 (Add admin user status/role routes, hard video delete, paginated audit log)
 import { applyFeedTuning } from '../utils/feedTuning.js';
 import { ALLOWED_CIRCLES, normalizeCircle } from '../utils/circles.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
@@ -211,63 +207,10 @@ router.delete('/:id', requireAuth, asyncHandler(async (req, res) => {
   if (!video) return res.status(404).json({ error: 'Video not found' });
   if (video.userId !== req.userId) return res.status(403).json({ error: 'Not your video' });
 
-<<<<<<< HEAD
-  // Cloudinary cleanup is best-effort and happens before the DB delete: if
-  // it fails (network blip, already-gone asset, a pre-Cloudinary-migration
-  // record with a local rawPath instead of a Cloudinary URL), that should
-  // never block the user from deleting their post — it just means an
-  // orphaned asset sits in the Cloudinary account instead of a video the
-  // user can no longer see or manage. cloudinaryPublicIdFromUrl returns
-  // null for anything that isn't recognizable, which destroy() calls below
-  // simply skip.
-  const rawPublicId = cloudinaryPublicIdFromUrl(video.rawPath);
-  const thumbnailPublicId = cloudinaryPublicIdFromUrl(video.thumbnailUrl);
-
-  const destroyJobs = [];
-  if (rawPublicId) {
-    destroyJobs.push(cloudinary.uploader.destroy(rawPublicId, { resource_type: 'video' }));
-  }
-  if (thumbnailPublicId) {
-    destroyJobs.push(cloudinary.uploader.destroy(thumbnailPublicId, { resource_type: 'image' }));
-  }
-  // NOTE: this doesn't yet clean up the HLS output (playlist + .ts
-  // segments) — that's still written to local disk by the transcode
-  // worker (see workers/transcode.js) rather than Cloudinary, and is a
-  // known gap flagged there too.
-  if (destroyJobs.length) {
-    const results = await Promise.allSettled(destroyJobs);
-    for (const r of results) {
-      if (r.status === 'rejected') {
-        console.error(`[videos] Cloudinary cleanup failed for video ${video.id}:`, r.reason);
-      }
-    }
-  }
-
-  // None of Like/Bookmark/Comment/FeedEvent's relations to Video cascade
-  // (see schema.prisma) — a plain prisma.video.delete() throws a foreign
-  // key violation the moment the video has any engagement at all, which in
-  // practice is nearly every real video: a FeedEvent 'impression' row gets
-  // written on every single play (see the impression logging in
-  // VideoCard.jsx), so this would have 500'd on almost any post someone
-  // actually watched. Deleting the dependents first, in one transaction,
-  // fixes that. Transaction (tip) rows are the one exception — those are
-  // payment records between two users, so instead of deleting them this
-  // nulls out their optional videoId and leaves the transaction itself
-  // intact, preserving payout/payment history after the video is gone.
-  await prisma.$transaction([
-    prisma.like.deleteMany({ where: { videoId: video.id } }),
-    prisma.bookmark.deleteMany({ where: { videoId: video.id } }),
-    prisma.comment.deleteMany({ where: { videoId: video.id } }),
-    prisma.feedEvent.deleteMany({ where: { videoId: video.id } }),
-    prisma.transaction.updateMany({ where: { videoId: video.id }, data: { videoId: null } }),
-    prisma.video.delete({ where: { id: video.id } }),
-  ]);
-=======
   // See utils/deleteVideoCascade.js — shared with the admin hard-takedown
   // route so both the Cloudinary cleanup and the FK-safe cascade delete
   // logic live in exactly one place.
   await deleteVideoCascade(video);
->>>>>>> f194879 (Add admin user status/role routes, hard video delete, paginated audit log)
 
   res.json({ ok: true });
 }));
