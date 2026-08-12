@@ -1,11 +1,18 @@
 'use client';
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { deleteCookie, setCookie } from '../lib/cookies';
 
 const AuthContext = createContext(null);
 
 const TOKEN_KEY = 'token';
 const USER_KEY = 'user';
+// Mirrors JWT_EXPIRES_IN's default on the backend (see backend/.env.example)
+// — not load-bearing if they drift apart, since the backend independently
+// rejects an actually-expired token on every real API call regardless of
+// what this cookie's max-age says. See lib/cookies.js for the full picture
+// of why these cookies exist at all.
+const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 7; // 7 days
 
 function readStoredUser() {
   if (typeof window === 'undefined') return null;
@@ -68,6 +75,18 @@ export function AuthProvider({ children }) {
   const login = useCallback((newToken, newUser) => {
     window.localStorage.setItem(TOKEN_KEY, newToken);
     window.localStorage.setItem(USER_KEY, JSON.stringify(newUser));
+    // Cookie mirror for middleware.js's /admin/* route guard — see
+    // lib/cookies.js for why this exists alongside localStorage rather than
+    // instead of it. newUser.role may be undefined for the very first
+    // Google-callback write (see that page's comment) — falling back to
+    // deleting any stale role cookie rather than writing the literal string
+    // "undefined".
+    setCookie(TOKEN_KEY, newToken, COOKIE_MAX_AGE_SECONDS);
+    if (newUser?.role) {
+      setCookie('role', newUser.role, COOKIE_MAX_AGE_SECONDS);
+    } else {
+      deleteCookie('role');
+    }
     setToken(newToken);
     setUser(newUser);
   }, []);
@@ -81,6 +100,9 @@ export function AuthProvider({ children }) {
       if (!prev) return prev;
       const next = { ...prev, ...patch };
       window.localStorage.setItem(USER_KEY, JSON.stringify(next));
+      // Keep the role cookie in sync too, in case a role change ever
+      // arrives through this path rather than a fresh login.
+      if (patch.role) setCookie('role', next.role, COOKIE_MAX_AGE_SECONDS);
       return next;
     });
   }, []);
@@ -88,6 +110,8 @@ export function AuthProvider({ children }) {
   const logout = useCallback(() => {
     window.localStorage.removeItem(TOKEN_KEY);
     window.localStorage.removeItem(USER_KEY);
+    deleteCookie(TOKEN_KEY);
+    deleteCookie('role');
     setToken(null);
     setUser(null);
   }, []);
