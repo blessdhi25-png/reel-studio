@@ -6,6 +6,11 @@ import AppShell from '../components/AppShell';
 export const metadata = {
   title: 'Reel — short and long video, one feed',
   description: 'Watch, post, and get tipped — short clips and long videos in one place.',
+  icons: {
+    icon: '/logo.svg',
+    shortcut: '/logo.svg',
+    apple: '/logo.svg',
+  },
 };
 
 // viewportFit: 'cover' is required for env(safe-area-inset-*) to report real
