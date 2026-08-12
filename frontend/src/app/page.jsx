@@ -11,6 +11,7 @@ import DesktopRail from '../components/DesktopRail';
 import SprocketRail from '../components/SprocketRail';
 import { loadTuningWeights } from '../components/TuneFeedPanel';
 import FeedFiltersDrawer from '../components/FeedFiltersDrawer';
+import Logo from '../components/Logo';
 
 const FILTERS = [
   { label: 'All', value: null },
@@ -336,6 +337,9 @@ export default function FeedPage() {
       style={{ paddingTop: 'max(1.25rem, calc(env(safe-area-inset-top) + 0.75rem))' }}
     >
       <div className="flex items-center gap-2">
+        <a href="/" aria-label="Reel Studio home" className="shrink-0">
+          <Logo size="sm" showText={false} />
+        </a>
         <div className="flex-1 min-w-0 flex justify-center overflow-x-auto">
           <div className="flex gap-1 bg-ink2/80 rounded-sprocket p-1 font-mono text-xs uppercase tracking-widest shrink-0">
             {FILTERS.map((opt) => (
@@ -394,7 +398,11 @@ export default function FeedPage() {
   // links on the right.
   const desktopHeader = (
     <header className="hidden md:flex h-16 items-center justify-between gap-6 px-6 border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-md shrink-0 z-20">
-      <div className="flex items-center gap-3 min-w-0 flex-1">
+      <div className="flex items-center gap-4 min-w-0 flex-1">
+        <a href="/" aria-label="Reel Studio home" className="shrink-0">
+          <Logo size="sm" showText={true} />
+        </a>
+        <span className="w-px h-6 bg-zinc-800 shrink-0" />
         {user ? (
           <a href={`/profile/${user.id}`} className="flex items-center gap-2 min-w-0 group">
             <span className="w-8 h-8 rounded-full overflow-hidden bg-zinc-800 border border-zinc-700 shrink-0 flex items-center justify-center font-display text-amber-400 text-sm">
