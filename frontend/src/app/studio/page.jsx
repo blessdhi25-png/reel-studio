@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '../../lib/api';
+import Logo from '../../components/Logo';
 import { LoadingSpinner } from '../../components/LoadingScreen';
 
 // Small inline icon set — no icon library dependency, kept minimal/monoline
@@ -127,9 +128,7 @@ export default function StudioPage() {
 
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <h1 className="bg-gradient-to-r from-amber-400 via-amber-200 to-white bg-clip-text text-transparent font-extrabold text-3xl tracking-tight">
-          REEL STUDIO
-        </h1>
+        <Logo size="md" showText />
         <div className="flex gap-3">
           <a
             href="/live"
