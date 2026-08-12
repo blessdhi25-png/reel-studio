@@ -337,7 +337,7 @@ export default function FeedPage() {
       style={{ paddingTop: 'max(1.25rem, calc(env(safe-area-inset-top) + 0.75rem))' }}
     >
       <div className="flex items-center gap-2">
-        <a href="/" aria-label="Reel Studio home" className="shrink-0">
+        <a href="/" className="shrink-0" aria-label="Reel Studio home">
           <Logo size="sm" showText={false} />
         </a>
         <div className="flex-1 min-w-0 flex justify-center overflow-x-auto">
@@ -399,10 +399,10 @@ export default function FeedPage() {
   const desktopHeader = (
     <header className="hidden md:flex h-16 items-center justify-between gap-6 px-6 border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-md shrink-0 z-20">
       <div className="flex items-center gap-4 min-w-0 flex-1">
-        <a href="/" aria-label="Reel Studio home" className="shrink-0">
-          <Logo size="sm" showText={true} />
+        <a href="/" className="shrink-0" aria-label="Reel Studio home">
+          <Logo size="sm" showText />
         </a>
-        <span className="w-px h-6 bg-zinc-800 shrink-0" />
+        <div className="w-px h-6 bg-zinc-800 shrink-0" />
         {user ? (
           <a href={`/profile/${user.id}`} className="flex items-center gap-2 min-w-0 group">
             <span className="w-8 h-8 rounded-full overflow-hidden bg-zinc-800 border border-zinc-700 shrink-0 flex items-center justify-center font-display text-amber-400 text-sm">
