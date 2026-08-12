@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useEffect, useRef, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { api, API_BASE } from '../../lib/api';
 import { ALLOWED_CIRCLES } from '../../lib/circles';
 import CameraRecorder from '../../components/CameraRecorder';
@@ -84,7 +84,20 @@ const EMOJI_QUICKSET = ['🔥', '😂', '❤️', '🎬', '✨', '🎉', '👀',
 /* ------------------------------------------------------------------ */
 
 export default function UploadPage() {
+  // useSearchParams() (added for the ?trackId= preselect handoff below)
+  // requires a Suspense boundary around any usage or `next build` fails
+  // with "missing-suspense-with-csr-bailout" — the actual page body moved
+  // into UploadPageInner so this wrapper can provide that boundary.
+  return (
+    <Suspense fallback={null}>
+      <UploadPageInner />
+    </Suspense>
+  );
+}
+
+function UploadPageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const fileInputRef = useRef(null);
   const captionRef = useRef(null);
   const xhrRef = useRef(null);
@@ -149,6 +162,28 @@ export default function UploadPage() {
     }, 300);
     return () => clearTimeout(handle);
   }, [trackQuery]);
+
+  // Preselects a sound handed off from a reel's vinyl badge / SoundPicker
+  // ("Use This Sound" -> /upload?trackId=...). Only resolves the id once,
+  // on mount — a straggler request finishing after the person has already
+  // picked or cleared a different sound by hand shouldn't clobber it, and
+  // a bad/deleted trackId just silently leaves the picker empty instead of
+  // erroring the page.
+  useEffect(() => {
+    const trackId = searchParams.get('trackId');
+    if (!trackId) return;
+    let cancelled = false;
+    api
+      .getTrack(trackId)
+      .then((track) => {
+        if (!cancelled) setSelectedTrack(track);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function pickFile(selected) {
     if (!selected) return;
