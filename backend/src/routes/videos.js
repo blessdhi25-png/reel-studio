@@ -2,7 +2,12 @@ import { Router } from 'express';
 import prisma from '../config/db.js';
 import cloudinary from '../config/cloudinary.js';
 import { requireAuth, optionalAuth } from '../middleware/auth.js';
+<<<<<<< HEAD
 import { upload, cloudinaryPublicIdFromUrl } from '../utils/upload.js';
+=======
+import { upload } from '../utils/upload.js';
+import { deleteVideoCascade } from '../utils/deleteVideoCascade.js';
+>>>>>>> f194879 (Add admin user status/role routes, hard video delete, paginated audit log)
 import { applyFeedTuning } from '../utils/feedTuning.js';
 import { ALLOWED_CIRCLES, normalizeCircle } from '../utils/circles.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
@@ -206,6 +211,7 @@ router.delete('/:id', requireAuth, asyncHandler(async (req, res) => {
   if (!video) return res.status(404).json({ error: 'Video not found' });
   if (video.userId !== req.userId) return res.status(403).json({ error: 'Not your video' });
 
+<<<<<<< HEAD
   // Cloudinary cleanup is best-effort and happens before the DB delete: if
   // it fails (network blip, already-gone asset, a pre-Cloudinary-migration
   // record with a local rawPath instead of a Cloudinary URL), that should
@@ -256,6 +262,12 @@ router.delete('/:id', requireAuth, asyncHandler(async (req, res) => {
     prisma.transaction.updateMany({ where: { videoId: video.id }, data: { videoId: null } }),
     prisma.video.delete({ where: { id: video.id } }),
   ]);
+=======
+  // See utils/deleteVideoCascade.js — shared with the admin hard-takedown
+  // route so both the Cloudinary cleanup and the FK-safe cascade delete
+  // logic live in exactly one place.
+  await deleteVideoCascade(video);
+>>>>>>> f194879 (Add admin user status/role routes, hard video delete, paginated audit log)
 
   res.json({ ok: true });
 }));

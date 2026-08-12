@@ -245,14 +245,22 @@ export const api = {
   adminBanUser: (id, reason) =>
     request(`/admin/users/${id}/ban`, { method: 'POST', body: { reason } }),
   adminReinstateUser: (id) => request(`/admin/users/${id}/reinstate`, { method: 'POST' }),
+  adminSetUserStatus: (id, status, reason) =>
+    request(`/admin/users/${id}/status`, { method: 'PATCH', body: { status, reason } }),
   adminChangeRole: (id, role) =>
     request(`/admin/users/${id}/role`, { method: 'POST', body: { role } }),
   adminGetVideos: (status = 'published') => request(`/admin/videos?status=${status}`),
   adminRemoveVideo: (id, reason) =>
     request(`/admin/videos/${id}/remove`, { method: 'POST', body: { reason } }),
+<<<<<<< HEAD
+=======
+  adminDeleteVideo: (id, reason) =>
+    request(`/admin/videos/${id}`, { method: 'DELETE', body: { reason } }),
+>>>>>>> f194879 (Add admin user status/role routes, hard video delete, paginated audit log)
   adminGetVideoFlags: (id) => request(`/admin/videos/${id}/flags`),
   adminGetFraudSignals: () => request('/admin/fraud-signals'),
-  adminGetAuditLog: () => request('/admin/audit-log'),
+  adminGetAuditLog: (page = 1, limit = 50) =>
+    request(`/admin/audit-log?page=${page}&limit=${limit}`),
 
   // Notifications
   getNotifications: () => request('/notifications'),

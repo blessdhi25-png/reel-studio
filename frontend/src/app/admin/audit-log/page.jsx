@@ -9,6 +9,10 @@ const ACTION_COLOR = {
   ban_user: 'text-red-400',
   reinstate_user: 'text-emerald-400',
   remove_video: 'text-red-400',
+<<<<<<< HEAD
+=======
+  delete_video: 'text-red-400',
+>>>>>>> f194879 (Add admin user status/role routes, hard video delete, paginated audit log)
   resolve_report: 'text-emerald-400',
   dismiss_report: 'text-zinc-400',
   change_role: 'text-blue-400',
@@ -17,10 +21,36 @@ const ACTION_COLOR = {
 export default function AuditLogPage() {
   const [actions, setActions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
 
   useEffect(() => {
+<<<<<<< HEAD
     api.adminGetAuditLog().then(setActions).catch(() => setActions([])).finally(() => setLoading(false));
+=======
+    api
+      .adminGetAuditLog(1)
+      .then((res) => {
+        setActions(res.data);
+        setHasMore(res.hasMore);
+      })
+      .catch(() => setActions([]))
+      .finally(() => setLoading(false));
+>>>>>>> f194879 (Add admin user status/role routes, hard video delete, paginated audit log)
   }, []);
+
+  async function loadMore() {
+    setLoadingMore(true);
+    try {
+      const res = await api.adminGetAuditLog(page + 1);
+      setActions((prev) => [...prev, ...res.data]);
+      setHasMore(res.hasMore);
+      setPage((p) => p + 1);
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   return (
     <div>
@@ -76,6 +106,21 @@ export default function AuditLogPage() {
           </table>
         </div>
       )}
+<<<<<<< HEAD
+=======
+
+      {!loading && hasMore && (
+        <div className="mt-4 flex justify-center">
+          <button
+            onClick={loadMore}
+            disabled={loadingMore}
+            className="font-mono text-[10px] uppercase tracking-widest px-4 py-2 rounded-lg border border-zinc-700 text-zinc-300 hover:bg-zinc-800 transition-colors disabled:opacity-50"
+          >
+            {loadingMore ? 'Loading…' : 'Load more'}
+          </button>
+        </div>
+      )}
+>>>>>>> f194879 (Add admin user status/role routes, hard video delete, paginated audit log)
     </div>
   );
 }
