@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { api } from '../../lib/api';
+import Logo from '../../components/Logo';
 
 const NAV_ITEMS = [
   { href: '/admin', label: 'Overview', icon: '📊' },
@@ -85,6 +86,7 @@ export default function AdminLayout({ children }) {
       {/* Persistent sidebar — desktop only, collapses to a horizontal scroller below md */}
       <aside className="hidden md:flex w-60 shrink-0 flex-col border-r border-zinc-800 bg-[#0a090e]">
         <div className="px-5 py-5 border-b border-zinc-800">
+          <Logo size="sm" showText={false} className="mb-3" />
           <p className="font-display text-lg text-white tracking-wide">Trust &amp; Safety</p>
           <p className="font-mono text-[10px] text-zinc-500 uppercase tracking-widest mt-0.5">
             Admin Portal
