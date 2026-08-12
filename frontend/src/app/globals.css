@@ -60,3 +60,27 @@ body {
 .animate-heart-pop {
   animation: heart-pop 0.8s ease-out forwards;
 }
+
+/* SoundPicker drawer entrance — slides up from below the viewport rather
+   than just fading in, matching the "sheet" feel viewers already get from
+   ShareSheet/CommentsPanel (those rely on being newly-mounted rather than
+   an explicit keyframe; this one's taller and benefits from an explicit
+   slide so it doesn't just pop in). */
+@keyframes sheet-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+.animate-sheet-up {
+  animation: sheet-up 0.28s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}
+
+/* Sound ticker on the video feed — the track content is duplicated back to
+   back in the DOM and this scrolls exactly -50%, so it loops seamlessly
+   from the second copy back to the first with no visible jump/reset. */
+@keyframes marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.animate-marquee {
+  animation: marquee 9s linear infinite;
+}
