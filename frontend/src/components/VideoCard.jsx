@@ -14,6 +14,60 @@ import { useToast } from '../context/ToastContext';
 // the double-tap window most touch UIs already train people to expect.
 const DOUBLE_TAP_MS = 300;
 
+// High-contrast engagement-rail icons — deliberately plain white/red fills
+// rather than the app's softer `bone` text token, since these sit directly
+// over arbitrary (often bright) video content and need to stay legible no
+// matter what's playing underneath, the same way TikTok/Reels overlays do.
+function HeartIcon({ filled, className = '' }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill={filled ? '#ef4444' : 'white'} stroke="none">
+      <path d="M12 21s-6.7-4.35-9.33-8.2C.9 10.1 1.4 6.6 4.2 4.9c2.3-1.4 5-.7 6.6 1.2l1.2 1.4 1.2-1.4c1.6-1.9 4.3-2.6 6.6-1.2 2.8 1.7 3.3 5.2 1.53 7.9C18.7 16.65 12 21 12 21z" />
+    </svg>
+  );
+}
+
+function CommentIcon({ className = '' }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="white" stroke="none">
+      <path d="M4 4h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-5 4v-4H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" />
+    </svg>
+  );
+}
+
+function BookmarkIcon({ filled, className = '' }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill={filled ? '#ef4444' : 'white'} stroke="none">
+      <path d="M6 2h12a1 1 0 0 1 1 1v19l-7-4.5L5 22V3a1 1 0 0 1 1-1z" />
+    </svg>
+  );
+}
+
+function TipIcon({ muted, className = '' }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke={muted ? 'rgba(255,255,255,0.4)' : 'white'} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v10M15 9.5c0-1.4-1.3-2.5-3-2.5s-3 1-3 2.4c0 1.5 1.3 2 3 2.4 1.7.4 3 1 3 2.4 0 1.4-1.3 2.4-3 2.4s-3-1-3-2.4" />
+    </svg>
+  );
+}
+
+function MoreDotsIcon({ className = '' }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="white" stroke="none">
+      <circle cx="5" cy="12" r="2.2" /><circle cx="12" cy="12" r="2.2" /><circle cx="19" cy="12" r="2.2" />
+    </svg>
+  );
+}
+
+function ShareIcon({ className = '' }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7" />
+      <path d="M16 6l-4-4-4 4" /><path d="M12 2v14" />
+    </svg>
+  );
+}
+
 // Whether the viewer has ever tapped a video (a real user gesture). Browsers
 // block autoplay-with-sound until one happens, so every clip starts muted
 // and this flips permanently true — and gets remembered — the first time
@@ -29,80 +83,6 @@ function formatTimecode(seconds = 0) {
   const s = Math.floor(seconds % 60).toString().padStart(2, '0');
   return `${m}:${s}`;
 }
-
-/* ------------------------------------------------------------------ */
-/* Engagement-rail icons — solid fill, sized for w-7/w-8 drop-shadowed  */
-/* buttons over bright/busy video backgrounds (see engagement rail      */
-/* below). Emoji glyphs render at inconsistent sizes/weights across     */
-/* platforms and can't take a fill color, which is why the rail was     */
-/* switched to real SVGs here instead.                                  */
-/* ------------------------------------------------------------------ */
-
-function HeartIcon({ filled, className }) {
-  return filled ? (
-    <svg viewBox="0 0 24 24" className={className} fill="#ef4444" stroke="none">
-      <path d="M12 21s-6.716-4.29-9.428-8.06C.86 10.42 1.2 6.9 3.99 5.16A6.02 6.02 0 0 1 12 6.36a6.02 6.02 0 0 1 8.01-1.2c2.79 1.74 3.13 5.26 1.42 7.78C18.716 16.71 12 21 12 21Z" />
-    </svg>
-  ) : (
-    <svg viewBox="0 0 24 24" className={className} fill="#ffffff" stroke="none">
-      <path d="M12 21s-6.716-4.29-9.428-8.06C.86 10.42 1.2 6.9 3.99 5.16A6.02 6.02 0 0 1 12 6.36a6.02 6.02 0 0 1 8.01-1.2c2.79 1.74 3.13 5.26 1.42 7.78C18.716 16.71 12 21 12 21Z" />
-    </svg>
-  );
-}
-
-function CommentIcon({ className }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} fill="#ffffff" stroke="none">
-      <path d="M12 2C6.48 2 2 5.94 2 10.8c0 2.62 1.32 4.96 3.4 6.57-.12 1.2-.53 2.65-1.32 3.98a.5.5 0 0 0 .58.73c1.98-.6 3.6-1.5 4.72-2.27.83.19 1.7.29 2.62.29 5.52 0 10-3.94 10-8.8S17.52 2 12 2Z" />
-    </svg>
-  );
-}
-
-function BookmarkIcon({ filled, className }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} fill={filled ? '#ffffff' : 'none'} stroke="#ffffff" strokeWidth="2" strokeLinejoin="round">
-      <path d="M6 3.5h12a1 1 0 0 1 1 1V21l-7-4.2L5 21V4.5a1 1 0 0 1 1-1Z" />
-    </svg>
-  );
-}
-
-function GiftIcon({ dimmed, className }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} fill="none" stroke={dimmed ? 'rgba(255,255,255,0.4)' : '#ffffff'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="8" width="18" height="13" rx="1" fill={dimmed ? 'rgba(255,255,255,0.15)' : '#ffffff'} stroke="none" />
-      <path d="M3 12h18" stroke={dimmed ? 'rgba(0,0,0,0.3)' : '#000000'} />
-      <path d="M12 8v13" stroke={dimmed ? 'rgba(0,0,0,0.3)' : '#000000'} />
-      <path d="M12 8H7.5a2.5 2.5 0 0 1 0-5C10 3 12 8 12 8Z" />
-      <path d="M12 8h4.5a2.5 2.5 0 0 0 0-5C14 3 12 8 12 8Z" />
-    </svg>
-  );
-}
-
-function MoreIcon({ className }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} fill="#ffffff" stroke="none">
-      <circle cx="5" cy="12" r="2.2" />
-      <circle cx="12" cy="12" r="2.2" />
-      <circle cx="19" cy="12" r="2.2" />
-    </svg>
-  );
-}
-
-function ShareIcon({ className }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="#ffffff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7" />
-      <path d="M16 6l-4-4-4 4" />
-      <path d="M12 2v14" />
-    </svg>
-  );
-}
-
-// Every icon button + its count label shares this drop-shadow so both stay
-// readable over bright/high-key video frames, not just dark ones.
-const ICON_SHADOW = 'drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]';
-const LABEL_SHADOW = 'drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]';
-
 
 const VideoCard = forwardRef(function VideoCard(
   { video, isActive, shouldLoad = true, focusMode = false, onToggleFollow, onActiveTimeUpdate, onDeleted },
@@ -413,6 +393,7 @@ const VideoCard = forwardRef(function VideoCard(
         loop
         playsInline
         muted={!audioEnabled}
+        onClick={handleVideoTap}
         onWaiting={() => setBuffering(true)}
         onPlaying={() => setBuffering(false)}
         onCanPlay={() => setBuffering(false)}
@@ -424,26 +405,8 @@ const VideoCard = forwardRef(function VideoCard(
           // trust it once it's an actual finite number.
           if (Number.isFinite(d)) setLiveDuration(d);
         }}
-        className="h-full w-full max-w-md object-cover mx-auto"
+        className="h-full w-full max-w-md object-cover mx-auto cursor-pointer touch-manipulation"
         poster={video.thumbnailUrl}
-      />
-
-      {/* Full-bleed tap target for single-tap play/pause and double-tap-to-
-          like. The <video> itself is capped at max-w-md and centered
-          (object-cover) inside a full-width/height container, so on any
-          viewport wider than ~448px there's letterboxed dead space on
-          either side of it that isn't part of the <video> element at all —
-          a click handler on the video itself misses taps that land there.
-          This sits in its own layer directly on top of the video (no
-          explicit z-index, so it still paints under the heart pop, mute
-          button, and engagement rail below, all of which are either
-          pointer-events-none or come later in the DOM) and covers the
-          entire card so a tap/click always registers no matter where on
-          the card it lands. */}
-      <div
-        className="absolute inset-0 cursor-pointer"
-        onClick={handleVideoTap}
-        aria-hidden="true"
       />
 
       {/* Buffering indicator — only for a card that's actually trying to
@@ -543,14 +506,13 @@ const VideoCard = forwardRef(function VideoCard(
         </div>
 
         {/* Engagement rail — bottom-24 clears the fixed bottom nav on mobile.
-            Pure white icons/labels with a heavy drop shadow (rather than the
-            theme's muted bone/smoke tones) so the rail stays readable over
-            bright, high-key video frames — the same reason mono count labels
-            switched from text-smoke to text-white here. */}
+            Pure white icons + heavy drop shadows (rather than the app's
+            softer `bone` token) so these stay legible over any video
+            content, TikTok-style. */}
         <div className="absolute bottom-24 right-6 flex flex-col items-center gap-5">
           {!isOwnVideo && (
-            <a href={`/profile/${video.user?.id}`} className="relative block w-12 h-12 mb-1">
-              <span className="block w-12 h-12 rounded-full overflow-hidden border-2 border-white bg-ink2 shadow-[0_2px_6px_rgba(0,0,0,0.6)]">
+            <a href={`/profile/${video.user?.id}`} className="relative block w-11 h-11 mb-1">
+              <span className="block w-11 h-11 rounded-full overflow-hidden border-2 border-white shadow-[0_2px_6px_rgba(0,0,0,0.6)] bg-ink2">
                 {video.user?.avatarUrl ? (
                   <img src={video.user.avatarUrl} alt="" className="w-full h-full object-cover" />
                 ) : (
@@ -563,79 +525,78 @@ const VideoCard = forwardRef(function VideoCard(
                 <button
                   onClick={handleFollow}
                   aria-label="Follow"
-                  className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-6 h-6 rounded-full bg-reel text-ink flex items-center justify-center text-sm font-bold border-2 border-white shadow-[0_2px_4px_rgba(0,0,0,0.6)]"
+                  className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-5 h-5 rounded-full bg-reel text-ink flex items-center justify-center text-xs font-bold border-2 border-white shadow-[0_1px_3px_rgba(0,0,0,0.7)]"
                 >
                   +
                 </button>
               )}
             </a>
           )}
-
-          <div className="flex flex-col items-center gap-1">
+          <button
+            onClick={toggleLike}
+            className="flex flex-col items-center gap-1 p-2 -m-2 text-white hover:scale-110 transition-transform"
+          >
+            <HeartIcon
+              filled={liked}
+              className="w-8 h-8 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]"
+            />
+            <span className="text-xs font-bold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+              {likeCount}
+            </span>
+          </button>
+          <button
+            onClick={() => {
+              // On desktop the comments are already visible in the persistent
+              // rail — no need to also pop the mobile sheet over the video.
+              if (window.innerWidth < 768) setShowComments(true);
+            }}
+            className="flex flex-col items-center gap-1 p-2 -m-2 text-white hover:scale-110 transition-transform"
+          >
+            <CommentIcon className="w-8 h-8 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]" />
+            <span className="text-xs font-bold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+              {commentCount}
+            </span>
+          </button>
+          <button
+            onClick={toggleBookmark}
+            className="flex flex-col items-center gap-1 p-2 -m-2 text-white hover:scale-110 transition-transform"
+          >
+            <BookmarkIcon
+              filled={bookmarked}
+              className="w-8 h-8 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]"
+            />
+            <span className="text-xs font-bold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+              {bookmarkCount}
+            </span>
+          </button>
+          {video.user?.stripeOnboarded ? (
             <button
-              onClick={toggleLike}
-              aria-label={liked ? 'Unlike' : 'Like'}
-              className={`p-2 hover:scale-110 transition-transform filter ${ICON_SHADOW}`}
+              onClick={() => setShowTip(true)}
+              className="flex flex-col items-center gap-1 p-2 -m-2 text-white hover:scale-110 transition-transform"
             >
-              <HeartIcon filled={liked} className="w-8 h-8" />
+              <TipIcon className="w-8 h-8 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]" />
+              <span className="text-xs font-bold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+                Tip
+              </span>
             </button>
-            <span className={`text-xs font-bold text-white ${LABEL_SHADOW}`}>{likeCount}</span>
-          </div>
-
-          <div className="flex flex-col items-center gap-1">
+          ) : (
             <button
-              onClick={() => {
-                // On desktop the comments are already visible in the persistent
-                // rail — no need to also pop the mobile sheet over the video.
-                if (window.innerWidth < 768) setShowComments(true);
-              }}
-              aria-label="Comments"
-              className={`p-2 hover:scale-110 transition-transform filter ${ICON_SHADOW}`}
+              onClick={() => setShowTipUnavailable(true)}
+              className="flex flex-col items-center gap-1 p-2 -m-2 hover:scale-110 transition-transform"
             >
-              <CommentIcon className="w-8 h-8" />
+              <TipIcon muted className="w-8 h-8 drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]" />
+              <span className="text-xs font-bold text-white/40 drop-shadow-[0_1px_2px_rgba(0,0,0,0.5)]">
+                Tip
+              </span>
             </button>
-            <span className={`text-xs font-bold text-white ${LABEL_SHADOW}`}>{commentCount}</span>
-          </div>
-
-          <div className="flex flex-col items-center gap-1">
-            <button
-              onClick={toggleBookmark}
-              aria-label={bookmarked ? 'Remove bookmark' : 'Save'}
-              className={`p-2 hover:scale-110 transition-transform filter ${ICON_SHADOW}`}
-            >
-              <BookmarkIcon filled={bookmarked} className="w-7 h-7" />
-            </button>
-            <span className={`text-xs font-bold text-white ${LABEL_SHADOW}`}>{bookmarkCount}</span>
-          </div>
-
-          <div className="flex flex-col items-center gap-1">
-            {video.user?.stripeOnboarded ? (
-              <button
-                onClick={() => setShowTip(true)}
-                aria-label="Send a tip"
-                className={`p-2 hover:scale-110 transition-transform filter ${ICON_SHADOW}`}
-              >
-                <GiftIcon className="w-7 h-7" />
-              </button>
-            ) : (
-              <button
-                onClick={() => setShowTipUnavailable(true)}
-                aria-label="Tipping unavailable"
-                className="p-2"
-              >
-                <GiftIcon dimmed className="w-7 h-7" />
-              </button>
-            )}
-            <span className={`text-xs font-bold text-white ${LABEL_SHADOW}`}>Tip</span>
-          </div>
-
+          )}
           <div className="relative" ref={menuRef}>
             <button
               onClick={() => setShowMenu((v) => !v)}
-              className={`p-2 hover:scale-110 transition-transform filter ${ICON_SHADOW}`}
+              className="flex flex-col items-center gap-1 p-2 -m-2 text-white hover:scale-110 transition-transform"
               aria-label="More options"
             >
-              <MoreIcon className="w-7 h-7" />
+              <MoreDotsIcon className="w-8 h-8 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]" />
             </button>
             {showMenu && (
               <div className="absolute bottom-full right-0 mb-2 bg-ink2 border border-smoke/20 rounded-sprocket overflow-hidden z-10 w-40">
@@ -663,20 +624,18 @@ const VideoCard = forwardRef(function VideoCard(
               </div>
             )}
           </div>
-
-          <div className="flex flex-col items-center gap-1">
-            <button
-              onClick={() => {
-                api.logEvent(video.id, 'share').catch(() => {});
-                setShowShare(true);
-              }}
-              aria-label="Share"
-              className={`p-2 hover:scale-110 transition-transform filter ${ICON_SHADOW}`}
-            >
-              <ShareIcon className="w-7 h-7" />
-            </button>
-            <span className={`text-xs font-bold text-white ${LABEL_SHADOW}`}>Share</span>
-          </div>
+          <button
+            onClick={() => {
+              api.logEvent(video.id, 'share').catch(() => {});
+              setShowShare(true);
+            }}
+            className="flex flex-col items-center gap-1 p-2 -m-2 text-white hover:scale-110 transition-transform"
+          >
+            <ShareIcon className="w-8 h-8 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]" />
+            <span className="text-xs font-bold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+              Share
+            </span>
+          </button>
         </div>
       </div>
 
