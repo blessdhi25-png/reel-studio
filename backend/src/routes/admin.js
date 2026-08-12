@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import prisma from '../config/db.js';
-import { requireAuth, requireRole } from '../middleware/auth.js';
+import { authenticateUser, authorizeRoles } from '../middleware/auth.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 
 // This file previously contained a stray duplicate of auth.js's contents
@@ -13,10 +13,12 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 
 const router = Router();
 
-// Every route below requires a signed-in moderator or admin. Mirrors the
-// pattern used elsewhere in this codebase (requireAuth sets req.userRole;
-// requireRole gates on it) rather than reinventing an admin-check per route.
-router.use(requireAuth, requireRole('moderator', 'admin'));
+// Every route below requires a signed-in moderator or admin. Applied once
+// here via router.use (rather than per-route) so nothing added later to
+// this file can accidentally be left unprotected. authorizeRoles takes the
+// database's actual lowercase role values ('moderator' | 'admin' — see the
+// UserRole enum in prisma/schema.prisma), not 'MODERATOR'/'ADMIN'.
+router.use(authenticateUser, authorizeRoles('moderator', 'admin'));
 
 // ---------------------------------------------------------------------------
 // Access check + status strip (used by admin/layout.jsx)
@@ -179,7 +181,7 @@ router.post('/users/:id/reinstate', asyncHandler(async (req, res) => {
   res.json(user);
 }));
 
-router.post('/users/:id/role', requireRole('admin'), asyncHandler(async (req, res) => {
+router.post('/users/:id/role', authorizeRoles('admin'), asyncHandler(async (req, res) => {
   // Role changes are admin-only, not moderator — a moderator promoting
   // themselves or others to admin would be a privilege-escalation hole.
   const { role } = req.body;
