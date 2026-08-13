@@ -40,6 +40,48 @@ export function initSocket(httpServer) {
     // Personal room for pushing notifications to this user across all their tabs/devices.
     socket.join(`user:${socket.data.userId}`);
 
+    // Tell anyone already subscribed to this user's presence (see
+    // presence:subscribe below) that they just came online. Fires on every
+    // new tab/device connecting, not just the first — harmless, since
+    // clients just treat repeat "online: true" as a no-op.
+    io.to(`presence:${socket.data.userId}`).emit('presence_update', {
+      userId: socket.data.userId,
+      online: true,
+    });
+
+    // ---- Presence subscriptions ----
+    // Presence isn't broadcast globally (that would leak every user's
+    // online status to every connected client, and doesn't scale) — instead
+    // a client explicitly declares which user ids it currently cares about
+    // (e.g. open conversation threads) and only gets updates for those.
+    // Capped generously above realistic usage (a conversation list) as a
+    // cheap guard against a misbehaving client subscribing to everyone.
+    socket.on('presence:subscribe', (userIds) => {
+      if (!Array.isArray(userIds)) return;
+      userIds.slice(0, 300).forEach((id) => {
+        if (typeof id === 'string') socket.join(`presence:${id}`);
+      });
+    });
+
+    socket.on('presence:unsubscribe', (userIds) => {
+      if (!Array.isArray(userIds)) return;
+      userIds.forEach((id) => {
+        if (typeof id === 'string') socket.leave(`presence:${id}`);
+      });
+    });
+
+    // ---- DM typing indicator ----
+    // Plain relay through the recipient's personal room — no persistence,
+    // no room bookkeeping, just "tell the other side right now".
+    socket.on('typing:start', ({ toUserId } = {}) => {
+      if (typeof toUserId !== 'string') return;
+      io.to(`user:${toUserId}`).emit('user_typing', { userId: socket.data.userId, typing: true });
+    });
+    socket.on('typing:stop', ({ toUserId } = {}) => {
+      if (typeof toUserId !== 'string') return;
+      io.to(`user:${toUserId}`).emit('user_typing', { userId: socket.data.userId, typing: false });
+    });
+
     // ---- Live stream: join/leave, WebRTC signaling, chat ----
 
     socket.on('live:join', (streamId) => {
@@ -81,6 +123,22 @@ export function initSocket(httpServer) {
 
     socket.on('live:leave', () => leaveLiveRoom(socket));
     socket.on('disconnect', () => leaveLiveRoom(socket));
+
+    // "disconnecting" (not "disconnect") fires while the socket's rooms are
+    // still populated, so this is the last point `user:${id}`'s room size
+    // reflects this socket. Deferred to the next tick so it actually runs
+    // after socket.io finishes removing this socket from that room —
+    // otherwise a still-connected second tab/device would look offline for
+    // an instant, or worse, this socket would count itself.
+    socket.on('disconnecting', () => {
+      const userId = socket.data.userId;
+      setImmediate(() => {
+        const stillOnline = (io.sockets.adapter.rooms.get(`user:${userId}`)?.size || 0) > 0;
+        if (!stillOnline) {
+          io.to(`presence:${userId}`).emit('presence_update', { userId, online: false });
+        }
+      });
+    });
   });
 
   return io;
