@@ -113,6 +113,12 @@ enum CommentPrivacy {
   none
 }
 
+enum CommunityRole {
+  admin
+  moderator
+  member
+}
+
 model User {
   id            String   @id @default(uuid())
   username      String   @unique
@@ -169,6 +175,9 @@ model User {
   storyViews       StoryView[]
   storyLikes       StoryLike[]
   storyInteractions StoryInteraction[]
+
+  communitiesCreated    Community[]       @relation("communityCreator")
+  communityMemberships  CommunityMember[]
 }
 
 model Block {
@@ -212,7 +221,55 @@ model Video {
   transactions Transaction[]
   feedEvents   FeedEvent[]
 
+  // Optional — a video can be posted directly to a community's own feed.
+  // This is deliberately separate from the pre-existing `circle` field
+  // above: circle is a fixed, curated 8-item hashtag taxonomy used purely
+  // to filter the main feed (see utils/circles.js); a Community is a real,
+  // user-created group with membership and roles. A video can carry a
+  // circle tag, a communityId, both, or neither.
+  communityId String?
+  community   Community? @relation(fields: [communityId], references: [id])
+
   @@index([circle])
+  @@index([communityId])
+}
+
+// Communities/Interest Circles — a real, user-created group with
+// membership and roles. Not to be confused with the `circle` field on
+// Video above (a fixed 8-item hashtag taxonomy for feed filtering) — that
+// system is untouched by this one.
+model Community {
+  id                 String   @id @default(uuid())
+  name               String
+  description        String?
+  category           String?
+  privacy            String   @default("public") // 'public' | 'private'
+  bannerUrl          String?
+  rules              String?
+  // A single highlighted box at the top of the community feed — deliberately
+  // one field, not a separate announcements table, since the spec calls for
+  // one pinned box, not a feed of past announcements.
+  pinnedAnnouncement String?
+  createdById        String
+  createdBy          User     @relation("communityCreator", fields: [createdById], references: [id])
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  members CommunityMember[]
+  videos  Video[]
+
+  @@index([category])
+}
+
+model CommunityMember {
+  communityId String
+  community   Community     @relation(fields: [communityId], references: [id])
+  userId      String
+  user        User          @relation(fields: [userId], references: [id])
+  role        CommunityRole @default(member)
+  joinedAt    DateTime      @default(now())
+
+  @@id([communityId, userId])
 }
 
 // Self-serve artist claim — mirrors how creatorStatus works elsewhere in this
