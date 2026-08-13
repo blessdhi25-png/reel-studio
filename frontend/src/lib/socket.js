@@ -20,3 +20,16 @@ export function getSocket() {
   }
   return socket;
 }
+
+// Socket.io's `auth` option is only read once, at connection time — if the
+// signed-in user changes (login as someone else, logout) without a full
+// page reload, a live socket would otherwise keep using the *old* token
+// forever. SocketContext calls this whenever AuthContext's token changes,
+// so the next getSocket() call is guaranteed to open a fresh connection
+// authenticated as whoever is actually signed in now.
+export function disconnectSocket() {
+  if (socket) {
+    socket.disconnect();
+    socket = null;
+  }
+}
