@@ -142,7 +142,6 @@ router.get('/users', asyncHandler(async (req, res) => {
   res.json(users.map((u) => ({ ...u, reportsAgainstCount: reportMap[u.id] || 0 })));
 }));
 
-<<<<<<< Updated upstream
 // PATCH /users/:id/status is the generic entry point (see
 // controllers/adminController.js). The three POST routes below are kept as
 // thin wrappers around that exact same handler, purely so the pre-existing
@@ -169,54 +168,6 @@ router.patch('/users/:id/status', updateUserStatus);
 // caller.
 router.post('/users/:id/role', authorizeRoles('admin'), updateUserRole);
 router.patch('/users/:id/role', authorizeRoles('admin'), updateUserRole);
-=======
-async function logAdminAction(adminId, actionType, targetId, reason) {
-  await prisma.adminAction.create({
-    data: { adminId, actionType, targetType: 'user', targetId, reason: reason || null },
-  });
-}
-
-router.post('/users/:id/suspend', asyncHandler(async (req, res) => {
-  const { reason } = req.body;
-  const user = await prisma.user.update({
-    where: { id: req.params.id },
-    data: { accountStatus: 'suspended', statusReason: reason || null },
-  });
-  await logAdminAction(req.userId, 'suspend_user', user.id, reason);
-  res.json(user);
-}));
-
-router.post('/users/:id/ban', asyncHandler(async (req, res) => {
-  const { reason } = req.body;
-  const user = await prisma.user.update({
-    where: { id: req.params.id },
-    data: { accountStatus: 'banned', statusReason: reason || null },
-  });
-  await logAdminAction(req.userId, 'ban_user', user.id, reason);
-  res.json(user);
-}));
-
-router.post('/users/:id/reinstate', asyncHandler(async (req, res) => {
-  const user = await prisma.user.update({
-    where: { id: req.params.id },
-    data: { accountStatus: 'active', statusReason: null },
-  });
-  await logAdminAction(req.userId, 'reinstate_user', user.id, null);
-  res.json(user);
-}));
-
-router.post('/users/:id/role', authorizeRoles('admin'), asyncHandler(async (req, res) => {
-  // Role changes are admin-only, not moderator — a moderator promoting
-  // themselves or others to admin would be a privilege-escalation hole.
-  const { role } = req.body;
-  if (!['user', 'moderator', 'admin'].includes(role)) {
-    return res.status(400).json({ error: 'Invalid role' });
-  }
-  const user = await prisma.user.update({ where: { id: req.params.id }, data: { role } });
-  await logAdminAction(req.userId, 'change_role', user.id, `role -> ${role}`);
-  res.json(user);
-}));
->>>>>>> Stashed changes
 
 // ---------------------------------------------------------------------------
 // Video Queue
@@ -263,12 +214,9 @@ router.get('/videos/:id/flags', asyncHandler(async (req, res) => {
   res.json(reports);
 }));
 
-<<<<<<< Updated upstream
 // Soft remove — flips status to 'removed' but keeps the row (and the
 // content itself) intact, for cases where you want it hidden but preserved
 // as evidence (repeat-offender pattern building, appeals).
-=======
->>>>>>> Stashed changes
 router.post('/videos/:id/remove', asyncHandler(async (req, res) => {
   const { reason } = req.body;
   const video = await prisma.video.update({
@@ -287,14 +235,6 @@ router.post('/videos/:id/remove', asyncHandler(async (req, res) => {
   res.json(video);
 }));
 
-<<<<<<< Updated upstream
-// Permanent takedown — see hardDeleteVideo in adminController.js for why
-// this is deliberately separate from the soft /remove route above (DMCA,
-// CSAM — cases where the content must actually be gone, not just hidden).
-router.delete('/videos/:id', hardDeleteVideo);
-
-=======
->>>>>>> Stashed changes
 // ---------------------------------------------------------------------------
 // Fraud & Risk Signals
 // ---------------------------------------------------------------------------
@@ -313,12 +253,6 @@ router.get('/fraud-signals', asyncHandler(async (req, res) => {
   const since24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
   const since1h = new Date(now.getTime() - 60 * 60 * 1000);
 
-<<<<<<< Updated upstream
-=======
-  // Bot-like clusters: accounts that liked an unusually large number of
-  // videos in the last hour. Real behavioral signal (from real Like rows),
-  // just a simple threshold rather than a trained classifier.
->>>>>>> Stashed changes
   const recentLikes = await prisma.like.groupBy({
     by: ['userId'],
     where: { createdAt: { gte: since1h } },
@@ -326,13 +260,6 @@ router.get('/fraud-signals', asyncHandler(async (req, res) => {
     having: { userId: { _count: { gte: 20 } } },
   });
 
-<<<<<<< Updated upstream
-=======
-  // Multi-account signups: users created within the same rolling 10-minute
-  // window, grouped by that window. This is a burst-detection proxy, not
-  // true multi-accounting detection (which needs IP/device data this app
-  // doesn't capture) — labeled as such in the response.
->>>>>>> Stashed changes
   const recentSignups = await prisma.user.findMany({
     where: { createdAt: { gte: since24h } },
     select: { id: true, username: true, email: true, createdAt: true },
@@ -377,13 +304,10 @@ router.get('/fraud-signals', asyncHandler(async (req, res) => {
     : [];
   const reportCountMap = Object.fromEntries(mostReportedRows.map((r) => [r.targetId, r._count.targetId]));
 
-<<<<<<< Updated upstream
-=======
   // Unified risk table: each signal type contributes rows with a 0-100
   // score. Scores are a simple normalized heuristic per signal type, not a
   // calibrated probability — intended for sorting/triage, not as a
   // precise measurement.
->>>>>>> Stashed changes
   const riskRows = [
     ...botLikeUsers.map((u) => ({
       userId: u.id,
@@ -415,11 +339,7 @@ router.get('/fraud-signals', asyncHandler(async (req, res) => {
 
   res.json({
     summary: {
-<<<<<<< Updated upstream
-      highRiskIps: { count: 0, tracked: false },
-=======
       highRiskIps: { count: 0, tracked: false }, // see comment above — no IP data exists to compute this
->>>>>>> Stashed changes
       botLikeClusters: { count: botLikeUsers.length, tracked: true },
       multiAccountSignups: { count: bursts.flat().length, tracked: true },
     },
@@ -428,14 +348,6 @@ router.get('/fraud-signals', asyncHandler(async (req, res) => {
 }));
 
 // ---------------------------------------------------------------------------
-<<<<<<< Updated upstream
-// System Audit Logs — paginated (?page=&limit=), see getAuditLog in
-// adminController.js. Returns { data, page, limit, total, hasMore }.
-// admin/audit-log/page.jsx expects exactly this shape.
-// ---------------------------------------------------------------------------
-
-router.get('/audit-log', getAuditLog);
-=======
 // System Audit Logs
 // ---------------------------------------------------------------------------
 
@@ -447,6 +359,5 @@ router.get('/audit-log', asyncHandler(async (req, res) => {
   });
   res.json(actions);
 }));
->>>>>>> Stashed changes
 
 export default router;
