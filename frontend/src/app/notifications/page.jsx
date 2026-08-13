@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '../../lib/api';
 import { getSocket } from '../../lib/socket';
+import { useSocketContext } from '../../context/SocketContext';
 import { LoadingSpinner } from '../../components/LoadingScreen';
 
 // ---------------------------------------------------------------------------
@@ -106,9 +107,9 @@ function iconFor(type) {
 
 export default function InboxPage() {
   const router = useRouter();
+  const { unreadCount, markAllNotificationsRead } = useSocketContext();
   const [notifications, setNotifications] = useState([]);
   const [conversations, setConversations] = useState([]);
-  const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('all');
   const [dmQuery, setDmQuery] = useState('');
@@ -119,22 +120,19 @@ export default function InboxPage() {
       router.push('/login');
       return;
     }
-    Promise.all([api.getNotifications(), api.getConversations(), api.getUnreadCount()])
-      .then(([n, c, u]) => {
+    Promise.all([api.getNotifications(), api.getConversations()])
+      .then(([n, c]) => {
         setNotifications(n);
         setConversations(c);
-        setUnreadCount(u.count);
 
         // Auto-mark-as-read on visiting the Inbox, not just via the manual
         // button below — the person is looking at these right now, so
         // there's no reason to still count them as unread the next time
-        // they check the bottom nav badge. The manual button stays too,
-        // since re-marking after new items arrive mid-visit (via the
-        // socket listener below) is still useful without leaving the page.
-        if (u.count > 0) {
-          api.markAllNotificationsRead().catch(() => {});
-          window.dispatchEvent(new Event('notifications:read'));
-        }
+        // they check the bottom nav badge. markAllNotificationsRead() (from
+        // SocketContext) is the single source of truth for that badge now,
+        // shared with BottomNav and the ChatHub drawer — safe to call even
+        // when there's nothing unread.
+        markAllNotificationsRead();
       })
       .finally(() => setLoading(false));
 
@@ -142,23 +140,15 @@ export default function InboxPage() {
     if (!socket) return;
     const onNew = (n) => {
       setNotifications((prev) => [n, ...prev]);
-      setUnreadCount((c) => c + 1);
     };
     socket.on('notification:new', onNew);
     return () => socket.off('notification:new', onNew);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
 
   const handleMarkAllRead = () => {
-    setUnreadCount(0);
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
-    api.markAllNotificationsRead().catch(() => {});
-    // BottomNav keeps its own independent unreadCount (fetched on its own
-    // mount + incremented via its own socket listener) — it has no way to
-    // know this page just zeroed things out server-side without being told
-    // directly. A plain window CustomEvent is a lightweight way to notify
-    // it without introducing a shared notifications context just for this
-    // one signal.
-    window.dispatchEvent(new Event('notifications:read'));
+    markAllNotificationsRead();
   };
 
   const handleFollowToggle = async (actorId, isFollowing) => {
