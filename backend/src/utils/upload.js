@@ -137,6 +137,29 @@ export const uploadTrack = multer({
   limits: { fileSize: 25 * 1024 * 1024 }, // 25MB cap
 });
 
+function storyMediaFileFilter(_req, file, cb) {
+  const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'video/mp4', 'video/quicktime', 'video/webm'];
+  if (allowed.includes(file.mimetype)) cb(null, true);
+  else cb(new Error('Unsupported file — use JPG, PNG, WEBP, GIF, MP4, MOV, or WEBM'));
+}
+
+// Stories accept either an image or a short video through the same field,
+// so resource_type has to be picked per-file rather than fixed like the
+// other upload configs above — 'auto' lets Cloudinary detect it instead of
+// rejecting a video sent through what would otherwise be an image-only
+// pipeline (or vice versa).
+const storyStorage = cloudinaryStorage(async (req) => ({
+  folder: 'reel/stories',
+  resource_type: 'auto',
+  public_id: `${req.userId}-${Date.now()}`,
+}));
+
+export const uploadStoryMedia = multer({
+  storage: storyStorage,
+  fileFilter: storyMediaFileFilter,
+  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB cap — short-form, not a full reel upload
+});
+
 // The Video/thumbnail records only ever stored the full Cloudinary
 // secure_url (see routes/videos.js and workers/transcode.js) — there's no
 // separate public_id column. cloudinary.uploader.destroy() needs the
