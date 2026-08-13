@@ -414,7 +414,7 @@ function UploadPageInner() {
                 maxLength={CAPTION_MAX}
                 className="w-full bg-zinc-800/80 border border-zinc-700 text-white rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500/50 transition-all resize-none placeholder:text-zinc-500"
               />
-              <div className="flex items-center gap-2 mt-2 relative">
+              <div className="flex items-center gap-2 mt-3 flex-wrap relative">
                 <button
                   type="button"
                   onClick={insertHashtag}
@@ -432,7 +432,7 @@ function UploadPageInner() {
                 <button
                   type="button"
                   onClick={() => setIsAiOpen(true)}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-gradient-to-r from-purple-600 to-pink-500 text-xs font-bold text-white shadow-md hover:opacity-90 transition-opacity"
+                  className="px-3.5 py-1.5 rounded-full bg-gradient-to-r from-purple-600 to-pink-500 text-white text-xs font-semibold shadow-md flex items-center gap-1 hover:opacity-90 transition"
                 >
                   ✨ Assist with AI
                 </button>
