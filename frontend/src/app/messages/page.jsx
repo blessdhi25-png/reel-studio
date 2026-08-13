@@ -1,7 +1,7 @@
 'use client';
 
-import ChatHub from '../../components/ChatHub';
+import MessagesPage from '../../components/MessagesPage';
 
-export default function MessagesPage() {
-  return <ChatHub />;
+export default function MessagesRoute() {
+  return <MessagesPage />;
 }
