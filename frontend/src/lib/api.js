@@ -284,6 +284,17 @@ adminGetStats: () => request('/admin/stats'),
   search: (q) => request(`/search?q=${encodeURIComponent(q)}`),
   getTrending: () => request('/trending'),
 
+  // Stories
+  getStoriesFeed: () => request('/stories/feed'),
+  createStory: (formData) => request('/stories', { method: 'POST', body: formData, isForm: true }),
+  viewStory: (id) => request(`/stories/${id}/view`, { method: 'POST' }),
+  likeStory: (id) => request(`/stories/${id}/like`, { method: 'POST' }),
+  unlikeStory: (id) => request(`/stories/${id}/like`, { method: 'DELETE' }),
+  voteStoryPoll: (id, optionId) => request(`/stories/${id}/poll-vote`, { method: 'POST', body: { optionId } }),
+  answerStoryQuestion: (id, answer) => request(`/stories/${id}/qa-response`, { method: 'POST', body: { answer } }),
+  getStoryQaResponses: (id) => request(`/stories/${id}/qa-responses`),
+  deleteStory: (id) => request(`/stories/${id}`, { method: 'DELETE' }),
+
   // Studio (analytics) & Promote (boost)
   getStudioOverview: () => request('/studio/overview'),
   getBoostTiers: () => request('/boost/tiers'),
