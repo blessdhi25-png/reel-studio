@@ -297,4 +297,39 @@ router.delete(
   })
 );
 
+// Generic dispatcher matching the literal "/interact" endpoint some API
+// consumers may expect, layered on top of (not replacing) the more
+// specific /poll-vote and /qa-response routes above — same upsert logic
+// either way, just routed by a `type` field in the body instead of the URL.
+router.post(
+  '/stories/:id/interact',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { type, value } = req.body;
+    if (!['poll_vote', 'qa_response'].includes(type)) {
+      return res.status(400).json({ error: "type must be 'poll_vote' or 'qa_response'" });
+    }
+    if (!value || !String(value).trim()) {
+      return res.status(400).json({ error: 'value is required' });
+    }
+
+    if (type === 'poll_vote') {
+      const story = await prisma.story.findUnique({ where: { id: req.params.id }, select: { pollOptions: true } });
+      if (!story?.pollOptions || !story.pollOptions.some((o) => o.id === value)) {
+        return res.status(400).json({ error: 'Not a valid option for this poll' });
+      }
+    }
+
+    const trimmedValue = type === 'qa_response' ? String(value).trim().slice(0, 200) : value;
+
+    await prisma.storyInteraction.upsert({
+      where: { storyId_userId_type: { storyId: req.params.id, userId: req.userId, type } },
+      create: { storyId: req.params.id, userId: req.userId, type, value: trimmedValue },
+      update: { value: trimmedValue },
+    });
+
+    res.json({ ok: true, type, value: trimmedValue });
+  })
+);
+
 export default router;
