@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import LoadingScreen from './LoadingScreen';
 import BottomNav from './BottomNav';
+import ChatHub from './ChatHub';
 
 // AuthContext's `ready` flag (see context/AuthContext.jsx) already
 // distinguishes "haven't checked localStorage yet" from "checked, no one's
@@ -32,6 +33,7 @@ export default function AppShell({ children }) {
   return (
     <>
       {children}
+      <ChatHub />
       <BottomNav />
     </>
   );
