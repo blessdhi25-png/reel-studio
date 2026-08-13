@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { api, API_BASE } from '../../lib/api';
 import { ALLOWED_CIRCLES } from '../../lib/circles';
 import CameraRecorder from '../../components/CameraRecorder';
+import AICoPilotDrawer from '../../components/AICoPilotDrawer';
 
 const CAPTION_MAX = 2200;
 
@@ -107,6 +108,7 @@ function UploadPageInner() {
   const [dragActive, setDragActive] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
   const [showEmoji, setShowEmoji] = useState(false);
+  const [isAiOpen, setIsAiOpen] = useState(false);
 
   const [videoType, setVideoType] = useState('short');
   const [caption, setCaption] = useState('');
@@ -226,6 +228,22 @@ function UploadPageInner() {
   function insertEmoji(emoji) {
     setCaption((prev) => (prev + emoji).slice(0, CAPTION_MAX));
     setShowEmoji(false);
+  }
+
+  // AICoPilotDrawer's onInsert contract is deliberately just (text: string)
+  // => void — it never touches caller state directly (see the doc comment
+  // on the component itself), so it's up to this page to decide what
+  // "insert" means: replace an empty draft outright, or append with a
+  // separating space onto an existing one. Not cursor-aware like
+  // insertHashtag() above — AI output is either a full caption or a block
+  // of hashtags, not a single character being dropped at wherever the
+  // cursor happens to be.
+  function handleAiInsert(text) {
+    setCaption((prev) => {
+      if (!prev.trim()) return text.slice(0, CAPTION_MAX);
+      const needsSpace = !/\s$/.test(prev);
+      return `${prev}${needsSpace ? ' ' : ''}${text}`.slice(0, CAPTION_MAX);
+    });
   }
 
   function handleCancel() {
@@ -411,6 +429,13 @@ function UploadPageInner() {
                 >
                   <SmileIcon /> Emoji
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setIsAiOpen(true)}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-gradient-to-r from-purple-600 to-pink-500 text-xs font-bold text-white shadow-md hover:opacity-90 transition-opacity"
+                >
+                  ✨ Assist with AI
+                </button>
 
                 {showEmoji && (
                   <div className="absolute top-full left-0 mt-2 z-20 flex flex-wrap gap-1 bg-zinc-800 border border-zinc-700 rounded-2xl p-2 shadow-xl w-48">
@@ -428,6 +453,13 @@ function UploadPageInner() {
                 )}
               </div>
             </div>
+
+            <AICoPilotDrawer
+              open={isAiOpen}
+              onClose={() => setIsAiOpen(false)}
+              onInsert={handleAiInsert}
+              initialTopic={caption}
+            />
 
             {/* Topic circles */}
             <div>
