@@ -52,6 +52,7 @@ import studioRoutes from './routes/studio.js';
 import privacyRoutes from './routes/privacy.js';
 import artistRoutes from './routes/artists.js';
 import storiesRoutes from './routes/stories.js';
+import aiRoutes from './routes/ai.js';
 
 const app = express();
 
@@ -168,6 +169,7 @@ app.use('/api/v1', studioRoutes); // /studio/overview, /videos/:id/boost/checkou
 app.use('/api/v1', privacyRoutes); // /users/me/privacy, /users/:id/block
 app.use('/api/v1/artists', artistRoutes); // artist registration, track catalog & analytics
 app.use('/api/v1', storiesRoutes); // /stories, /stories/feed, /stories/:id/view|like|poll-vote|qa-response
+app.use('/api/v1/ai', aiRoutes); // /ai/generate-captions, /ai/refine-draft (AI Co-Pilot — real Claude calls, rate-limited)
 
 // Any request that reached here matched no route above. Returning JSON
 // (not Express's default HTML 404 page) matters here specifically because
