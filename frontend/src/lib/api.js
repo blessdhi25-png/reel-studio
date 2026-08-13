@@ -180,6 +180,24 @@ export const api = {
   getSuggestedUsers: (limit) => request(`/users/suggested${limit ? `?limit=${limit}` : ''}`),
   getOnlineStatus: (ids) => request(`/users/online?ids=${ids.join(',')}`),
   getCircles: () => request('/videos/circles'),
+
+  // Communities — see backend/src/routes/communities.js
+  getCommunities: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return request(`/communities${qs ? `?${qs}` : ''}`);
+  },
+  getCommunity: (id) => request(`/communities/${id}`),
+  createCommunity: (data) => request('/communities', { method: 'POST', body: data }),
+  updateCommunity: (id, data) => request(`/communities/${id}`, { method: 'PATCH', body: data }),
+  deleteCommunity: (id) => request(`/communities/${id}`, { method: 'DELETE' }),
+  toggleCommunityJoin: (id) => request(`/communities/${id}/join`, { method: 'POST' }),
+  setCommunityMemberRole: (id, userId, role) =>
+    request(`/communities/${id}/members/${userId}`, { method: 'PATCH', body: { role } }),
+  removeCommunityMember: (id, userId) =>
+    request(`/communities/${id}/members/${userId}`, { method: 'DELETE' }),
+  getCommunityPosts: (id, cursor) =>
+    request(`/communities/${id}/posts${cursor ? `?cursor=${cursor}` : ''}`),
+
   likeVideo: (id) => request(`/videos/${id}/like`, { method: 'POST' }),
   unlikeVideo: (id) => request(`/videos/${id}/like`, { method: 'DELETE' }),
   deleteVideo: (id) => request(`/videos/${id}`, { method: 'DELETE' }),
