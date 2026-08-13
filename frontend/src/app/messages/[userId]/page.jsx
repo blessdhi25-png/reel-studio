@@ -1,7 +1,7 @@
 'use client';
 
-import ChatHub from '../../../components/ChatHub';
+import MessagesPage from '../../../components/MessagesPage';
 
 export default function ThreadPage({ params }) {
-  return <ChatHub initialUserId={params.userId} />;
+  return <MessagesPage initialUserId={params.userId} />;
 }
