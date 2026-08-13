@@ -1,10 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { api } from '../lib/api';
-import { getSocket } from '../lib/socket';
 import { useAuth } from '../context/AuthContext';
+import { useSocketContext } from '../context/SocketContext';
 
 const HIDDEN_ON = ['/login', '/signup', '/verify-email', '/upload'];
 // Prefix-matched separately from HIDDEN_ON above: /admin has many
@@ -67,26 +65,11 @@ export default function BottomNav() {
   // a modal, a token expiring mid-session, etc.). useAuth() is reactive to
   // all of those.
   const { user, isAuthenticated } = useAuth();
-  const [unreadCount, setUnreadCount] = useState(0);
-
-  useEffect(() => {
-    if (!user) return;
-    api.getUnreadCount().then((d) => setUnreadCount(d.count)).catch(() => {});
-
-    const socket = getSocket();
-    const onNew = () => setUnreadCount((c) => c + 1);
-    // Fired by the notifications page (on visit, and on manual "Mark all as
-    // read") — this component has no other way to know that happened,
-    // since it fetches/tracks unreadCount completely independently.
-    const onRead = () => setUnreadCount(0);
-
-    socket?.on('notification:new', onNew);
-    window.addEventListener('notifications:read', onRead);
-    return () => {
-      socket?.off('notification:new', onNew);
-      window.removeEventListener('notifications:read', onRead);
-    };
-  }, [user]);
+  // Single source of truth for the unread badge — SocketContext owns the
+  // fetch-on-login + live notification:new increments centrally now, so
+  // this no longer needs its own copy of that logic (it used to duplicate
+  // it here, independently from the notifications page).
+  const { unreadCount } = useSocketContext();
 
   if (HIDDEN_ON.includes(pathname) || HIDDEN_PREFIXES.some((p) => pathname.startsWith(p))) return null;
 
