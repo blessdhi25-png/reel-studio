@@ -3,7 +3,7 @@ import express from 'express';
 import stripe from '../config/stripe.js';
 import prisma from '../config/db.js';
 import { notify } from '../utils/notify.js';
-import { emitToUser } from '../realtime/socket.js';
+import { emitToUser, emitToRoom } from '../realtime/socket.js';
 
 const router = Router();
 
@@ -40,6 +40,26 @@ router.post('/', express.raw({ type: 'application/json' }), async (req, res) => 
           data: { boostedUntil },
         });
         console.log(`[webhook] boost activated for video ${session.metadata.videoId} until ${boostedUntil.toISOString()}`);
+        break;
+      }
+
+      if (session.metadata?.type === 'live_tip') {
+        const { liveStreamId, senderId, receiverId, message } = session.metadata;
+        emitToRoom(`live:${liveStreamId}`, 'live:tip', {
+          senderId,
+          amountCents: tx?.amountCents,
+          message: message || '',
+          at: new Date().toISOString(),
+        });
+        notify({
+          userId: receiverId,
+          actorId: senderId,
+          type: 'tip',
+          content: `You received a $${((tx?.amountCents || 0) / 100).toFixed(2)} live gift`,
+          targetType: 'live',
+          targetId: liveStreamId,
+        });
+        console.log(`[webhook] live tip completed for session ${session.id}`);
         break;
       }
 
