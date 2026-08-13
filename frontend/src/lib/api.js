@@ -219,6 +219,16 @@ export const api = {
   },
   getTrackVideos: (trackId) => request(`/artists/tracks/${trackId}/videos`),
   getTrack: (trackId) => request(`/artists/tracks/${trackId}`),
+
+  // AI Co-Pilot (backend/src/routes/ai.js) — real Claude calls. A longer
+  // timeoutMs than most endpoints since generation genuinely takes a few
+  // seconds; AICoPilotDrawer.jsx falls back to a local template generator
+  // if either of these throws (missing API key, rate limit, provider
+  // outage, etc.) so the feature stays usable either way.
+  generateCaptions: ({ topic, tone }) =>
+    request('/ai/generate-captions', { method: 'POST', body: { topic, tone }, timeoutMs: 30000 }),
+  refineDraft: ({ draft, action }) =>
+    request('/ai/refine-draft', { method: 'POST', body: { draft, action }, timeoutMs: 30000 }),
   getUserVideos: (id) => request(`/users/${id}/videos`),
   followUser: (id) => request(`/users/${id}/follow`, { method: 'POST' }),
   unfollowUser: (id) => request(`/users/${id}/follow`, { method: 'DELETE' }),
