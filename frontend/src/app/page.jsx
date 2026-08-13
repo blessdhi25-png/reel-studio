@@ -12,6 +12,7 @@ import SprocketRail from '../components/SprocketRail';
 import { loadTuningWeights } from '../components/TuneFeedPanel';
 import FeedFiltersDrawer from '../components/FeedFiltersDrawer';
 import Logo from '../components/Logo';
+import StoriesBar from '../components/StoriesBar';
 
 const FILTERS = [
   { label: 'All', value: null },
@@ -481,8 +482,26 @@ export default function FeedPage() {
         <CircleParamSync onCircle={setCircle} />
       </Suspense>
 
-      {!focusMode && isDesktop && desktopHeader}
-      {!focusMode && isDesktop === false && mobileTopNav}
+      {!focusMode && isDesktop && (
+        <>
+          {desktopHeader}
+          {/* Desktop feed is normal (non-fixed) flow, so StoriesBar just
+              sits in-flow below the header — see StoriesBar.jsx's own
+              usage note for why mobile (below) needs a different approach. */}
+          <StoriesBar className="border-b border-zinc-800 bg-zinc-950/80" />
+        </>
+      )}
+      {!focusMode && isDesktop === false && (
+        <>
+          {mobileTopNav}
+          {/* Overlaid just below the (short, fixed) mobile top nav — not
+              inside the snap-scroll feed container below, so it doesn't
+              become its own swipeable "page" in that container. */}
+          <div className="fixed inset-x-0 z-20" style={{ top: 'calc(env(safe-area-inset-top) + 3.25rem)' }}>
+            <StoriesBar />
+          </div>
+        </>
+      )}
 
       {/* ── Mobile: full-bleed vertical swipe feed ── */}
       {isDesktop === false && (
