@@ -115,9 +115,29 @@ export function initSocket(httpServer) {
     socket.on('live:chat-message', ({ streamId, content }) => {
       if (!content || !content.trim()) return;
       io.to(`live:${streamId}`).emit('live:chat-message', {
+        userId: socket.data.userId,
         username: socket.data.username,
-        content: content.trim(),
+        content: content.trim().slice(0, 500),
         at: new Date().toISOString(),
+      });
+    });
+
+    // Ephemeral — not persisted. Any client can request a pin/unpin; the
+    // frontend only exposes the control to the host, same trust model as
+    // the rest of this signaling namespace (auth'd socket, no extra ACL).
+    socket.on('live:pin-message', ({ streamId, message }) => {
+      io.to(`live:${streamId}`).emit('live:pin-message', message || null);
+    });
+
+    // Lightweight floating emoji burst — not stored, just relayed for the
+    // animation. Distinct from live:chat-message so it doesn't clutter the
+    // scrollback.
+    socket.on('live:reaction', ({ streamId, emoji }) => {
+      if (!emoji) return;
+      io.to(`live:${streamId}`).emit('live:reaction', {
+        emoji,
+        username: socket.data.username,
+        at: Date.now(),
       });
     });
 
@@ -157,6 +177,13 @@ function leaveLiveRoom(socket) {
 // Used by utils/notify.js to push a freshly created notification in real time.
 export function pushNotification(userId, notification) {
   io?.to(`user:${userId}`).emit('notification:new', notification);
+}
+
+// Used by routes/webhook.js to drop a paid live tip straight into the room's
+// chat ticker the moment Stripe confirms payment, without waiting on the
+// notification bell.
+export function emitToRoom(room, event, payload) {
+  io?.to(room).emit(event, payload);
 }
 
 // Generic per-user event push — used e.g. by the Stripe webhook to fire
