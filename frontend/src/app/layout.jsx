@@ -1,6 +1,7 @@
 import './globals.css';
 import { AuthProvider } from '../context/AuthContext';
 import { ToastProvider } from '../context/ToastContext';
+import { SocketProvider } from '../context/SocketContext';
 import AppShell from '../components/AppShell';
 
 export const metadata = {
@@ -26,15 +27,19 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en">
       <body>
-        {/* AuthProvider/ToastProvider/AppShell are Client Components;
-            Next.js's App Router allows a Server Component layout like this
-            one to render them as wrappers with no extra "use client"
-            needed here. AppShell holds the branded LoadingScreen until
-            auth state has hydrated, and renders BottomNav itself once
-            ready — see components/AppShell.jsx. */}
+        {/* AuthProvider/ToastProvider/SocketProvider/AppShell are Client
+            Components; Next.js's App Router allows a Server Component
+            layout like this one to render them as wrappers with no extra
+            "use client" needed here. AppShell holds the branded
+            LoadingScreen until auth state has hydrated, and renders
+            BottomNav itself once ready — see components/AppShell.jsx.
+            SocketProvider sits inside both Auth and Toast since it reads
+            the signed-in token and pops toasts for real-time events. */}
         <AuthProvider>
           <ToastProvider>
-            <AppShell>{children}</AppShell>
+            <SocketProvider>
+              <AppShell>{children}</AppShell>
+            </SocketProvider>
           </ToastProvider>
         </AuthProvider>
       </body>
