@@ -164,6 +164,11 @@ model User {
 
   blocking  Block[] @relation("blocker")
   blockedBy Block[] @relation("blocked")
+
+  stories          Story[]
+  storyViews       StoryView[]
+  storyLikes       StoryLike[]
+  storyInteractions StoryInteraction[]
 }
 
 model Block {
@@ -405,4 +410,74 @@ model LiveChatMessage {
   createdAt DateTime   @default(now())
 
   @@index([streamId, createdAt])
+}
+
+// Ephemeral posts — expire 24h after creation (see POST /stories). Text
+// stories have no media; image/video stories carry a Cloudinary URL the
+// same way Video/Track do. Poll and Q&A stickers are optional per-story,
+// not separate objects: pollOptions is just [{id, label}] with vote
+// tallies computed live from StoryInteraction rather than stored here,
+// since a stored count can't be corrected if someone changes their vote.
+model Story {
+  id              String   @id @default(uuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id])
+  mediaType       String   // 'image' | 'video' | 'text'
+  mediaUrl        String?
+  durationSeconds Float?   // video stories only — client reads real duration via HTMLVideoElement before upload; image/text use a fixed viewer-side duration instead
+  textContent     String?
+  backgroundColor String?
+  linkUrl         String?
+  linkLabel       String?
+  pollQuestion    String?
+  pollOptions     Json?    // [{ id, label }] — vote counts computed from StoryInteraction at read time
+  qaQuestion      String?
+  createdAt       DateTime @default(now())
+  expiresAt       DateTime
+
+  views        StoryView[]
+  likes        StoryLike[]
+  interactions StoryInteraction[]
+
+  @@index([userId, expiresAt])
+}
+
+model StoryView {
+  id        String   @id @default(uuid())
+  storyId   String
+  story     Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  viewerId  String
+  viewer    User     @relation(fields: [viewerId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@unique([storyId, viewerId])
+}
+
+model StoryLike {
+  id        String   @id @default(uuid())
+  storyId   String
+  story     Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@unique([storyId, userId])
+}
+
+// Covers both poll votes and Q&A answers rather than two near-identical
+// tables — `type` distinguishes them, `value` holds the chosen option id
+// (poll_vote) or the free-text answer (qa_response). One row per
+// story+viewer+type: re-voting on a poll upserts this row rather than
+// adding a second one.
+model StoryInteraction {
+  id        String   @id @default(uuid())
+  storyId   String
+  story     Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  type      String   // 'poll_vote' | 'qa_response'
+  value     String
+  createdAt DateTime @default(now())
+
+  @@unique([storyId, userId, type])
 }
