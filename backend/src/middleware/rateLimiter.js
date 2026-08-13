@@ -38,3 +38,20 @@ export const standardLimiter = rateLimit({
   legacyHeaders: false,
   handler: tooManyRequestsHandler,
 });
+
+// AI Co-Pilot endpoints (routes/ai.js) call out to a paid LLM API on every
+// request — unlike everything else behind standardLimiter, each hit here
+// has a real per-call dollar cost, so this gets its own tighter budget
+// regardless of how generous standardLimiter is. 20/hour comfortably
+// covers someone iterating on tone/wording for a single post while still
+// bounding worst-case spend from one account. Keyed by req.userId (these
+// routes always sit behind requireAuth) rather than IP, since the goal is
+// per-account cost control, not abuse prevention from a given network.
+export const aiLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: tooManyRequestsHandler,
+  keyGenerator: (req) => req.userId || req.ip,
+});
