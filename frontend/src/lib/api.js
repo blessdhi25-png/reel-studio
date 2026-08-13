@@ -289,6 +289,8 @@ adminGetStats: () => request('/admin/stats'),
   getLiveStream: (id) => request(`/live/${id}`),
   startLiveStream: (title, extra = {}) => request('/live/start', { method: 'POST', body: { title, ...extra } }),
   endLiveStream: (id) => request(`/live/${id}/end`, { method: 'POST' }),
+  tipLiveStreamCheckout: (id, amountCents, message) =>
+    request(`/live/${id}/tip/checkout`, { method: 'POST', body: { amountCents, message } }),
 
   // Discovery
   search: (q) => request(`/search?q=${encodeURIComponent(q)}`),
