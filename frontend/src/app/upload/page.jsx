@@ -6,6 +6,7 @@ import { api, API_BASE } from '../../lib/api';
 import { ALLOWED_CIRCLES } from '../../lib/circles';
 import CameraRecorder from '../../components/CameraRecorder';
 import AICoPilotDrawer from '../../components/AICoPilotDrawer';
+import SoundPicker from '../../components/SoundPicker';
 
 const CAPTION_MAX = 2200;
 
@@ -114,11 +115,9 @@ function UploadPageInner() {
   const [caption, setCaption] = useState('');
   const [circle, setCircle] = useState(null);
 
-  // Sound picker — searches tracks distributed by registered artists
-  // (Artist Hub) so any creator can attach an official track to their post.
-  const [trackQuery, setTrackQuery] = useState('');
-  const [trackResults, setTrackResults] = useState([]);
-  const [trackSearching, setTrackSearching] = useState(false);
+  // Sound picker — the actual browse/search/preview UI lives in
+  // <SoundPicker />; this page just holds the toggle + the chosen track.
+  const [isSoundPickerOpen, setIsSoundPickerOpen] = useState(false);
   const [selectedTrack, setSelectedTrack] = useState(null);
 
   // Publishing privileges. The backend's Video model currently only
@@ -148,22 +147,6 @@ function UploadPageInner() {
     setPreviewUrl(url);
     return () => URL.revokeObjectURL(url);
   }, [file]);
-
-  useEffect(() => {
-    if (!trackQuery.trim()) {
-      setTrackResults([]);
-      return;
-    }
-    setTrackSearching(true);
-    const handle = setTimeout(() => {
-      api
-        .searchTracks(trackQuery.trim())
-        .then(setTrackResults)
-        .catch(() => setTrackResults([]))
-        .finally(() => setTrackSearching(false));
-    }, 300);
-    return () => clearTimeout(handle);
-  }, [trackQuery]);
 
   // Preselects a sound handed off from a reel's vinyl badge / SoundPicker
   // ("Use This Sound" -> /upload?trackId=...). Only resolves the id once,
@@ -498,9 +481,13 @@ function UploadPageInner() {
 
               {selectedTrack ? (
                 <div className="flex items-center justify-between gap-3 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-2.5">
-                  <p className="text-sm text-white truncate">
+                  <button
+                    type="button"
+                    onClick={() => setIsSoundPickerOpen(true)}
+                    className="flex-1 text-left text-sm text-white truncate"
+                  >
                     🎵 {selectedTrack.title} <span className="text-zinc-400">· {selectedTrack.artistName}</span>
-                  </p>
+                  </button>
                   <button
                     type="button"
                     onClick={() => setSelectedTrack(null)}
@@ -511,36 +498,13 @@ function UploadPageInner() {
                   </button>
                 </div>
               ) : (
-                <div className="relative">
-                  <input
-                    value={trackQuery}
-                    onChange={(e) => setTrackQuery(e.target.value)}
-                    placeholder="Search official tracks from artists…"
-                    className="w-full bg-zinc-800/80 border border-zinc-700 text-white rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500/50 transition-all placeholder:text-zinc-500"
-                  />
-                  {trackQuery.trim() && (
-                    <div className="absolute top-full left-0 right-0 mt-1.5 z-20 bg-zinc-800 border border-zinc-700 rounded-xl overflow-hidden shadow-xl max-h-56 overflow-y-auto">
-                      {trackSearching && <p className="text-xs text-zinc-500 px-4 py-3">Searching…</p>}
-                      {!trackSearching && trackResults.length === 0 && (
-                        <p className="text-xs text-zinc-500 px-4 py-3">No tracks found.</p>
-                      )}
-                      {trackResults.map((t) => (
-                        <button
-                          key={t.id}
-                          type="button"
-                          onClick={() => {
-                            setSelectedTrack(t);
-                            setTrackQuery('');
-                            setTrackResults([]);
-                          }}
-                          className="w-full text-left px-4 py-2.5 text-sm text-white hover:bg-zinc-700 transition-colors"
-                        >
-                          🎵 {t.title} <span className="text-zinc-400">· {t.artistName}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsSoundPickerOpen(true)}
+                  className="w-full flex items-center gap-2 bg-zinc-800/80 border border-zinc-700 text-zinc-300 hover:text-white hover:border-zinc-600 rounded-xl px-4 py-2.5 text-sm transition-colors"
+                >
+                  🎵 Add Sound
+                </button>
               )}
               <p className="text-[11px] text-zinc-500 mt-2">
                 Only tracks distributed by registered artists show up here.{' '}
@@ -550,6 +514,22 @@ function UploadPageInner() {
               </p>
             </div>
           </div>
+
+          {isSoundPickerOpen && (
+            <SoundPicker
+              selectedTrackId={selectedTrack?.id}
+              onClose={() => setIsSoundPickerOpen(false)}
+              onSelect={(sound) =>
+                setSelectedTrack({
+                  id: sound.soundId,
+                  title: sound.title,
+                  artistName: sound.artistName,
+                  audioUrl: sound.soundUrl,
+                  coverUrl: sound.coverUrl,
+                })
+              }
+            />
+          )}
 
           {/* Publishing privileges */}
           <PublishingPrivileges
