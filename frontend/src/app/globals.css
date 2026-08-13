@@ -19,6 +19,18 @@ body {
   scrollbar-width: none;
 }
 
+/* Same treatment, generalized — StoriesBar's horizontal tray needs the
+   scrollable-but-invisible-scrollbar behavior .feed-scroll already has,
+   but isn't the snap feed itself, so it gets its own reusable class
+   instead of overloading that one's name. */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
 /* Gentle floating motion for the auth pages' hero preview cards */
 @keyframes float {
   0%, 100% { transform: translateY(0px); }
@@ -83,4 +95,15 @@ body {
 }
 .animate-marquee {
   animation: marquee 9s linear infinite;
+}
+
+/* StoryViewer segmented progress bars — duration varies per story (5s for
+   image/text, the real clip length for video), so this can't be a fixed
+   Tailwind animate-* class; the component sets `animation-duration` inline
+   and applies this keyframe by name instead. scaleX (not width) so the
+   browser can composite it on the GPU instead of triggering layout on
+   every frame. */
+@keyframes story-progress {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
 }
