@@ -65,6 +65,12 @@ export async function deleteVideoCascade(video) {
     prisma.bookmark.deleteMany({ where: { videoId: video.id } }),
     prisma.comment.deleteMany({ where: { videoId: video.id } }),
     prisma.feedEvent.deleteMany({ where: { videoId: video.id } }),
+    // Same reasoning as Like/Bookmark above — CollectionItem.videoId is a
+    // real FK (see the Deep Bookmarking & Shared Collections schema in
+    // schema.prisma), so a video saved into any collection would otherwise
+    // block deletion with a foreign key violation. The collections
+    // themselves are untouched, they just lose this one saved item.
+    prisma.collectionItem.deleteMany({ where: { videoId: video.id } }),
     prisma.transaction.updateMany({ where: { videoId: video.id }, data: { videoId: null } }),
     prisma.video.delete({ where: { id: video.id } }),
   ]);
