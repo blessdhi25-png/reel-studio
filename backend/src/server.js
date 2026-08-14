@@ -54,6 +54,7 @@ import artistRoutes from './routes/artists.js';
 import storiesRoutes from './routes/stories.js';
 import aiRoutes from './routes/ai.js';
 import communitiesRoutes from './routes/communities.js';
+import collectionsRoutes from './routes/collections.js';
 
 const app = express();
 
@@ -172,6 +173,7 @@ app.use('/api/v1/artists', artistRoutes); // artist registration, track catalog 
 app.use('/api/v1', storiesRoutes); // /stories, /stories/feed, /stories/:id/view|like|poll-vote|qa-response
 app.use('/api/v1/ai', aiRoutes); // /ai/generate-captions, /ai/refine-draft (AI Co-Pilot — real Claude calls, rate-limited)
 app.use('/api/v1', communitiesRoutes); // /communities, /communities/:id, /communities/:id/join, /communities/:id/posts
+app.use('/api/v1', collectionsRoutes); // /collections, /collections/:id, /collections/:id/save, /collections/:id/collaborators
 
 // Any request that reached here matched no route above. Returning JSON
 // (not Express's default HTML 404 page) matters here specifically because
