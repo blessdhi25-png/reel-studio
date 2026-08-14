@@ -79,6 +79,16 @@ function XIcon(props) {
   );
 }
 
+function MusicNoteIcon({ className = '' }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="currentColor" stroke="none">
+      <path d="M9 18V5l11-2v13" />
+      <circle cx="6" cy="18" r="3" />
+      <circle cx="17" cy="16" r="3" />
+    </svg>
+  );
+}
+
 const EMOJI_QUICKSET = ['🔥', '😂', '❤️', '🎬', '✨', '🎉', '👀', '🙌'];
 
 /* ------------------------------------------------------------------ */
@@ -115,8 +125,9 @@ function UploadPageInner() {
   const [caption, setCaption] = useState('');
   const [circle, setCircle] = useState(null);
 
-  // Sound picker — the actual browse/search/preview UI lives in
-  // <SoundPicker />; this page just holds the toggle + the chosen track.
+  // Sound picker — SoundPicker itself handles searching tracks distributed
+  // by registered artists (Artist Hub); this page just tracks whether the
+  // picker sheet is open and which track ended up selected.
   const [isSoundPickerOpen, setIsSoundPickerOpen] = useState(false);
   const [selectedTrack, setSelectedTrack] = useState(null);
 
@@ -481,29 +492,35 @@ function UploadPageInner() {
 
               {selectedTrack ? (
                 <div className="flex items-center justify-between gap-3 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-2.5">
-                  <button
-                    type="button"
-                    onClick={() => setIsSoundPickerOpen(true)}
-                    className="flex-1 text-left text-sm text-white truncate"
-                  >
+                  <p className="text-sm text-white truncate">
                     🎵 {selectedTrack.title} <span className="text-zinc-400">· {selectedTrack.artistName}</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedTrack(null)}
-                    className="text-zinc-400 hover:text-white shrink-0"
-                    aria-label="Remove sound"
-                  >
-                    <XIcon />
-                  </button>
+                  </p>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setIsSoundPickerOpen(true)}
+                      className="text-xs font-semibold text-amber-400 hover:text-amber-300"
+                    >
+                      Change
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedTrack(null)}
+                      className="text-zinc-400 hover:text-white"
+                      aria-label="Remove sound"
+                    >
+                      <XIcon />
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <button
                   type="button"
                   onClick={() => setIsSoundPickerOpen(true)}
-                  className="w-full flex items-center gap-2 bg-zinc-800/80 border border-zinc-700 text-zinc-300 hover:text-white hover:border-zinc-600 rounded-xl px-4 py-2.5 text-sm transition-colors"
+                  className="w-full flex items-center gap-2 bg-zinc-800/80 border border-zinc-700 text-zinc-300 hover:border-amber-500/50 hover:text-white rounded-xl px-4 py-2.5 text-sm transition-all"
                 >
-                  🎵 Add Sound
+                  <MusicNoteIcon className="w-4 h-4 text-amber-400 shrink-0" />
+                  Add Sound / Pick Music
                 </button>
               )}
               <p className="text-[11px] text-zinc-500 mt-2">
@@ -514,22 +531,6 @@ function UploadPageInner() {
               </p>
             </div>
           </div>
-
-          {isSoundPickerOpen && (
-            <SoundPicker
-              selectedTrackId={selectedTrack?.id}
-              onClose={() => setIsSoundPickerOpen(false)}
-              onSelect={(sound) =>
-                setSelectedTrack({
-                  id: sound.soundId,
-                  title: sound.title,
-                  artistName: sound.artistName,
-                  audioUrl: sound.soundUrl,
-                  coverUrl: sound.coverUrl,
-                })
-              }
-            />
-          )}
 
           {/* Publishing privileges */}
           <PublishingPrivileges
@@ -601,6 +602,17 @@ function UploadPageInner() {
 
       {showCamera && (
         <CameraRecorder onCaptured={handleCaptured} onCancel={() => setShowCamera(false)} />
+      )}
+
+      {isSoundPickerOpen && (
+        <SoundPicker
+          mode="browse"
+          selectedTrackId={selectedTrack?.id ?? null}
+          onClose={() => setIsSoundPickerOpen(false)}
+          onSelect={({ soundId, soundUrl, title, artistName }) => {
+            setSelectedTrack({ id: soundId, audioUrl: soundUrl, title, artistName });
+          }}
+        />
       )}
     </main>
   );
