@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '../../lib/api';
 import { useToast } from '../../context/ToastContext';
@@ -15,35 +15,25 @@ const TABS = [
 const PRIVACY_BADGE = {
   private: '🔒 Private',
   public: '🌐 Public',
-  collaborators: '👥 Shared',
+  shared: '👥 Shared',
 };
 
-const PRIVACY_OPTIONS = [
-  { id: 'private', label: 'Private', icon: '🔒' },
-  { id: 'public', label: 'Public', icon: '🌐' },
-  { id: 'collaborators', label: 'Collaborators', icon: '👥' },
-];
-
 function CollectionCard({ collection }) {
-  const thumbs = collection.coverThumbnails || [];
+  const thumbs = collection.previewThumbnails || [];
   return (
     <a
       href={`/collections/${collection.id}`}
-      className="block bg-zinc-900 border border-zinc-800 text-white rounded-2xl overflow-hidden hover:border-zinc-700 transition-colors"
+      className="bg-zinc-900 border border-zinc-800 text-white rounded-2xl overflow-hidden hover:border-zinc-700 transition-colors block"
     >
-      <div className="grid grid-cols-2 grid-rows-2 aspect-square bg-zinc-950">
-        {thumbs.length > 0 ? (
-          Array.from({ length: 4 }).map((_, i) =>
-            thumbs[i] ? (
-              <img key={i} src={thumbs[i]} alt="" className="w-full h-full object-cover" />
-            ) : (
-              <div key={i} className="w-full h-full bg-zinc-900" />
-            )
+      <div className="grid grid-cols-2 grid-rows-2 gap-px bg-zinc-800 aspect-square">
+        {[0, 1, 2, 3].map((i) =>
+          thumbs[i] ? (
+            <img key={i} src={thumbs[i]} alt="" className="w-full h-full object-cover" />
+          ) : (
+            <div key={i} className="w-full h-full bg-zinc-900 flex items-center justify-center text-zinc-700 text-lg">
+              🎬
+            </div>
           )
-        ) : (
-          <div className="col-span-2 row-span-2 flex items-center justify-center text-3xl text-zinc-700">
-            📁
-          </div>
         )}
       </div>
       <div className="p-3">
@@ -56,6 +46,11 @@ function CollectionCard({ collection }) {
             {PRIVACY_BADGE[collection.privacy] || PRIVACY_BADGE.private}
           </span>
         </div>
+        {collection.role === 'collaborator' && (
+          <p className="font-mono text-[9px] text-amber-400 mt-1">
+            by @{collection.owner?.username} · you're a collaborator
+          </p>
+        )}
       </div>
     </a>
   );
@@ -67,114 +62,85 @@ function CreateCollectionModal({ onClose, onCreated }) {
   const [description, setDescription] = useState('');
   const [privacy, setPrivacy] = useState('private');
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState(null);
 
   async function handleSubmit(e) {
     e.preventDefault();
     if (!name.trim() || busy) return;
     setBusy(true);
-    setError(null);
     try {
-      const created = await api.createCollection({
-        name: name.trim(),
-        description: description.trim() || undefined,
-        privacy,
-      });
-      toast.success(`Created ${created.name}`);
+      const created = await api.createCollection({ name: name.trim(), description: description.trim(), privacy });
       onCreated(created);
     } catch (err) {
-      setError(err.message || 'Could not create that collection.');
+      toast.error(err.message || "Couldn't create that collection");
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
-      <button
-        type="button"
-        aria-label="Close"
-        onClick={onClose}
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-      />
-      <div className="relative w-full sm:w-[420px] bg-zinc-900/95 backdrop-blur-xl border border-zinc-800 sm:rounded-2xl rounded-t-2xl text-white p-5">
-        <h2 className="text-base font-bold mb-4">New Collection</h2>
-        <form onSubmit={handleSubmit} className="space-y-3.5">
-          <div>
-            <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-1.5">
-              Name
-            </label>
-            <input
-              autoFocus
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Inspiration"
-              maxLength={60}
-              className="w-full bg-zinc-800/80 border border-zinc-700 text-white rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500/50 transition-all placeholder:text-zinc-500"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-1.5">
-              Description <span className="normal-case text-zinc-600">(optional)</span>
-            </label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={2}
-              placeholder="What's this collection about?"
-              className="w-full bg-zinc-800/80 border border-zinc-700 text-white rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500/50 transition-all resize-none placeholder:text-zinc-500"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-1.5">
-              Privacy
-            </label>
-            <div className="flex gap-1.5">
-              {PRIVACY_OPTIONS.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => setPrivacy(p.id)}
-                  className={`flex-1 flex flex-col items-center gap-0.5 py-2 rounded-xl border text-[11px] font-semibold transition-all ${
-                    privacy === p.id
-                      ? 'bg-amber-500 border-amber-500 text-black'
-                      : 'bg-zinc-800/60 border-zinc-700 text-zinc-400 hover:text-white'
-                  }`}
-                >
-                  <span>{p.icon}</span>
-                  {p.label}
-                </button>
-              ))}
-            </div>
-          </div>
-          {error && <p className="text-xs text-red-400">{error}</p>}
-          <div className="flex gap-2 pt-1">
+    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center" onClick={onClose}>
+      <form
+        onSubmit={handleSubmit}
+        onClick={(e) => e.stopPropagation()}
+        className="w-full sm:max-w-sm bg-zinc-900 border border-zinc-800 text-white rounded-t-2xl sm:rounded-2xl p-5 space-y-3"
+      >
+        <p className="font-semibold text-base mb-1">New collection</p>
+        <input
+          autoFocus
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Collection name"
+          maxLength={80}
+          className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm placeholder-zinc-500 outline-none focus:ring-2 focus:ring-amber-500/50"
+        />
+        <textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="Description (optional)"
+          maxLength={300}
+          rows={2}
+          className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm placeholder-zinc-500 outline-none resize-none focus:ring-2 focus:ring-amber-500/50"
+        />
+        <div className="flex gap-1.5">
+          {[
+            { value: 'private', label: 'Private', icon: '🔒' },
+            { value: 'shared', label: 'Collaborators', icon: '👥' },
+            { value: 'public', label: 'Public', icon: '🌐' },
+          ].map((p) => (
             <button
               type="button"
-              onClick={onClose}
-              className="px-4 py-2.5 rounded-xl border border-zinc-700 text-zinc-300 text-sm font-semibold hover:bg-zinc-800 transition-all"
+              key={p.value}
+              onClick={() => setPrivacy(p.value)}
+              className={`flex-1 py-2 rounded-lg text-xs font-semibold border ${
+                privacy === p.value ? 'bg-amber-500 text-black border-amber-500' : 'border-zinc-700 text-zinc-300'
+              }`}
             >
-              Cancel
+              {p.icon} {p.label}
             </button>
-            <button
-              type="submit"
-              disabled={!name.trim() || busy}
-              className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black text-sm font-bold transition-all disabled:opacity-40"
-            >
-              {busy ? 'Creating…' : 'Create Collection'}
-            </button>
-          </div>
-        </form>
-      </div>
+          ))}
+        </div>
+        <div className="flex gap-2 pt-1">
+          <button type="button" onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-zinc-300 border border-zinc-700">
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={!name.trim() || busy}
+            className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-amber-500 text-black disabled:opacity-40"
+          >
+            {busy ? 'Creating…' : 'Create'}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }
 
 export default function CollectionsHubPage() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState('mine');
   const [collections, setCollections] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('mine');
   const [showCreate, setShowCreate] = useState(false);
 
   useEffect(() => {
@@ -182,39 +148,41 @@ export default function CollectionsHubPage() {
       router.push('/login');
       return;
     }
-    setLoading(true);
     api
-      .getCollections(activeTab)
+      .getCollections()
       .then(setCollections)
       .catch(() => setCollections([]))
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab]);
+  }, []);
+
+  const filtered = useMemo(() => {
+    if (activeTab === 'mine') return collections.filter((c) => c.role === 'owner');
+    if (activeTab === 'shared') return collections.filter((c) => c.role === 'collaborator');
+    // Public tab is for discovering *other* people's public collections —
+    // your own public ones already show up under "My Collections".
+    return collections.filter((c) => c.privacy === 'public' && c.role !== 'owner');
+  }, [collections, activeTab]);
 
   return (
     <main className="min-h-screen bg-zinc-950 px-4 py-8">
       <div className="max-w-5xl mx-auto">
         <div className="flex items-center justify-between mb-5">
-          <div>
-            <h1 className="font-display text-2xl text-white tracking-wide">Collections</h1>
-            <p className="font-body text-sm text-zinc-500 mt-0.5">
-              Organize saved videos into folders you can keep private or share.
-            </p>
-          </div>
+          <h1 className="font-display text-2xl text-white tracking-wide">Collections</h1>
           <button
             onClick={() => setShowCreate(true)}
-            className="shrink-0 bg-amber-500 hover:bg-amber-400 text-black font-semibold text-sm px-4 py-2 rounded-xl transition-colors"
+            className="bg-amber-500 hover:bg-amber-400 text-black font-semibold text-sm px-4 py-2 rounded-xl transition-colors"
           >
             + Create Collection
           </button>
         </div>
 
-        <div className="flex gap-2 mb-6 overflow-x-auto">
+        <div className="flex gap-2 mb-6">
           {TABS.map((tab) => (
             <button
               key={tab.value}
               onClick={() => setActiveTab(tab.value)}
-              className={`shrink-0 px-4 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+              className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-colors ${
                 activeTab === tab.value
                   ? 'bg-amber-500 text-black'
                   : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200'
@@ -227,19 +195,19 @@ export default function CollectionsHubPage() {
 
         {loading && <LoadingSpinner label="Loading…" />}
 
-        {!loading && collections.length === 0 && (
+        {!loading && filtered.length === 0 && (
           <div className="text-center py-16">
             <p className="text-zinc-500 text-sm">
               {activeTab === 'mine' && "You haven't created any collections yet."}
-              {activeTab === 'shared' && "No one's shared a collection with you yet."}
-              {activeTab === 'public' && 'No public collections yet.'}
+              {activeTab === 'shared' && "No one's added you as a collaborator yet."}
+              {activeTab === 'public' && 'No public collections to browse yet.'}
             </p>
           </div>
         )}
 
-        {!loading && collections.length > 0 && (
+        {!loading && filtered.length > 0 && (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-            {collections.map((c) => (
+            {filtered.map((c) => (
               <CollectionCard key={c.id} collection={c} />
             ))}
           </div>
