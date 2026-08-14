@@ -82,6 +82,13 @@ const CATEGORIES = [
         description: 'Browse and jump into micro-communities',
         href: '/circles',
       },
+      {
+        key: 'collections',
+        icon: '📁',
+        title: 'Collections',
+        description: 'Organize saved videos into folders you can share',
+        href: '/collections',
+      },
     ],
   },
   {
