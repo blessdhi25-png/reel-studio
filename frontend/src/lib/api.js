@@ -198,35 +198,27 @@ export const api = {
   getCommunityPosts: (id, cursor) =>
     request(`/communities/${id}/posts${cursor ? `?cursor=${cursor}` : ''}`),
 
-  // Collections — see backend/src/routes/collections.js
-  getCollections: (opts = {}) => {
-    const params = new URLSearchParams();
-    if (typeof opts === 'string') {
-      // Back-compat for a plain string tab argument.
-      if (opts) params.set('tab', opts);
-    } else {
-      if (opts.tab) params.set('tab', opts.tab);
-      if (opts.videoId) params.set('videoId', opts.videoId);
-    }
-    const qs = params.toString();
-    return request(`/collections${qs ? `?${qs}` : ''}`);
-  },
-  createCollection: (data) => request('/collections', { method: 'POST', body: data }),
-  getCollection: (id) => request(`/collections/${id}`),
-  updateCollection: (id, data) => request(`/collections/${id}`, { method: 'PATCH', body: data }),
-  deleteCollection: (id) => request(`/collections/${id}`, { method: 'DELETE' }),
-  toggleSaveToCollection: (id, videoId) =>
-    request(`/collections/${id}/save`, { method: 'POST', body: { videoId } }),
-  addCollectionCollaborator: (id, userId) =>
-    request(`/collections/${id}/collaborators`, { method: 'POST', body: { userId } }),
-  removeCollectionCollaborator: (id, userId) =>
-    request(`/collections/${id}/collaborators/${userId}`, { method: 'DELETE' }),
-
   likeVideo: (id) => request(`/videos/${id}/like`, { method: 'POST' }),
   unlikeVideo: (id) => request(`/videos/${id}/like`, { method: 'DELETE' }),
   deleteVideo: (id) => request(`/videos/${id}`, { method: 'DELETE' }),
   bookmarkVideo: (id) => request(`/videos/${id}/bookmark`, { method: 'POST' }),
   unbookmarkVideo: (id) => request(`/videos/${id}/bookmark`, { method: 'DELETE' }),
+
+  // Deep Bookmarking & Shared Collections (backend/src/routes/collections.js)
+  getCollections: (tab = 'mine', videoId) => {
+    const params = new URLSearchParams({ tab });
+    if (videoId) params.set('videoId', videoId);
+    return request(`/collections?${params.toString()}`);
+  },
+  createCollection: (data) => request('/collections', { method: 'POST', body: data }),
+  getCollection: (id) => request(`/collections/${id}`),
+  updateCollection: (id, data) => request(`/collections/${id}`, { method: 'PATCH', body: data }),
+  deleteCollection: (id) => request(`/collections/${id}`, { method: 'DELETE' }),
+  saveToCollection: (id, videoId) =>
+    request(`/collections/${id}/save`, { method: 'POST', body: { videoId } }),
+  addCollaborator: (id, data) => request(`/collections/${id}/collaborators`, { method: 'POST', body: data }),
+  removeCollaborator: (id, userId) =>
+    request(`/collections/${id}/collaborators/${userId}`, { method: 'DELETE' }),
   getBookmarks: () => request('/users/me/bookmarks'),
   getLikedVideos: () => request('/users/me/likes'),
   getComments: (id) => request(`/videos/${id}/comments`),
