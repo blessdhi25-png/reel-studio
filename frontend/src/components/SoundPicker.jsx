@@ -52,19 +52,6 @@ function CheckIcon({ className = '' }) {
   );
 }
 
-function SkeletonRow() {
-  return (
-    <div className="flex items-center gap-3 px-2 py-2">
-      <span className="w-12 h-12 rounded-sprocket bg-smoke/10 animate-pulse shrink-0" />
-      <span className="flex-1 min-w-0 space-y-2">
-        <span className="block h-3.5 w-2/3 rounded bg-smoke/10 animate-pulse" />
-        <span className="block h-3 w-1/3 rounded bg-smoke/10 animate-pulse" />
-      </span>
-      <span className="w-8 h-8 rounded-full bg-smoke/10 animate-pulse shrink-0" />
-    </div>
-  );
-}
-
 /* ------------------------------------------------------------------ */
 /* Helpers                                                              */
 /* ------------------------------------------------------------------ */
@@ -75,21 +62,6 @@ function formatDuration(seconds) {
   const s = Math.floor(seconds % 60).toString().padStart(2, '0');
   return `${m}:${s}`;
 }
-
-// Local fallback catalog — used only when the real endpoint fails outright,
-// or when a query-free ("trending") load comes back genuinely empty (no
-// tracks in the system yet). Never substituted for a real, empty *search*
-// result — showing unrelated sample tracks for "no matches for 'xyz'"
-// would be actively misleading, not helpful. These are SoundHelix's public
-// example MP3s (freely streamable, commonly used exactly as placeholder/
-// test audio), clearly labeled as samples in the UI rather than passed off
-// as real catalog tracks.
-const FALLBACK_TRACKS = [
-  { id: 'fallback-1', title: 'Late Night Drive', artistName: 'Sample Audio', audioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3', durationSeconds: 237 },
-  { id: 'fallback-2', title: 'Golden Hour', artistName: 'Sample Audio', audioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3', durationSeconds: 246 },
-  { id: 'fallback-3', title: 'City Lights', artistName: 'Sample Audio', audioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3', durationSeconds: 214 },
-  { id: 'fallback-4', title: 'Morning Haze', artistName: 'Sample Audio', audioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3', durationSeconds: 234 },
-];
 
 // Tries a dedicated trending-sounds endpoint first (query + limit, matching
 // what a real "trending" ranking would take) and falls back to the
@@ -105,6 +77,60 @@ async function fetchSounds({ query, limit = 30 } = {}) {
     return api.getTrendingSounds({ query, limit });
   }
   return api.searchTracks(query || '');
+}
+
+// Local fallback so the picker never renders a dead end — used when the
+// API call throws (offline, backend down, 5xx) or resolves with an empty
+// list. These are royalty-free instrumental demo tracks (SoundHelix's
+// public sample set), meant as placeholders only: swap `audioUrl` for
+// real licensed tracks before shipping this to production.
+const FALLBACK_TRACKS = [
+  {
+    id: 'fallback-1',
+    title: 'Late Night Drive',
+    artistName: 'Sample Sounds',
+    audioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
+    durationSeconds: 237,
+    isFallback: true,
+  },
+  {
+    id: 'fallback-2',
+    title: 'Golden Hour',
+    artistName: 'Sample Sounds',
+    audioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3',
+    durationSeconds: 202,
+    isFallback: true,
+  },
+  {
+    id: 'fallback-3',
+    title: 'City Lights',
+    artistName: 'Sample Sounds',
+    audioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3',
+    durationSeconds: 227,
+    isFallback: true,
+  },
+  {
+    id: 'fallback-4',
+    title: 'Slow Motion',
+    artistName: 'Sample Sounds',
+    audioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3',
+    durationSeconds: 259,
+    isFallback: true,
+  },
+  {
+    id: 'fallback-5',
+    title: 'Morning Haze',
+    artistName: 'Sample Sounds',
+    audioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3',
+    durationSeconds: 320,
+    isFallback: true,
+  },
+];
+
+function matchesFallbackQuery(track, query) {
+  if (!query) return true;
+  const q = query.toLowerCase();
+  return track.title.toLowerCase().includes(q) || track.artistName.toLowerCase().includes(q);
 }
 
 /* ------------------------------------------------------------------ */
@@ -127,9 +153,9 @@ export default function SoundPicker({
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [usingFallback, setUsingFallback] = useState(false);
   const [selected, setSelected] = useState(null);
   const [playingId, setPlayingId] = useState(null);
-  const [usingFallback, setUsingFallback] = useState(false);
   const [trackVideos, setTrackVideos] = useState([]);
   const [trackVideosLoading, setTrackVideosLoading] = useState(mode === 'track-videos');
   const [trackVideosError, setTrackVideosError] = useState(null);
@@ -142,30 +168,29 @@ export default function SoundPicker({
     if (mode !== 'browse') return;
     let cancelled = false;
     setLoading(true);
+    const trimmed = query.trim();
     const handle = setTimeout(
       () => {
-        const trimmedQuery = query.trim();
-        fetchSounds({ query: trimmedQuery, limit: 30 })
+        fetchSounds({ query: trimmed, limit: 30 })
           .then((tracks) => {
             if (cancelled) return;
             const list = Array.isArray(tracks) ? tracks : [];
-            // Only fall back for a genuinely empty catalog (no query at
-            // all) — an empty *search* result is a real answer ("nothing
-            // matches"), not a failure, and shouldn't be papered over with
-            // unrelated sample tracks.
-            if (list.length === 0 && !trimmedQuery) {
-              setResults(FALLBACK_TRACKS);
-              setUsingFallback(true);
-            } else {
+            if (list.length > 0) {
               setResults(list);
               setUsingFallback(false);
+            } else {
+              // Empty (not an error) — API is reachable but has nothing to
+              // show yet, so fall back locally rather than dead-ending the
+              // picker on a blank list.
+              setResults(FALLBACK_TRACKS.filter((t) => matchesFallbackQuery(t, trimmed)));
+              setUsingFallback(true);
             }
           })
           .catch(() => {
             if (cancelled) return;
-            // The endpoint itself failed — always fall back here regardless
-            // of query, so the picker never renders a dead end.
-            setResults(FALLBACK_TRACKS);
+            // API unreachable/failed — same fallback, so the picker keeps
+            // working offline instead of showing a dead error state.
+            setResults(FALLBACK_TRACKS.filter((t) => matchesFallbackQuery(t, trimmed)));
             setUsingFallback(true);
           })
           .finally(() => {
@@ -251,29 +276,18 @@ export default function SoundPicker({
       soundUrl: selected.audioUrl,
       title: selected.title,
       artistName: selected.artistName,
-      coverUrl: selected.coverUrl || null,
     });
     onClose?.();
   }
 
   return (
-    // fixed (not absolute) so this reliably covers the full viewport
-    // regardless of where it's mounted — VideoCard's vinyl badge renders
-    // this inside a relatively-positioned h-dvh card (where `absolute`
-    // happened to also fill the viewport), but Upload's page is a normal
-    // scrolling document-flow container, where `absolute inset-0` would
-    // only size against the nearest positioned ancestor rather than the
-    // viewport. z-50 to sit above everything, including other modals this
-    // page may already have open.
-    <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-lg flex flex-col justify-end" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex flex-col items-stretch justify-end">
+      <div className="absolute inset-0 bg-black/90 backdrop-blur-lg" onClick={onClose} />
       {/* Hidden shared preview player — reused across rows so starting a new
           preview always stops whatever was playing before. */}
       <audio ref={audioRef} onEnded={() => setPlayingId(null)} className="hidden" />
 
-      <div
-        className="relative w-full max-h-[80%] bg-ink2/95 backdrop-blur-xl border-t border-smoke/20 rounded-t-2xl flex flex-col animate-sheet-up"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="relative w-full max-h-[80%] bg-ink2/95 backdrop-blur-xl border-t border-smoke/20 rounded-t-2xl flex flex-col animate-sheet-up">
         <div className="flex items-center justify-between px-6 py-4 border-b border-smoke/10 shrink-0">
           <span className="w-6" />
           <p className="font-display text-xl text-bone tracking-wide">
@@ -323,30 +337,26 @@ export default function SoundPicker({
         <div className="flex-1 overflow-y-auto px-6 py-3">
           {mode === 'browse' ? (
             <>
-              {loading && (
-                <div className="flex flex-col gap-1">
-                  {[0, 1, 2, 3, 4].map((i) => (
-                    <SkeletonRow key={i} />
-                  ))}
-                </div>
-              )}
+              {loading && <TrackRowSkeletons count={6} />}
               {!loading && results.length === 0 && (
+                // Shouldn't normally happen — FALLBACK_TRACKS always backs
+                // the list — but a query that matches nothing in the
+                // fallback set either still lands here cleanly.
                 <p className="font-body text-sm text-smoke text-center py-8">
                   {query ? `No sounds match "${query}"` : 'No sounds available yet'}
                 </p>
               )}
               {!loading && results.length > 0 && (
                 <>
-                  {usingFallback ? (
-                    <p className="font-mono text-[10px] uppercase tracking-widest text-amber-500/80 mb-2">
-                      Sample sounds — live catalog unavailable
+                  {!query && (
+                    <p className="font-mono text-[10px] uppercase tracking-widest text-smoke mb-2">
+                      {usingFallback ? 'Suggested sounds' : 'Trending'}
                     </p>
-                  ) : (
-                    !query && (
-                      <p className="font-mono text-[10px] uppercase tracking-widest text-smoke mb-2">
-                        Trending
-                      </p>
-                    )
+                  )}
+                  {usingFallback && (
+                    <p className="font-body text-xs text-smoke/70 mb-2">
+                      Couldn't reach the sound library — showing sample tracks instead.
+                    </p>
                   )}
                   <div className="flex flex-col gap-1">
                     {results.map((track) => (
@@ -417,6 +427,23 @@ export default function SoundPicker({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function TrackRowSkeletons({ count = 6 }) {
+  return (
+    <div className="flex flex-col gap-1 animate-pulse">
+      {Array.from({ length: count }).map((_, i) => (
+        <div key={i} className="w-full flex items-center gap-3 px-2 py-2">
+          <span className="w-12 h-12 rounded-sprocket bg-smoke/10 shrink-0" />
+          <span className="flex-1 min-w-0 space-y-1.5">
+            <span className="block h-3 w-2/5 rounded bg-smoke/10" />
+            <span className="block h-2.5 w-1/4 rounded bg-smoke/10" />
+          </span>
+          <span className="w-8 h-8 rounded-full bg-smoke/10 shrink-0" />
+        </div>
+      ))}
     </div>
   );
 }
