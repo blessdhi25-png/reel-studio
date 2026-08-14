@@ -4,101 +4,141 @@ import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { useToast } from '../context/ToastContext';
 
-const PRIVACY_OPTIONS = [
-  { value: 'private', icon: '🔒', label: 'Private' },
-  { value: 'collaborators', icon: '👥', label: 'Collaborators' },
-  { value: 'public', icon: '🌐', label: 'Public' },
-];
-
-function Switch({ checked, onChange, disabled }) {
+function XIcon(props) {
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      onClick={onChange}
-      disabled={disabled}
-      className={`relative w-10 h-6 rounded-full shrink-0 transition-colors disabled:opacity-50 ${
-        checked ? 'bg-amber-500' : 'bg-zinc-700'
-      }`}
-    >
-      <span
-        className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow-md transition-transform ${
-          checked ? 'translate-x-4' : 'translate-x-0'
-        }`}
-      />
-    </button>
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M18 6 6 18" /><path d="m6 6 12 12" />
+    </svg>
   );
 }
 
-// Triggered from the Bookmark icon on a video card or full-screen reel.
-// Lets someone toggle a video in/out of any of their existing collections,
-// or quick-create a new one on the fly — see VideoCard.jsx's bookmark
-// button, which opens this instead of an instant single-collection toggle.
-//
-// isQuickSaved/onQuickSaveToggle are optional: when passed, a pinned
-// "Quick Save" row appears above the named collections, wired to the
-// existing simple Bookmark relation (the same one that's always powered
-// the profile page's "Saved" tab) — so tapping the bookmark icon still
-// keeps that one-tap save working exactly as before, and named
-// collections are purely an additional way to organize on top of it.
-export default function SaveToCollectionModal({ videoId, isQuickSaved, onQuickSaveToggle, onClose, onSaved }) {
+function CheckIcon(props) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M20 6 9 17l-5-5" />
+    </svg>
+  );
+}
+
+function BookmarkIcon({ filled, ...props }) {
+  return (
+    <svg viewBox="0 0 24 24" fill={filled ? '#ef4444' : 'none'} stroke={filled ? 'none' : 'currentColor'} strokeWidth="2" {...props}>
+      <path d="M6 2h12a1 1 0 0 1 1 1v19l-7-4.5L5 22V3a1 1 0 0 1 1-1z" />
+    </svg>
+  );
+}
+
+function FolderPlusIcon(props) {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M4 20a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2z" />
+      <path d="M12 11v6M9 14h6" />
+    </svg>
+  );
+}
+
+function SpinnerIcon(props) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="animate-spin" {...props}>
+      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.25" />
+      <path d="M22 12a10 10 0 0 0-10-10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+const PRIVACY_OPTIONS = [
+  { id: 'private', label: 'Private', hint: 'Only you', icon: '🔒' },
+  { id: 'public', label: 'Public', hint: 'Anyone can view', icon: '🌐' },
+  { id: 'collaborators', label: 'Collaborators Only', hint: 'You + people you invite', icon: '👥' },
+];
+
+/**
+ * Save-to-collection modal, triggered from a video's bookmark icon.
+ *
+ * Props:
+ *  - open, onClose
+ *  - videoId: string — the video being saved
+ *  - isBookmarked: boolean — the video's current plain-bookmark state (the
+ *    quick single-tap save, separate from named collections — see the big
+ *    comment on the Collection model in schema.prisma for why these are
+ *    two coexisting systems). Shown here as a "Quick Save" row so both
+ *    ways of saving something live in one place.
+ *  - onQuickSaveChange?: (next: boolean) => void — called when Quick Save
+ *    is toggled from inside this modal, so the VideoCard that opened it
+ *    can keep its own bookmarked/bookmarkCount state in sync rather than
+ *    going stale.
+ */
+export default function SaveToCollectionModal({ open, onClose, videoId, isBookmarked, onQuickSaveChange }) {
   const toast = useToast();
   const [collections, setCollections] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [busyIds, setBusyIds] = useState(new Set());
+  const [error, setError] = useState(null);
+  const [savingIds, setSavingIds] = useState(() => new Set());
+
+  const [quickSaved, setQuickSaved] = useState(Boolean(isBookmarked));
+  const [quickSaving, setQuickSaving] = useState(false);
 
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
   const [newPrivacy, setNewPrivacy] = useState('private');
   const [creating, setCreating] = useState(false);
-  const [quickSaving, setQuickSaving] = useState(false);
+  const [createError, setCreateError] = useState(null);
 
-  async function handleQuickSaveToggle() {
-    if (!onQuickSaveToggle || quickSaving) return;
+  useEffect(() => {
+    if (!open) return;
+    setQuickSaved(Boolean(isBookmarked));
+    setShowCreate(false);
+    setError(null);
+    setLoading(true);
+    api
+      .getCollections('mine', videoId)
+      .then(setCollections)
+      .catch((err) => setError(err.message || 'Could not load your collections.'))
+      .finally(() => setLoading(false));
+    // isBookmarked deliberately excluded — it's only meant to seed state
+    // when the modal opens, not resync every time the parent re-renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, videoId]);
+
+  useEffect(() => {
+    function onKeyDown(e) {
+      if (e.key === 'Escape') onClose?.();
+    }
+    if (open) document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [open, onClose]);
+
+  async function toggleQuickSave() {
+    if (quickSaving) return;
+    const next = !quickSaved;
     setQuickSaving(true);
+    setQuickSaved(next);
     try {
-      await onQuickSaveToggle();
+      next ? await api.bookmarkVideo(videoId) : await api.unbookmarkVideo(videoId);
+      onQuickSaveChange?.(next);
+      toast.success(next ? 'Saved' : 'Removed from Saved');
+    } catch {
+      setQuickSaved(!next);
     } finally {
       setQuickSaving(false);
     }
   }
 
-  function load() {
-    setLoading(true);
-    api
-      .getCollections({ tab: 'mine', videoId })
-      .then(setCollections)
-      .catch(() => setCollections([]))
-      .finally(() => setLoading(false));
-  }
+  async function toggleCollection(collection) {
+    if (savingIds.has(collection.id)) return;
+    const next = !collection.isSaved;
 
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [videoId]);
+    setSavingIds((prev) => new Set(prev).add(collection.id));
+    setCollections((prev) => prev.map((c) => (c.id === collection.id ? { ...c, isSaved: next } : c)));
 
-  async function handleToggle(collection) {
-    setBusyIds((prev) => new Set(prev).add(collection.id));
-    const willSave = !collection.isSaved;
-    setCollections((prev) =>
-      prev.map((c) =>
-        c.id === collection.id ? { ...c, isSaved: willSave, itemCount: c.itemCount + (willSave ? 1 : -1) } : c
-      )
-    );
     try {
-      await api.toggleSaveToCollection(collection.id, videoId);
-      toast.success(willSave ? `Saved to ${collection.name}` : `Removed from ${collection.name}`);
-      onSaved?.(collection, willSave);
-    } catch (err) {
-      setCollections((prev) =>
-        prev.map((c) =>
-          c.id === collection.id ? { ...c, isSaved: !willSave, itemCount: c.itemCount + (willSave ? -1 : 1) } : c
-        )
-      );
-      toast.error(err.message || 'Could not update this collection');
+      await api.saveToCollection(collection.id, videoId);
+      toast[next ? 'success' : 'info'](next ? `Saved to ${collection.name}` : `Removed from ${collection.name}`);
+    } catch {
+      setCollections((prev) => prev.map((c) => (c.id === collection.id ? { ...c, isSaved: !next } : c)));
+      toast.error("Couldn't update that collection — try again.");
     } finally {
-      setBusyIds((prev) => {
+      setSavingIds((prev) => {
         const next = new Set(prev);
         next.delete(collection.id);
         return next;
@@ -110,148 +150,202 @@ export default function SaveToCollectionModal({ videoId, isQuickSaved, onQuickSa
     e.preventDefault();
     if (!newName.trim() || creating) return;
     setCreating(true);
+    setCreateError(null);
     try {
       const created = await api.createCollection({ name: newName.trim(), privacy: newPrivacy });
-      // New collection never has this video in it yet — save it
-      // immediately so "create + save" is one motion, not two.
-      await api.toggleSaveToCollection(created.id, videoId);
-      setCollections((prev) => [{ ...created, isSaved: true, itemCount: 1 }, ...prev]);
+      await api.saveToCollection(created.id, videoId);
+      setCollections((prev) => [{ ...created, isSaved: true }, ...prev]);
       toast.success(`Saved to ${created.name}`);
-      onSaved?.(created, true);
       setNewName('');
       setNewPrivacy('private');
       setShowCreate(false);
     } catch (err) {
-      toast.error(err.message || 'Could not create collection');
+      setCreateError(err.message || 'Could not create that collection.');
     } finally {
       setCreating(false);
     }
   }
 
+  if (!open) return null;
+
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-end sm:items-center justify-center z-50" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
+      <button
+        type="button"
+        aria-label="Close"
+        onClick={onClose}
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-[fadeIn_0.2s_ease-out]"
+      />
+
       <div
-        className="w-full sm:max-w-md sm:mx-4 max-h-[85vh] bg-zinc-900/95 backdrop-blur-xl border border-zinc-800 text-white rounded-t-3xl sm:rounded-2xl flex flex-col shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Save to collection"
+        className="relative w-full sm:w-[420px] max-h-[85vh] bg-zinc-900/95 backdrop-blur-xl border border-zinc-800 sm:rounded-2xl rounded-t-2xl text-white flex flex-col shadow-2xl animate-[slideUp_0.24s_cubic-bezier(0.16,1,0.3,1)]"
       >
-        <div className="flex items-center justify-between p-4 border-b border-zinc-800 shrink-0">
-          <p className="font-display text-lg tracking-wide">Save to Collection</p>
-          <button onClick={onClose} className="text-zinc-400 hover:text-white text-sm">
-            Close
+        <div className="shrink-0 flex items-center justify-between px-5 pt-5 pb-3 border-b border-zinc-800">
+          <h2 className="text-base font-bold">Save to…</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="p-2 -m-2 rounded-full text-zinc-400 hover:text-white hover:bg-zinc-800 transition-all"
+          >
+            <XIcon />
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-1">
-          {typeof isQuickSaved === 'boolean' && (
-            <button
-              type="button"
-              onClick={handleQuickSaveToggle}
-              disabled={quickSaving}
-              className="w-full flex items-center gap-3 p-3 rounded-2xl hover:bg-zinc-800/60 transition-colors text-left disabled:opacity-50 border border-zinc-800 mb-2"
-            >
-              <span className="w-11 h-11 rounded-xl bg-zinc-800 flex items-center justify-center text-lg shrink-0">
-                🔖
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-1">
+          {/* Quick Save — the existing plain-bookmark toggle, surfaced here
+              alongside named collections so there's one place to manage
+              every way of saving this video. */}
+          <button
+            type="button"
+            onClick={toggleQuickSave}
+            disabled={quickSaving}
+            className="w-full flex items-center gap-3 py-3 px-2 -mx-2 rounded-xl hover:bg-zinc-800/60 transition-all disabled:opacity-60"
+          >
+            <span className="w-10 h-10 rounded-xl bg-zinc-800 border border-zinc-700 flex items-center justify-center shrink-0">
+              <BookmarkIcon filled={quickSaved} className="w-5 h-5" />
+            </span>
+            <span className="flex-1 text-left">
+              <span className="block text-sm font-semibold">Quick Save</span>
+              <span className="block text-xs text-zinc-500">Not organized into a collection</span>
+            </span>
+            {quickSaving ? (
+              <SpinnerIcon className="text-zinc-400" />
+            ) : (
+              <span
+                className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 border-2 transition-all ${
+                  quickSaved ? 'bg-white border-white' : 'border-zinc-600'
+                }`}
+              >
+                {quickSaved && <CheckIcon className="text-zinc-900" />}
               </span>
-              <span className="flex-1 min-w-0">
-                <span className="block text-sm font-semibold text-white">Quick Save</span>
-                <span className="block text-xs text-zinc-500 mt-0.5">Your general Saved tab</span>
-              </span>
-              <Switch checked={isQuickSaved} onChange={handleQuickSaveToggle} disabled={quickSaving} />
-            </button>
-          )}
+            )}
+          </button>
+
+          <div className="h-px bg-zinc-800 my-2" />
 
           {loading && (
-            <p className="text-center text-zinc-500 text-sm py-8">Loading your collections…</p>
+            <div className="space-y-1">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="flex items-center gap-3 py-3 px-2 animate-pulse">
+                  <div className="w-10 h-10 rounded-xl bg-zinc-800" />
+                  <div className="flex-1 space-y-1.5">
+                    <div className="h-3 w-24 bg-zinc-800 rounded-full" />
+                    <div className="h-2.5 w-16 bg-zinc-800 rounded-full" />
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
 
-          {!loading && collections.length === 0 && !showCreate && (
-            <p className="text-center text-zinc-500 text-sm py-8">
-              You don't have any collections yet — create one below.
+          {error && <p className="text-sm text-red-400 py-3">{error}</p>}
+
+          {!loading && !error && collections.length === 0 && !showCreate && (
+            <p className="text-sm text-zinc-500 py-4 text-center">
+              You don't have any collections yet. Create one below.
             </p>
           )}
 
           {!loading &&
-            collections.map((c) => (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => handleToggle(c)}
-                disabled={busyIds.has(c.id)}
-                className="w-full flex items-center gap-3 p-3 rounded-2xl hover:bg-zinc-800/60 transition-colors text-left disabled:opacity-50"
-              >
-                <span className="w-11 h-11 rounded-xl bg-zinc-800 border border-zinc-700 overflow-hidden shrink-0 grid grid-cols-2 grid-rows-2">
-                  {c.previewThumbnails.length > 0 ? (
-                    c.previewThumbnails
-                      .slice(0, 4)
-                      .map((src, i) => <img key={i} src={src} alt="" className="w-full h-full object-cover" />)
+            collections.map((c) => {
+              const saving = savingIds.has(c.id);
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => toggleCollection(c)}
+                  disabled={saving}
+                  className="w-full flex items-center gap-3 py-3 px-2 -mx-2 rounded-xl hover:bg-zinc-800/60 transition-all disabled:opacity-60"
+                >
+                  <span className="w-10 h-10 rounded-xl bg-zinc-800 border border-zinc-700 overflow-hidden shrink-0 grid grid-cols-2 grid-rows-2">
+                    {c.coverThumbnails?.length ? (
+                      c.coverThumbnails
+                        .slice(0, 4)
+                        .map((url, i) => <img key={i} src={url} alt="" className="w-full h-full object-cover" />)
+                    ) : (
+                      <span className="col-span-2 row-span-2 flex items-center justify-center text-zinc-600 text-xs">
+                        📁
+                      </span>
+                    )}
+                  </span>
+                  <span className="flex-1 text-left min-w-0">
+                    <span className="block text-sm font-semibold truncate">{c.name}</span>
+                    <span className="block text-xs text-zinc-500">
+                      {c.videoCount} video{c.videoCount === 1 ? '' : 's'} ·{' '}
+                      {c.privacy === 'private' ? '🔒 Private' : c.privacy === 'public' ? '🌐 Public' : '👥 Shared'}
+                    </span>
+                  </span>
+                  {saving ? (
+                    <SpinnerIcon className="text-zinc-400" />
                   ) : (
-                    <span className="col-span-2 row-span-2 flex items-center justify-center text-zinc-600 text-lg">
-                      📁
+                    <span
+                      className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 border-2 transition-all ${
+                        c.isSaved ? 'bg-white border-white' : 'border-zinc-600'
+                      }`}
+                    >
+                      {c.isSaved && <CheckIcon className="text-zinc-900" />}
                     </span>
                   )}
-                </span>
-                <span className="flex-1 min-w-0">
-                  <span className="block text-sm font-semibold text-white truncate">{c.name}</span>
-                  <span className="block text-xs text-zinc-500 mt-0.5">
-                    {c.itemCount} {c.itemCount === 1 ? 'video' : 'videos'} ·{' '}
-                    {c.privacy === 'private' ? '🔒 Private' : c.privacy === 'public' ? '🌐 Public' : '👥 Shared'}
-                  </span>
-                </span>
-                <Switch checked={Boolean(c.isSaved)} onChange={() => handleToggle(c)} disabled={busyIds.has(c.id)} />
-              </button>
-            ))}
+                </button>
+              );
+            })}
+        </div>
 
+        {/* Quick create */}
+        <div className="shrink-0 border-t border-zinc-800 px-5 py-4">
           {!showCreate ? (
             <button
               type="button"
               onClick={() => setShowCreate(true)}
-              className="w-full flex items-center gap-3 p-3 rounded-2xl hover:bg-zinc-800/60 transition-colors text-left mt-2"
+              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-dashed border-zinc-700 text-zinc-300 hover:text-white hover:border-zinc-500 text-sm font-semibold transition-all"
             >
-              <span className="w-11 h-11 rounded-xl border-2 border-dashed border-zinc-700 flex items-center justify-center text-zinc-500 text-xl shrink-0">
-                +
-              </span>
-              <span className="text-sm font-semibold text-amber-400">New Collection</span>
+              <FolderPlusIcon className="w-5 h-5" /> New Collection
             </button>
           ) : (
-            <form onSubmit={handleCreate} className="mt-2 p-3 rounded-2xl bg-zinc-800/40 border border-zinc-800 space-y-3">
+            <form onSubmit={handleCreate} className="space-y-3">
               <input
                 autoFocus
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
                 placeholder="Collection name"
                 maxLength={60}
-                className="w-full bg-zinc-800/80 border border-zinc-700 text-white placeholder-zinc-500 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-amber-500/50"
+                className="w-full bg-zinc-800/80 border border-zinc-700 text-white rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500/50 transition-all placeholder:text-zinc-500"
               />
-              <div className="grid grid-cols-3 gap-2">
-                {PRIVACY_OPTIONS.map((opt) => (
+              <div className="flex gap-1.5">
+                {PRIVACY_OPTIONS.map((p) => (
                   <button
-                    key={opt.value}
+                    key={p.id}
                     type="button"
-                    onClick={() => setNewPrivacy(opt.value)}
-                    className={`p-2 rounded-xl border text-xs font-semibold flex flex-col items-center gap-1 transition-colors ${
-                      newPrivacy === opt.value
-                        ? 'bg-amber-500/15 border-amber-500/50 text-amber-300'
-                        : 'bg-zinc-800/60 border-zinc-700 text-zinc-400'
+                    onClick={() => setNewPrivacy(p.id)}
+                    className={`flex-1 flex flex-col items-center gap-0.5 py-2 rounded-xl border text-[11px] font-semibold transition-all ${
+                      newPrivacy === p.id
+                        ? 'bg-amber-500 border-amber-500 text-black'
+                        : 'bg-zinc-800/60 border-zinc-700 text-zinc-400 hover:text-white'
                     }`}
                   >
-                    <span className="text-base leading-none">{opt.icon}</span>
-                    {opt.label}
+                    <span>{p.icon}</span>
+                    {p.label}
                   </button>
                 ))}
               </div>
+              {createError && <p className="text-xs text-red-400">{createError}</p>}
               <div className="flex gap-2">
                 <button
                   type="button"
                   onClick={() => setShowCreate(false)}
-                  className="flex-1 py-2.5 rounded-xl border border-zinc-700 text-zinc-300 text-xs font-semibold hover:bg-zinc-800"
+                  className="px-4 py-2.5 rounded-xl border border-zinc-700 text-zinc-300 text-sm font-semibold hover:bg-zinc-800 transition-all"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={!newName.trim() || creating}
-                  className="flex-1 py-2.5 rounded-xl bg-amber-500 text-black text-xs font-bold hover:bg-amber-400 disabled:opacity-50"
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black text-sm font-bold transition-all disabled:opacity-40"
                 >
+                  {creating && <SpinnerIcon />}
                   {creating ? 'Creating…' : 'Create & Save'}
                 </button>
               </div>
@@ -259,6 +353,17 @@ export default function SaveToCollectionModal({ videoId, isQuickSaved, onQuickSa
           )}
         </div>
       </div>
+
+      <style jsx global>{`
+        @keyframes slideUp {
+          from { transform: translateY(24px); opacity: 0.4; }
+          to { transform: translateY(0); opacity: 1; }
+        }
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+      `}</style>
     </div>
   );
 }
