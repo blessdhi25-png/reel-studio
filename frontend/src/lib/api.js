@@ -203,22 +203,6 @@ export const api = {
   deleteVideo: (id) => request(`/videos/${id}`, { method: 'DELETE' }),
   bookmarkVideo: (id) => request(`/videos/${id}/bookmark`, { method: 'POST' }),
   unbookmarkVideo: (id) => request(`/videos/${id}/bookmark`, { method: 'DELETE' }),
-
-  // Deep Bookmarking & Shared Collections (backend/src/routes/collections.js)
-  getCollections: (tab = 'mine', videoId) => {
-    const params = new URLSearchParams({ tab });
-    if (videoId) params.set('videoId', videoId);
-    return request(`/collections?${params.toString()}`);
-  },
-  createCollection: (data) => request('/collections', { method: 'POST', body: data }),
-  getCollection: (id) => request(`/collections/${id}`),
-  updateCollection: (id, data) => request(`/collections/${id}`, { method: 'PATCH', body: data }),
-  deleteCollection: (id) => request(`/collections/${id}`, { method: 'DELETE' }),
-  saveToCollection: (id, videoId) =>
-    request(`/collections/${id}/save`, { method: 'POST', body: { videoId } }),
-  addCollaborator: (id, data) => request(`/collections/${id}/collaborators`, { method: 'POST', body: data }),
-  removeCollaborator: (id, userId) =>
-    request(`/collections/${id}/collaborators/${userId}`, { method: 'DELETE' }),
   getBookmarks: () => request('/users/me/bookmarks'),
   getLikedVideos: () => request('/users/me/likes'),
   getComments: (id) => request(`/videos/${id}/comments`),
@@ -340,6 +324,18 @@ adminGetStats: () => request('/admin/stats'),
   answerStoryQuestion: (id, answer) => request(`/stories/${id}/qa-response`, { method: 'POST', body: { answer } }),
   getStoryQaResponses: (id) => request(`/stories/${id}/qa-responses`),
   deleteStory: (id) => request(`/stories/${id}`, { method: 'DELETE' }),
+
+  // Collections
+  getCollections: (videoId) => request(`/collections${videoId ? `?videoId=${videoId}` : ''}`),
+  createCollection: (data) => request('/collections', { method: 'POST', body: data }),
+  getCollection: (id) => request(`/collections/${id}`),
+  updateCollection: (id, data) => request(`/collections/${id}`, { method: 'PATCH', body: data }),
+  deleteCollection: (id) => request(`/collections/${id}`, { method: 'DELETE' }),
+  saveToCollection: (id, videoId) => request(`/collections/${id}/save`, { method: 'POST', body: { videoId } }),
+  addCollectionCollaborator: (id, userId) =>
+    request(`/collections/${id}/collaborators`, { method: 'POST', body: { userId } }),
+  removeCollectionCollaborator: (id, userId) =>
+    request(`/collections/${id}/collaborators/${userId}`, { method: 'DELETE' }),
 
   // Studio (analytics) & Promote (boost)
   getStudioOverview: () => request('/studio/overview'),
