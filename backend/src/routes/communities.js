@@ -8,15 +8,81 @@ const router = Router();
 const USER_SELECT = { id: true, username: true, avatarUrl: true };
 const ROLE_RANK = { admin: 0, moderator: 1, member: 2 };
 
-// Shown to every fresh install so the discovery hub is never empty on
-// first load — these are ordinary public communities, not special-cased
-// afterward, so they can be edited/joined/deleted like anything else.
+// Default communities seeded the first time GET /communities is called
+// against an empty table (fresh install / fresh DB) — gives a brand-new
+// deployment something to show instead of a blank discovery hub before any
+// real user has created one.
 const DEFAULT_COMMUNITIES = [
-  { name: 'CodeNewbies', category: 'coding', description: 'A friendly space for people just starting out with code to share progress, ask questions, and post what they built.' },
-  { name: 'FilmCraft', category: 'film', description: 'For filmmakers and editors to swap techniques, get feedback on cuts, and talk gear and workflow.' },
-  { name: 'GamerLounge', category: 'gaming', description: 'Clips, streams, and hot takes — a hangout for gamers of every platform and genre.' },
-  { name: 'IndieMusic', category: 'music', description: 'Independent musicians sharing tracks, production tips, and collabs outside the label system.' },
+  { name: 'CodeNewbies', category: 'Tech', description: 'A friendly place to ask questions, share wins, and learn to code together — no question is too basic.' },
+  { name: 'FilmCraft', category: 'Film', description: 'Cinematography, editing, and storytelling — for anyone making or studying film and video.' },
+  { name: 'GamerLounge', category: 'Gaming', description: 'Clips, strategy talk, and finding people to play with — all platforms, all genres.' },
+  { name: 'IndieMusic', category: 'Music', description: 'Independent artists and the people who love finding them first.' },
 ];
+
+// Seeded communities need a valid createdById (Community.createdById is a
+// required FK to User — see schema.prisma), so a placeholder account owns
+// them rather than an arbitrary/real user being credited as the creator.
+// passwordHash is left null on purpose: the same pattern this codebase
+// already uses for Google-only accounts (see routes/auth.js's login
+// handler) — a null hash can never satisfy bcrypt.compare, so this account
+// can't be logged into through the normal password flow. It's found by a
+// fixed username, not created more than once.
+const SEED_ACCOUNT_USERNAME = 'reelstudio';
+
+async function getOrCreateSeedAccount() {
+  const existing = await prisma.user.findUnique({ where: { username: SEED_ACCOUNT_USERNAME } });
+  if (existing) return existing;
+  try {
+    return await prisma.user.create({
+      data: {
+        username: SEED_ACCOUNT_USERNAME,
+        email: 'system+reelstudio@reel-studio.internal',
+        displayName: 'Reel Studio',
+      },
+    });
+  } catch (err) {
+    // Two concurrent requests can both see "no seed account" and both try
+    // to create it — the loser hits the unique constraint on username.
+    // That's fine: re-fetch what the winner just created instead of
+    // failing the request over a benign race.
+    if (err.code === 'P2002') {
+      const created = await prisma.user.findUnique({ where: { username: SEED_ACCOUNT_USERNAME } });
+      if (created) return created;
+    }
+    throw err;
+  }
+}
+
+// Same race as above, one level up: two concurrent requests can both see
+// an empty community table and both attempt to seed. Each default
+// community is created with skipDuplicates on name+createdById... Prisma's
+// createMany doesn't support a partial unique check like that directly, so
+// instead this re-checks count() inside the seeding path and simply lets a
+// harmless duplicate set through in the rare concurrent case — communities
+// have no uniqueness constraint on name, so a duplicate is cosmetic, not a
+// data-integrity issue, and won't recur past the very first cold request.
+async function seedDefaultCommunitiesIfEmpty() {
+  const count = await prisma.community.count();
+  if (count > 0) return;
+
+  console.log('[communities] Community table is empty — seeding default communities:', DEFAULT_COMMUNITIES.map((c) => c.name).join(', '));
+  const seedAccount = await getOrCreateSeedAccount();
+
+  await prisma.$transaction(
+    DEFAULT_COMMUNITIES.map((c) =>
+      prisma.community.create({
+        data: {
+          name: c.name,
+          description: c.description,
+          category: c.category,
+          privacy: 'public',
+          createdById: seedAccount.id,
+        },
+      })
+    )
+  );
+  console.log('[communities] Seeded', DEFAULT_COMMUNITIES.length, 'default communities');
+}
 
 async function getMembership(communityId, userId) {
   if (!userId) return null;
@@ -25,56 +91,7 @@ async function getMembership(communityId, userId) {
       where: { communityId_userId: { communityId, userId } },
     });
   } catch (err) {
-    console.error(`[communities] getMembership failed (communityId=${communityId}, userId=${userId}):`, err);
-    throw err;
-  }
-}
-
-// Community.createdById is a required FK to User, so the seeded rows need
-// a real owner — we don't invent a placeholder user row for it. We prefer
-// an existing admin (so the seeded communities are moderated by someone
-// with the authority to edit/delete them), falling back to whichever user
-// registered first. If the users table is empty too, there's nothing valid
-// to set createdById to, so we skip seeding rather than violate the FK.
-async function seedDefaultCommunitiesIfEmpty() {
-  let existingCount;
-  try {
-    existingCount = await prisma.community.count();
-  } catch (err) {
-    console.error('[communities] seed: failed to count existing communities:', err);
-    throw err;
-  }
-
-  if (existingCount > 0) return;
-
-  let seedOwner;
-  try {
-    seedOwner =
-      (await prisma.user.findFirst({ where: { role: 'admin' }, orderBy: { createdAt: 'asc' } })) ||
-      (await prisma.user.findFirst({ orderBy: { createdAt: 'asc' } }));
-  } catch (err) {
-    console.error('[communities] seed: failed to look up a user to own the default communities:', err);
-    throw err;
-  }
-
-  if (!seedOwner) {
-    console.warn('[communities] seed: no users exist yet, skipping default community seed (createdById has no valid FK target).');
-    return;
-  }
-
-  try {
-    const { count } = await prisma.community.createMany({
-      data: DEFAULT_COMMUNITIES.map((c) => ({
-        name: c.name,
-        description: c.description,
-        category: c.category,
-        privacy: 'public',
-        createdById: seedOwner.id,
-      })),
-    });
-    console.log(`[communities] seed: created ${count} default communities (owner: ${seedOwner.username}, id: ${seedOwner.id}).`);
-  } catch (err) {
-    console.error('[communities] seed: failed to create default communities:', err);
+    console.error('[communities] getMembership query failed', { communityId, userId, error: err.message, stack: err.stack });
     throw err;
   }
 }
@@ -85,11 +102,23 @@ async function seedDefaultCommunitiesIfEmpty() {
 // derived client-side from `isJoined` on each row, same reasoning as the
 // Collections hub's tab filtering: the dataset is small enough that one
 // request beats three, and it keeps tab-switching instant.
+//
+// On a completely empty table (fresh install), this seeds the four default
+// communities below before running the real query, so a brand-new
+// deployment's discovery hub isn't blank on day one.
 // ---------------------------------------------------------------------------
 router.get('/communities', optionalAuth, asyncHandler(async (req, res) => {
   const { category, search } = req.query;
 
-  await seedDefaultCommunitiesIfEmpty();
+  try {
+    await seedDefaultCommunitiesIfEmpty();
+  } catch (err) {
+    // Seeding is a nice-to-have, not a hard dependency of this endpoint —
+    // if it fails (e.g. a transient DB hiccup), log it with full context
+    // and fall through to the real query below rather than 500ing the
+    // whole discovery hub over a failed seed attempt.
+    console.error('[communities] seedDefaultCommunitiesIfEmpty failed — continuing without seed data', { error: err.message, stack: err.stack });
+  }
 
   let communities;
   try {
@@ -112,7 +141,7 @@ router.get('/communities', optionalAuth, asyncHandler(async (req, res) => {
       },
     });
   } catch (err) {
-    console.error(`[communities] GET /communities failed (category=${category ?? 'none'}, search=${search ?? 'none'}):`, err);
+    console.error('[communities] GET /communities query failed', { category, search, userId: req.userId, error: err.message, stack: err.stack });
     throw err;
   }
 
@@ -138,11 +167,10 @@ router.post('/communities', requireAuth, asyncHandler(async (req, res) => {
     return res.status(400).json({ error: 'privacy must be public or private' });
   }
 
-  // Creator becomes the first admin in the same transaction, so a
-  // community can never briefly exist with zero members/no admin.
-  let community;
   try {
-    community = await prisma.$transaction(async (tx) => {
+    // Creator becomes the first admin in the same transaction, so a
+    // community can never briefly exist with zero members/no admin.
+    const community = await prisma.$transaction(async (tx) => {
       const created = await tx.community.create({
         data: {
           name: name.trim(),
@@ -159,12 +187,12 @@ router.post('/communities', requireAuth, asyncHandler(async (req, res) => {
       });
       return created;
     });
+
+    res.status(201).json({ ...community, memberCount: 1, isJoined: true, myRole: 'admin' });
   } catch (err) {
-    console.error(`[communities] POST /communities failed (userId=${req.userId}, name=${name}):`, err);
+    console.error('[communities] POST /communities failed', { userId: req.userId, body: req.body, error: err.message, stack: err.stack });
     throw err;
   }
-
-  res.status(201).json({ ...community, memberCount: 1, isJoined: true, myRole: 'admin' });
 }));
 
 router.get('/communities/:id', optionalAuth, asyncHandler(async (req, res) => {
@@ -175,7 +203,7 @@ router.get('/communities/:id', optionalAuth, asyncHandler(async (req, res) => {
       include: { createdBy: { select: USER_SELECT }, _count: { select: { members: true } } },
     });
   } catch (err) {
-    console.error(`[communities] GET /communities/:id failed (id=${req.params.id}):`, err);
+    console.error('[communities] GET /communities/:id lookup failed', { communityId: req.params.id, error: err.message, stack: err.stack });
     throw err;
   }
   if (!community) return res.status(404).json({ error: 'Community not found' });
@@ -185,42 +213,42 @@ router.get('/communities/:id', optionalAuth, asyncHandler(async (req, res) => {
     return res.status(404).json({ error: 'Community not found' });
   }
 
-  // "Top members" — admins and moderators first (the people running the
-  // circle), then members by tenure. Capped at 30: this powers the small
-  // preview list on the detail page's header/Members tab, not a full
-  // paginated roster.
-  let members;
   try {
-    members = await prisma.communityMember.findMany({
+    // "Top members" — admins and moderators first (the people running the
+    // circle), then members by tenure. Capped at 30: this powers the small
+    // preview list on the detail page's header/Members tab, not a full
+    // paginated roster.
+    const members = await prisma.communityMember.findMany({
       where: { communityId: community.id },
       orderBy: [{ joinedAt: 'asc' }],
       take: 30,
       include: { user: { select: USER_SELECT } },
     });
+    members.sort((a, b) => ROLE_RANK[a.role] - ROLE_RANK[b.role]);
+
+    res.json({
+      id: community.id,
+      name: community.name,
+      description: community.description,
+      category: community.category,
+      privacy: community.privacy,
+      bannerUrl: community.bannerUrl,
+      rules: community.rules,
+      pinnedAnnouncement: community.pinnedAnnouncement,
+      createdBy: community.createdBy,
+      memberCount: community._count.members,
+      isJoined: Boolean(membership),
+      myRole: membership?.role || null,
+      members: members.map((m) => ({ ...m.user, role: m.role, joinedAt: m.joinedAt })),
+      createdAt: community.createdAt,
+      updatedAt: community.updatedAt,
+    });
   } catch (err) {
-    console.error(`[communities] GET /communities/:id member lookup failed (communityId=${community.id}):`, err);
+    console.error('[communities] GET /communities/:id members query failed', { communityId: req.params.id, error: err.message, stack: err.stack });
     throw err;
   }
-  members.sort((a, b) => ROLE_RANK[a.role] - ROLE_RANK[b.role]);
-
-  res.json({
-    id: community.id,
-    name: community.name,
-    description: community.description,
-    category: community.category,
-    privacy: community.privacy,
-    bannerUrl: community.bannerUrl,
-    rules: community.rules,
-    pinnedAnnouncement: community.pinnedAnnouncement,
-    createdBy: community.createdBy,
-    memberCount: community._count.members,
-    isJoined: Boolean(membership),
-    myRole: membership?.role || null,
-    members: members.map((m) => ({ ...m.user, role: m.role, joinedAt: m.joinedAt })),
-    createdAt: community.createdAt,
-    updatedAt: community.updatedAt,
-  });
 }));
+
 
 router.patch('/communities/:id', requireAuth, asyncHandler(async (req, res) => {
   const membership = await getMembership(req.params.id, req.userId);
@@ -252,13 +280,10 @@ router.patch('/communities/:id', requireAuth, asyncHandler(async (req, res) => {
     data.privacy = privacy;
   }
 
-  let community;
-  try {
-    community = await prisma.community.update({ where: { id: req.params.id }, data });
-  } catch (err) {
-    console.error(`[communities] PATCH /communities/:id failed (id=${req.params.id}, fields=${Object.keys(data).join(',')}):`, err);
+  const community = await prisma.community.update({ where: { id: req.params.id }, data }).catch((err) => {
+    console.error('[communities] PATCH /communities/:id update failed', { communityId: req.params.id, userId: req.userId, data, error: err.message, stack: err.stack });
     throw err;
-  }
+  });
   res.json(community);
 }));
 
@@ -268,24 +293,25 @@ router.delete('/communities/:id', requireAuth, asyncHandler(async (req, res) => 
     return res.status(403).json({ error: 'Only an admin can delete this community' });
   }
 
-  // CommunityMember doesn't cascade, and Video.communityId is a real FK —
-  // same reasoning as every other delete route in this app (see
-  // utils/deleteVideoCascade.js): dependents have to be cleared first.
-  // Videos themselves are untouched, just unlinked from the (now-gone)
-  // community, the same way a deleted Collection leaves its videos intact.
   try {
+    // CommunityMember doesn't cascade, and Video.communityId is a real FK —
+    // same reasoning as every other delete route in this app (see
+    // utils/deleteVideoCascade.js): dependents have to be cleared first.
+    // Videos themselves are untouched, just unlinked from the (now-gone)
+    // community, the same way a deleted Collection leaves its videos intact.
     await prisma.$transaction([
       prisma.video.updateMany({ where: { communityId: req.params.id }, data: { communityId: null } }),
       prisma.communityMember.deleteMany({ where: { communityId: req.params.id } }),
       prisma.community.delete({ where: { id: req.params.id } }),
     ]);
+
+    res.json({ ok: true });
   } catch (err) {
-    console.error(`[communities] DELETE /communities/:id failed (id=${req.params.id}):`, err);
+    console.error('[communities] DELETE /communities/:id failed', { communityId: req.params.id, userId: req.userId, error: err.message, stack: err.stack });
     throw err;
   }
-
-  res.json({ ok: true });
 }));
+
 
 // ---------------------------------------------------------------------------
 // Membership — POST toggles (join if not a member, leave if already one),
@@ -294,19 +320,13 @@ router.delete('/communities/:id', requireAuth, asyncHandler(async (req, res) => 
 // anyone else, including a sole admin of an otherwise-empty community, can.
 // ---------------------------------------------------------------------------
 router.post('/communities/:id/join', requireAuth, asyncHandler(async (req, res) => {
-  let community;
   try {
-    community = await prisma.community.findUnique({ where: { id: req.params.id } });
-  } catch (err) {
-    console.error(`[communities] POST /communities/:id/join lookup failed (id=${req.params.id}):`, err);
-    throw err;
-  }
-  if (!community) return res.status(404).json({ error: 'Community not found' });
+    const community = await prisma.community.findUnique({ where: { id: req.params.id } });
+    if (!community) return res.status(404).json({ error: 'Community not found' });
 
-  const membership = await getMembership(req.params.id, req.userId);
+    const membership = await getMembership(req.params.id, req.userId);
 
-  if (membership) {
-    try {
+    if (membership) {
       if (membership.role === 'admin') {
         const [adminCount, memberCount] = await Promise.all([
           prisma.communityMember.count({ where: { communityId: req.params.id, role: 'admin' } }),
@@ -321,26 +341,21 @@ router.post('/communities/:id/join', requireAuth, asyncHandler(async (req, res) 
       await prisma.communityMember.delete({
         where: { communityId_userId: { communityId: req.params.id, userId: req.userId } },
       });
-    } catch (err) {
-      console.error(`[communities] POST /communities/:id/join (leave) failed (id=${req.params.id}, userId=${req.userId}):`, err);
-      throw err;
+      return res.json({ joined: false });
     }
-    return res.json({ joined: false });
-  }
 
-  if (community.privacy === 'private') {
-    return res.status(403).json({ error: 'This community is invite-only' });
-  }
+    if (community.privacy === 'private') {
+      return res.status(403).json({ error: 'This community is invite-only' });
+    }
 
-  try {
     await prisma.communityMember.create({
       data: { communityId: req.params.id, userId: req.userId, role: 'member' },
     });
+    res.json({ joined: true });
   } catch (err) {
-    console.error(`[communities] POST /communities/:id/join (join) failed (id=${req.params.id}, userId=${req.userId}):`, err);
+    console.error('[communities] POST /communities/:id/join failed', { communityId: req.params.id, userId: req.userId, error: err.message, stack: err.stack });
     throw err;
   }
-  res.json({ joined: true });
 }));
 
 router.patch('/communities/:id/members/:userId', requireAuth, asyncHandler(async (req, res) => {
@@ -353,10 +368,10 @@ router.patch('/communities/:id/members/:userId', requireAuth, asyncHandler(async
     return res.status(400).json({ error: 'role must be admin, moderator, or member' });
   }
 
-  const target = await getMembership(req.params.id, req.params.userId);
-  if (!target) return res.status(404).json({ error: 'This user is not a member of this community' });
-
   try {
+    const target = await getMembership(req.params.id, req.params.userId);
+    if (!target) return res.status(404).json({ error: 'This user is not a member of this community' });
+
     if (target.role === 'admin' && role !== 'admin') {
       const adminCount = await prisma.communityMember.count({
         where: { communityId: req.params.id, role: 'admin' },
@@ -370,11 +385,11 @@ router.patch('/communities/:id/members/:userId', requireAuth, asyncHandler(async
       where: { communityId_userId: { communityId: req.params.id, userId: req.params.userId } },
       data: { role },
     });
+    res.json({ ok: true });
   } catch (err) {
-    console.error(`[communities] PATCH /communities/:id/members/:userId failed (id=${req.params.id}, targetUserId=${req.params.userId}, role=${role}):`, err);
+    console.error('[communities] PATCH /communities/:id/members/:userId failed', { communityId: req.params.id, targetUserId: req.params.userId, requesterId: req.userId, role, error: err.message, stack: err.stack });
     throw err;
   }
-  res.json({ ok: true });
 }));
 
 router.delete('/communities/:id/members/:userId', requireAuth, asyncHandler(async (req, res) => {
@@ -382,24 +397,24 @@ router.delete('/communities/:id/members/:userId', requireAuth, asyncHandler(asyn
   if (!requester || (requester.role !== 'admin' && requester.role !== 'moderator')) {
     return res.status(403).json({ error: "You can't remove members from this community" });
   }
-  const target = await getMembership(req.params.id, req.params.userId);
-  if (!target) return res.status(404).json({ error: 'This user is not a member of this community' });
-  // A moderator can remove regular members, but not another moderator or
-  // the admin — that's an admin-only action, same rank-check as the role
-  // change route above.
-  if (requester.role === 'moderator' && target.role !== 'member') {
-    return res.status(403).json({ error: 'Only an admin can remove a moderator or the admin' });
-  }
-
   try {
+    const target = await getMembership(req.params.id, req.params.userId);
+    if (!target) return res.status(404).json({ error: 'This user is not a member of this community' });
+    // A moderator can remove regular members, but not another moderator or
+    // the admin — that's an admin-only action, same rank-check as the role
+    // change route above.
+    if (requester.role === 'moderator' && target.role !== 'member') {
+      return res.status(403).json({ error: 'Only an admin can remove a moderator or the admin' });
+    }
+
     await prisma.communityMember.delete({
       where: { communityId_userId: { communityId: req.params.id, userId: req.params.userId } },
     });
+    res.json({ ok: true });
   } catch (err) {
-    console.error(`[communities] DELETE /communities/:id/members/:userId failed (id=${req.params.id}, targetUserId=${req.params.userId}):`, err);
+    console.error('[communities] DELETE /communities/:id/members/:userId failed', { communityId: req.params.id, targetUserId: req.params.userId, requesterId: req.userId, error: err.message, stack: err.stack });
     throw err;
   }
-  res.json({ ok: true });
 }));
 
 // ---------------------------------------------------------------------------
@@ -409,13 +424,7 @@ router.delete('/communities/:id/members/:userId', requireAuth, asyncHandler(asyn
 // renders here unmodified.
 // ---------------------------------------------------------------------------
 router.get('/communities/:id/posts', optionalAuth, asyncHandler(async (req, res) => {
-  let community;
-  try {
-    community = await prisma.community.findUnique({ where: { id: req.params.id } });
-  } catch (err) {
-    console.error(`[communities] GET /communities/:id/posts lookup failed (id=${req.params.id}):`, err);
-    throw err;
-  }
+  const community = await prisma.community.findUnique({ where: { id: req.params.id } });
   if (!community) return res.status(404).json({ error: 'Community not found' });
 
   const membership = await getMembership(community.id, req.userId);
@@ -423,10 +432,9 @@ router.get('/communities/:id/posts', optionalAuth, asyncHandler(async (req, res)
     return res.status(404).json({ error: 'Community not found' });
   }
 
-  const { cursor, limit = 10 } = req.query;
-  let videos;
   try {
-    videos = await prisma.video.findMany({
+    const { cursor, limit = 10 } = req.query;
+    const videos = await prisma.video.findMany({
       where: { communityId: req.params.id, status: 'published' },
       orderBy: [{ createdAt: 'desc' }],
       take: Number(limit),
@@ -436,19 +444,14 @@ router.get('/communities/:id/posts', optionalAuth, asyncHandler(async (req, res)
         track: { include: { artist: { select: { stageName: true } } } },
       },
     });
-  } catch (err) {
-    console.error(`[communities] GET /communities/:id/posts video query failed (id=${req.params.id}, cursor=${cursor ?? 'none'}, limit=${limit}):`, err);
-    throw err;
-  }
-  const nextCursor = videos.length === Number(limit) ? videos[videos.length - 1].id : null;
+    const nextCursor = videos.length === Number(limit) ? videos[videos.length - 1].id : null;
 
-  let likedIds = new Set();
-  let bookmarkedIds = new Set();
-  let followedIds = new Set();
-  if (req.userId && videos.length) {
-    const authorIds = [...new Set(videos.map((v) => v.userId))];
-    const videoIds = videos.map((v) => v.id);
-    try {
+    let likedIds = new Set();
+    let bookmarkedIds = new Set();
+    let followedIds = new Set();
+    if (req.userId && videos.length) {
+      const authorIds = [...new Set(videos.map((v) => v.userId))];
+      const videoIds = videos.map((v) => v.id);
       const [likes, bookmarks, follows] = await Promise.all([
         prisma.like.findMany({ where: { userId: req.userId, videoId: { in: videoIds } }, select: { videoId: true } }),
         prisma.bookmark.findMany({ where: { userId: req.userId, videoId: { in: videoIds } }, select: { videoId: true } }),
@@ -457,30 +460,31 @@ router.get('/communities/:id/posts', optionalAuth, asyncHandler(async (req, res)
       likedIds = new Set(likes.map((l) => l.videoId));
       bookmarkedIds = new Set(bookmarks.map((b) => b.videoId));
       followedIds = new Set(follows.map((f) => f.followeeId));
-    } catch (err) {
-      console.error(`[communities] GET /communities/:id/posts like/bookmark/follow lookup failed (id=${req.params.id}, userId=${req.userId}):`, err);
-      throw err;
     }
-  }
 
-  res.json({
-    videos: videos.map((v) => ({
-      ...v,
-      isLiked: likedIds.has(v.id),
-      isBookmarked: bookmarkedIds.has(v.id),
-      user: { ...v.user, isFollowing: followedIds.has(v.userId) },
-      track: v.track
-        ? {
-            id: v.track.id,
-            title: v.track.title,
-            audioUrl: v.track.audioUrl,
-            artistName: v.track.artist.stageName,
-            durationSeconds: v.track.durationSeconds,
-          }
-        : null,
-    })),
-    nextCursor,
-  });
+    res.json({
+      videos: videos.map((v) => ({
+        ...v,
+        isLiked: likedIds.has(v.id),
+        isBookmarked: bookmarkedIds.has(v.id),
+        user: { ...v.user, isFollowing: followedIds.has(v.userId) },
+        track: v.track
+          ? {
+              id: v.track.id,
+              title: v.track.title,
+              audioUrl: v.track.audioUrl,
+              artistName: v.track.artist.stageName,
+              durationSeconds: v.track.durationSeconds,
+            }
+          : null,
+      })),
+      nextCursor,
+    });
+  } catch (err) {
+    console.error('[communities] GET /communities/:id/posts failed', { communityId: req.params.id, userId: req.userId, query: req.query, error: err.message, stack: err.stack });
+    throw err;
+  }
 }));
+
 
 export default router;
