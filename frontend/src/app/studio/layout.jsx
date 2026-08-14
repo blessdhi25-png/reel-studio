@@ -1,4 +1,4 @@
-import './globals.css';
+import '@/app/globals.css';
 import { AuthProvider } from '@/context/AuthContext';
 import { ToastProvider } from '@/context/ToastContext';
 import { SocketProvider } from '@/context/SocketContext';
