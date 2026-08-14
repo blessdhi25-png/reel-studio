@@ -4,12 +4,12 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, MoreHorizontal, Settings, Menu as MenuIcon, Share2, Home, Lock } from 'lucide-react';
-import { api, getStoredUser } from '../../../lib/api';
-import { useAuth } from '../../../context/AuthContext';
-import { useToast } from '../../../context/ToastContext';
-import ReportModal from '../../../components/ReportModal';
-import ConfirmModal from '../../../components/ConfirmModal';
-import { LoadingSpinner } from '../../../components/LoadingScreen';
+import { api, getStoredUser } from '@/lib/api';
+import { useAuth } from '@/context/AuthContext';
+import { useToast } from '@/context/ToastContext';
+import ReportModal from '@/components/ReportModal';
+import ConfirmModal from '@/components/ConfirmModal';
+import { LoadingSpinner } from '@/components/LoadingScreen';
 
 export default function ProfilePage({ params }) {
   const { id } = params;
@@ -131,6 +131,15 @@ export default function ProfilePage({ params }) {
           </Link>
 
           <div className="flex items-center gap-2 relative" ref={menuRef}>
+            {isSelf && (
+              <Link
+                href="/settings"
+                aria-label="Settings"
+                className="p-1.5 text-zinc-200 hover:text-white bg-black/40 rounded-lg"
+              >
+                <Settings size={18} />
+              </Link>
+            )}
             <button
               onClick={() => setShowMenu((v) => !v)}
               className="p-1 text-zinc-200 hover:text-white bg-black/40 rounded-lg"

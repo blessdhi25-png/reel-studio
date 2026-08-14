@@ -180,6 +180,24 @@ export const api = {
   getSuggestedUsers: (limit) => request(`/users/suggested${limit ? `?limit=${limit}` : ''}`),
   getOnlineStatus: (ids) => request(`/users/online?ids=${ids.join(',')}`),
   getCircles: () => request('/videos/circles'),
+
+  // Communities — see backend/src/routes/communities.js
+  getCommunities: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return request(`/communities${qs ? `?${qs}` : ''}`);
+  },
+  getCommunity: (id) => request(`/communities/${id}`),
+  createCommunity: (data) => request('/communities', { method: 'POST', body: data }),
+  updateCommunity: (id, data) => request(`/communities/${id}`, { method: 'PATCH', body: data }),
+  deleteCommunity: (id) => request(`/communities/${id}`, { method: 'DELETE' }),
+  toggleCommunityJoin: (id) => request(`/communities/${id}/join`, { method: 'POST' }),
+  setCommunityMemberRole: (id, userId, role) =>
+    request(`/communities/${id}/members/${userId}`, { method: 'PATCH', body: { role } }),
+  removeCommunityMember: (id, userId) =>
+    request(`/communities/${id}/members/${userId}`, { method: 'DELETE' }),
+  getCommunityPosts: (id, cursor) =>
+    request(`/communities/${id}/posts${cursor ? `?cursor=${cursor}` : ''}`),
+
   likeVideo: (id) => request(`/videos/${id}/like`, { method: 'POST' }),
   unlikeVideo: (id) => request(`/videos/${id}/like`, { method: 'DELETE' }),
   deleteVideo: (id) => request(`/videos/${id}`, { method: 'DELETE' }),
@@ -289,6 +307,8 @@ adminGetStats: () => request('/admin/stats'),
   getLiveStream: (id) => request(`/live/${id}`),
   startLiveStream: (title, extra = {}) => request('/live/start', { method: 'POST', body: { title, ...extra } }),
   endLiveStream: (id) => request(`/live/${id}/end`, { method: 'POST' }),
+  tipLiveStreamCheckout: (id, amountCents, message) =>
+    request(`/live/${id}/tip/checkout`, { method: 'POST', body: { amountCents, message } }),
 
   // Discovery
   search: (q) => request(`/search?q=${encodeURIComponent(q)}`),
@@ -304,6 +324,18 @@ adminGetStats: () => request('/admin/stats'),
   answerStoryQuestion: (id, answer) => request(`/stories/${id}/qa-response`, { method: 'POST', body: { answer } }),
   getStoryQaResponses: (id) => request(`/stories/${id}/qa-responses`),
   deleteStory: (id) => request(`/stories/${id}`, { method: 'DELETE' }),
+
+  // Collections
+  getCollections: (videoId) => request(`/collections${videoId ? `?videoId=${videoId}` : ''}`),
+  createCollection: (data) => request('/collections', { method: 'POST', body: data }),
+  getCollection: (id) => request(`/collections/${id}`),
+  updateCollection: (id, data) => request(`/collections/${id}`, { method: 'PATCH', body: data }),
+  deleteCollection: (id) => request(`/collections/${id}`, { method: 'DELETE' }),
+  saveToCollection: (id, videoId) => request(`/collections/${id}/save`, { method: 'POST', body: { videoId } }),
+  addCollectionCollaborator: (id, userId) =>
+    request(`/collections/${id}/collaborators`, { method: 'POST', body: { userId } }),
+  removeCollectionCollaborator: (id, userId) =>
+    request(`/collections/${id}/collaborators/${userId}`, { method: 'DELETE' }),
 
   // Studio (analytics) & Promote (boost)
   getStudioOverview: () => request('/studio/overview'),

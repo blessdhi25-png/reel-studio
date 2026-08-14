@@ -1,10 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useAuth } from '../context/AuthContext';
-import LoadingScreen from './LoadingScreen';
-import BottomNav from './BottomNav';
-import ChatHub from './ChatHub';
+import { useAuth } from '@/context/AuthContext';
+import LoadingScreen from '@/components/LoadingScreen';
+import BottomNav from '@/components/BottomNav';
+import ChatHub from '@/components/ChatHub';
 
 // AuthContext's `ready` flag (see context/AuthContext.jsx) already
 // distinguishes "haven't checked localStorage yet" from "checked, no one's

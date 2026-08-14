@@ -3,21 +3,26 @@
 export const dynamic = 'force-dynamic';
 
 import { Suspense, useEffect, useRef, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
-import { api } from '../lib/api';
-import { getSocket } from '../lib/socket';
-import VideoCard from '../components/VideoCard';
-import DesktopRail from '../components/DesktopRail';
-import SprocketRail from '../components/SprocketRail';
-import { loadTuningWeights } from '../components/TuneFeedPanel';
-import FeedFiltersDrawer from '../components/FeedFiltersDrawer';
-import Logo from '../components/Logo';
-import StoriesBar from '../components/StoriesBar';
+import { useSearchParams, useRouter } from 'next/navigation';
+import { api } from '@/lib/api';
+import { getSocket } from '@/lib/socket';
+import VideoCard from '@/components/VideoCard';
+import DesktopRail from '@/components/DesktopRail';
+import SprocketRail from '@/components/SprocketRail';
+import { loadTuningWeights } from '@/components/TuneFeedPanel';
+import FeedFiltersDrawer from '@/components/FeedFiltersDrawer';
+import Logo from '@/components/Logo';
+import StoriesBar from '@/components/StoriesBar';
 
+// Top feed filter tabs — All / Shorts / Features filter the feed in place.
+// LIVE, Communities, and Collections navigate to their dedicated routes.
 const FILTERS = [
   { label: 'All', value: null },
   { label: 'Shorts', value: 'short' },
   { label: 'Features', value: 'long' },
+  { label: 'LIVE', href: '/live' },
+  { label: 'Communities', href: '/communities' },
+  { label: 'Collections', href: '/collections' },
 ];
 
 // useSearchParams() opts the whole route out of static rendering unless a
@@ -41,6 +46,7 @@ function CircleParamSync({ onCircle }) {
 }
 
 export default function FeedPage() {
+  const router = useRouter();
   const [videos, setVideos] = useState([]);
   const [nextCursor, setNextCursor] = useState(null);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -60,6 +66,14 @@ export default function FeedPage() {
   const [tuningWeights, setTuningWeights] = useState({ nicheWeight: 50, freshWeight: 50, localWeight: 50 });
   const [activeTime, setActiveTime] = useState(0);
   const [celebration, setCelebration] = useState(null);
+
+  function handleFilterClick(opt) {
+    if (opt.href) {
+      router.push(opt.href);
+      return;
+    }
+    setFilter(opt.value);
+  }
 
   // null until the first effect runs on the client — we deliberately render
   // neither layout until we know the viewport. Rendering both (one merely
@@ -346,9 +360,9 @@ export default function FeedPage() {
             {FILTERS.map((opt) => (
               <button
                 key={opt.label}
-                onClick={() => setFilter(opt.value)}
+                onClick={() => handleFilterClick(opt)}
                 className={`px-3 py-1 rounded-sprocket whitespace-nowrap ${
-                  filter === opt.value ? 'bg-reel text-ink' : 'text-smoke'
+                  !opt.href && filter === opt.value ? 'bg-reel text-ink' : 'text-smoke'
                 }`}
               >
                 {opt.label}
@@ -428,9 +442,9 @@ export default function FeedPage() {
         {FILTERS.map((opt) => (
           <button
             key={opt.label}
-            onClick={() => setFilter(opt.value)}
+            onClick={() => handleFilterClick(opt)}
             className={`px-3 py-1.5 rounded-lg transition-colors ${
-              filter === opt.value ? 'bg-amber-500 text-black font-bold' : 'text-zinc-400 hover:text-white'
+              !opt.href && filter === opt.value ? 'bg-amber-500 text-black font-bold' : 'text-zinc-400 hover:text-white'
             }`}
           >
             {opt.label}

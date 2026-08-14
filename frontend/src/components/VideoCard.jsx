@@ -1,14 +1,15 @@
 'use client';
 
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { api } from '../lib/api';
-import CommentsPanel from './CommentsPanel';
-import ReportModal from './ReportModal';
-import ShareSheet from './ShareSheet';
-import SoundPicker from './SoundPicker';
-import { useOptimisticLike } from '../hooks/useOptimisticLike';
-import { useAutoPlayOnScroll } from '../hooks/useAutoPlayOnScroll';
-import { useToast } from '../context/ToastContext';
+import { api } from '@/lib/api';
+import CommentsPanel from '@/components/CommentsPanel';
+import ReportModal from '@/components/ReportModal';
+import ShareSheet from '@/components/ShareSheet';
+import SoundPicker from '@/components/SoundPicker';
+import SaveToCollectionModal from '@/components/SaveToCollectionModal';
+import { useOptimisticLike } from '@/hooks/useOptimisticLike';
+import { useAutoPlayOnScroll } from '@/hooks/useAutoPlayOnScroll';
+import { useToast } from '@/context/ToastContext';
 
 // A second tap/click arriving within this window counts as a double-tap
 // (like) rather than two separate single-taps (play/pause). 300ms matches
@@ -114,6 +115,7 @@ const VideoCard = forwardRef(function VideoCard(
   const [showReport, setShowReport] = useState(false);
   const [showShare, setShowShare] = useState(false);
   const [showSoundPicker, setShowSoundPicker] = useState(false);
+  const [showSaveModal, setShowSaveModal] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -593,7 +595,13 @@ const VideoCard = forwardRef(function VideoCard(
             </span>
           </button>
           <button
-            onClick={toggleBookmark}
+            onClick={() => {
+              if (!localStorage.getItem('token')) {
+                window.location.href = '/login';
+                return;
+              }
+              setShowSaveModal(true);
+            }}
             className="flex flex-col items-center gap-1 p-2 -m-2 text-white hover:scale-110 transition-transform"
           >
             <BookmarkIcon
@@ -749,6 +757,14 @@ const VideoCard = forwardRef(function VideoCard(
           onSelect={({ soundId }) => {
             window.location.href = `/upload?trackId=${soundId}`;
           }}
+        />
+      )}
+      {showSaveModal && (
+        <SaveToCollectionModal
+          videoId={video.id}
+          quickSaved={bookmarked}
+          onQuickSaveToggle={toggleBookmark}
+          onClose={() => setShowSaveModal(false)}
         />
       )}
     </div>
