@@ -1,295 +1,155 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '../../../lib/api';
 import { useToast } from '../../../context/ToastContext';
 import { LoadingSpinner } from '../../../components/LoadingScreen';
+import ConfirmModal from '../../../components/ConfirmModal';
 import VideoCard from '../../../components/VideoCard';
 
 const PRIVACY_OPTIONS = [
-  { id: 'private', label: 'Private', icon: '🔒' },
-  { id: 'public', label: 'Public', icon: '🌐' },
-  { id: 'collaborators', label: 'Collaborators', icon: '👥' },
+  { value: 'private', label: 'Private', icon: '🔒' },
+  { value: 'shared', label: 'Collaborators Only', icon: '👥' },
+  { value: 'public', label: 'Public', icon: '🌐' },
 ];
 
-const PRIVACY_LABEL = {
-  private: '🔒 Private',
-  public: '🌐 Public',
-  collaborators: '👥 Shared',
-};
-
-function AvatarStack({ users, max = 5 }) {
-  const shown = users.slice(0, max);
-  const overflow = users.length - shown.length;
-  if (users.length === 0) return null;
+function Avatar({ user, size = 8 }) {
+  const px = { 6: 'w-6 h-6 text-[9px]', 8: 'w-8 h-8 text-xs', 10: 'w-10 h-10 text-sm' }[size] || 'w-8 h-8 text-xs';
   return (
-    <div className="flex items-center -space-x-2">
-      {shown.map((u) => (
-        <span
-          key={u.id}
-          title={`@${u.username}`}
-          className="w-7 h-7 rounded-full border-2 border-zinc-900 bg-zinc-700 overflow-hidden flex items-center justify-center text-[10px] font-bold text-zinc-300"
-        >
-          {u.avatarUrl ? (
-            <img src={u.avatarUrl} alt="" className="w-full h-full object-cover" />
-          ) : (
-            u.username?.[0]?.toUpperCase()
-          )}
-        </span>
-      ))}
-      {overflow > 0 && (
-        <span className="w-7 h-7 rounded-full border-2 border-zinc-900 bg-zinc-800 flex items-center justify-center text-[10px] font-bold text-zinc-400">
-          +{overflow}
-        </span>
-      )}
-    </div>
+    <span className={`${px} rounded-full bg-zinc-700 overflow-hidden flex items-center justify-center font-bold text-zinc-300 shrink-0 border-2 border-zinc-950`}>
+      {user?.avatarUrl ? <img src={user.avatarUrl} alt="" className="w-full h-full object-cover" /> : user?.username?.[0]?.toUpperCase() || '?'}
+    </span>
   );
 }
 
-function CollaboratorsDrawer({ collection, isOwner, onClose, onCollaboratorsChange }) {
+function CollaboratorDrawer({ collectionId, collaborators, isOwner, onClose, onChanged }) {
   const toast = useToast();
-  const [username, setUsername] = useState('');
-  const [inviting, setInviting] = useState(false);
-  const [inviteError, setInviteError] = useState(null);
-  const [removingId, setRemovingId] = useState(null);
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [busyIds, setBusyIds] = useState(new Set());
 
-  async function handleInvite(e) {
-    e.preventDefault();
-    if (!username.trim() || inviting) return;
-    setInviting(true);
-    setInviteError(null);
+  useEffect(() => {
+    if (!query.trim()) {
+      setResults([]);
+      return;
+    }
+    setSearching(true);
+    const handle = setTimeout(() => {
+      api
+        .search(query.trim())
+        .then((res) => setResults(res.users || []))
+        .catch(() => setResults([]))
+        .finally(() => setSearching(false));
+    }, 300);
+    return () => clearTimeout(handle);
+  }, [query]);
+
+  const collaboratorIds = new Set(collaborators.map((c) => c.id));
+
+  async function handleAdd(user) {
+    setBusyIds((prev) => new Set(prev).add(user.id));
     try {
-      const collaborators = await api.addCollaborator(collection.id, { username: username.trim() });
-      onCollaboratorsChange(collaborators);
-      toast.success(`Added @${username.trim()}`);
-      setUsername('');
+      const added = await api.addCollectionCollaborator(collectionId, user.id);
+      onChanged((prev) => [...prev, added]);
+      toast.success(`Added @${user.username} as a collaborator`);
     } catch (err) {
-      setInviteError(err.message || 'Could not add that person.');
+      toast.error(err.message || "Couldn't add that collaborator");
     } finally {
-      setInviting(false);
+      setBusyIds((prev) => {
+        const next = new Set(prev);
+        next.delete(user.id);
+        return next;
+      });
     }
   }
 
-  async function handleRemove(userId) {
-    setRemovingId(userId);
+  async function handleRemove(user) {
+    setBusyIds((prev) => new Set(prev).add(user.id));
     try {
-      await api.removeCollaborator(collection.id, userId);
-      onCollaboratorsChange(collection.collaborators.filter((c) => c.id !== userId));
-      toast.success('Removed');
+      await api.removeCollectionCollaborator(collectionId, user.id);
+      onChanged((prev) => prev.filter((c) => c.id !== user.id));
+      toast.success(`Removed @${user.username}`);
     } catch (err) {
-      toast.error(err.message || 'Could not remove that person.');
+      toast.error(err.message || "Couldn't remove that collaborator");
     } finally {
-      setRemovingId(null);
+      setBusyIds((prev) => {
+        const next = new Set(prev);
+        next.delete(user.id);
+        return next;
+      });
     }
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
-      <button type="button" aria-label="Close" onClick={onClose} className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-      <div className="relative w-full sm:w-[420px] max-h-[80vh] bg-zinc-900/95 backdrop-blur-xl border border-zinc-800 sm:rounded-2xl rounded-t-2xl text-white flex flex-col">
-        <div className="shrink-0 flex items-center justify-between px-5 pt-5 pb-3 border-b border-zinc-800">
-          <h2 className="text-base font-bold">Collaborators</h2>
-          <button onClick={onClose} className="p-2 -m-2 rounded-full text-zinc-400 hover:text-white hover:bg-zinc-800">
+    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center" onClick={onClose}>
+      <div
+        className="w-full sm:max-w-sm max-h-[80vh] bg-zinc-900 border border-zinc-800 text-white rounded-t-2xl sm:rounded-2xl flex flex-col overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800 shrink-0">
+          <p className="font-semibold text-base">Collaborators</p>
+          <button onClick={onClose} className="text-zinc-400 hover:text-white text-lg leading-none">
             ✕
           </button>
         </div>
 
-        {isOwner && (
-          <form onSubmit={handleInvite} className="shrink-0 px-5 py-4 border-b border-zinc-800 flex gap-2">
-            <input
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              placeholder="Username to invite"
-              className="flex-1 bg-zinc-800/80 border border-zinc-700 text-white rounded-xl px-3.5 py-2 text-sm outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500/50 placeholder:text-zinc-500"
-            />
-            <button
-              type="submit"
-              disabled={!username.trim() || inviting}
-              className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-black text-sm font-bold disabled:opacity-40 shrink-0"
-            >
-              {inviting ? '…' : 'Add'}
-            </button>
-          </form>
-        )}
-        {inviteError && <p className="px-5 pt-2 text-xs text-red-400">{inviteError}</p>}
-
-        <div className="flex-1 overflow-y-auto px-5 py-3 space-y-1">
-          {collection.collaborators.length === 0 && (
-            <p className="text-sm text-zinc-500 py-4 text-center">No collaborators yet.</p>
+        <div className="px-4 pt-3 pb-1 shrink-0">
+          <p className="font-mono text-[10px] uppercase tracking-widest text-zinc-500 mb-2">
+            Can add or remove videos
+          </p>
+        </div>
+        <div className="px-2 pb-2 overflow-y-auto max-h-40 shrink-0">
+          {collaborators.length === 0 && (
+            <p className="text-xs text-zinc-500 px-3 py-2">No collaborators yet.</p>
           )}
-          {collection.collaborators.map((c) => (
-            <div key={c.id} className="flex items-center gap-3 py-2.5">
-              <span className="w-9 h-9 rounded-full bg-zinc-700 overflow-hidden flex items-center justify-center text-xs font-bold text-zinc-300 shrink-0">
-                {c.avatarUrl ? <img src={c.avatarUrl} alt="" className="w-full h-full object-cover" /> : c.username?.[0]?.toUpperCase()}
-              </span>
-              <a href={`/profile/${c.id}`} className="flex-1 text-sm text-white hover:underline truncate">
-                @{c.username}
-              </a>
+          {collaborators.map((c) => (
+            <div key={c.id} className="flex items-center gap-3 px-3 py-2">
+              <Avatar user={c} />
+              <span className="flex-1 text-sm text-white truncate">@{c.username}</span>
               {isOwner && (
                 <button
-                  onClick={() => handleRemove(c.id)}
-                  disabled={removingId === c.id}
-                  className="text-xs text-red-400 hover:text-red-300 font-semibold disabled:opacity-50"
+                  onClick={() => handleRemove(c)}
+                  disabled={busyIds.has(c.id)}
+                  className="text-xs text-rose-400 hover:text-rose-300 disabled:opacity-50"
                 >
-                  {removingId === c.id ? '…' : 'Remove'}
+                  Remove
                 </button>
               )}
             </div>
           ))}
         </div>
-      </div>
-    </div>
-  );
-}
 
-function EditCollectionForm({ collection, onClose, onSaved }) {
-  const toast = useToast();
-  const [name, setName] = useState(collection.name);
-  const [description, setDescription] = useState(collection.description || '');
-  const [privacy, setPrivacy] = useState(collection.privacy);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState(null);
-  const router = useRouter();
-
-  async function handleSave(e) {
-    e.preventDefault();
-    if (!name.trim() || busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const updated = await api.updateCollection(collection.id, {
-        name: name.trim(),
-        description: description.trim(),
-        privacy,
-      });
-      onSaved(updated);
-      toast.success('Collection updated');
-      onClose();
-    } catch (err) {
-      setError(err.message || 'Could not save changes.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleDelete() {
-    if (!window.confirm(`Delete "${collection.name}"? This can't be undone.`)) return;
-    try {
-      await api.deleteCollection(collection.id);
-      toast.success('Collection deleted');
-      router.push('/collections');
-    } catch (err) {
-      toast.error(err.message || 'Could not delete this collection.');
-    }
-  }
-
-  return (
-    <form onSubmit={handleSave} className="mt-4 space-y-3 border-t border-zinc-800 pt-4">
-      <input
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        maxLength={60}
-        className="w-full bg-zinc-800/80 border border-zinc-700 text-white rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500/50"
-      />
-      <textarea
-        value={description}
-        onChange={(e) => setDescription(e.target.value)}
-        rows={2}
-        placeholder="Description"
-        className="w-full bg-zinc-800/80 border border-zinc-700 text-white rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500/50 resize-none placeholder:text-zinc-500"
-      />
-      <div className="flex gap-1.5">
-        {PRIVACY_OPTIONS.map((p) => (
-          <button
-            key={p.id}
-            type="button"
-            onClick={() => setPrivacy(p.id)}
-            className={`flex-1 flex flex-col items-center gap-0.5 py-2 rounded-xl border text-[11px] font-semibold transition-all ${
-              privacy === p.id ? 'bg-amber-500 border-amber-500 text-black' : 'bg-zinc-800/60 border-zinc-700 text-zinc-400 hover:text-white'
-            }`}
-          >
-            <span>{p.icon}</span>
-            {p.label}
-          </button>
-        ))}
-      </div>
-      {error && <p className="text-xs text-red-400">{error}</p>}
-      <div className="flex gap-2">
-        <button type="button" onClick={onClose} className="px-4 py-2.5 rounded-xl border border-zinc-700 text-zinc-300 text-sm font-semibold hover:bg-zinc-800">
-          Cancel
-        </button>
-        <button
-          type="submit"
-          disabled={!name.trim() || busy}
-          className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black text-sm font-bold disabled:opacity-40"
-        >
-          {busy ? 'Saving…' : 'Save Changes'}
-        </button>
-      </div>
-      <button type="button" onClick={handleDelete} className="w-full text-center text-xs text-red-400 hover:text-red-300 font-semibold pt-1">
-        Delete Collection
-      </button>
-    </form>
-  );
-}
-
-// Full-screen vertical reel player for "Play All" — a self-contained
-// snap-scroll stack of VideoCards, separate from the main feed page's
-// version of the same pattern since that one is wired to global feed
-// state (pagination cursor, filters) this doesn't need.
-function CollectionPlayer({ videos, startIndex, onClose }) {
-  const containerRef = useRef(null);
-  const [activeIndex, setActiveIndex] = useState(startIndex);
-
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    // Plain assignment rather than el.scrollTo({ behavior: 'instant' }) —
-    // 'instant' isn't part of the actual ScrollBehavior spec (only 'auto'
-    // and 'smooth' are), so this avoids relying on a non-standard value
-    // some browsers happen to accept.
-    el.scrollTop = startIndex * el.clientHeight;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    function onKeyDown(e) {
-      if (e.key === 'Escape') onClose();
-    }
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
-
-  function handleScroll() {
-    const el = containerRef.current;
-    if (!el) return;
-    setActiveIndex(Math.round(el.scrollTop / el.clientHeight));
-  }
-
-  return (
-    <div className="fixed inset-0 z-[60] bg-black">
-      <button
-        onClick={onClose}
-        aria-label="Close player"
-        className="absolute top-4 right-4 z-10 w-9 h-9 rounded-full bg-black/50 backdrop-blur text-white flex items-center justify-center text-lg"
-      >
-        ✕
-      </button>
-      <div
-        ref={containerRef}
-        onScroll={handleScroll}
-        className="h-dvh w-full overflow-y-scroll snap-y snap-mandatory"
-      >
-        {videos.map((v, i) => (
-          <div key={v.id} className="h-dvh w-full snap-start">
-            <VideoCard
-              video={v}
-              isActive={i === activeIndex}
-              shouldLoad={Math.abs(i - activeIndex) <= 2}
+        {isOwner && (
+          <div className="border-t border-zinc-800 px-4 pt-3 pb-4 shrink-0">
+            <p className="font-mono text-[10px] uppercase tracking-widest text-zinc-500 mb-2">Invite someone</p>
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search by username…"
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm placeholder-zinc-500 outline-none focus:ring-2 focus:ring-amber-500/50"
             />
+            <div className="mt-2 max-h-40 overflow-y-auto">
+              {searching && <p className="text-xs text-zinc-500 px-1 py-2">Searching…</p>}
+              {!searching &&
+                results
+                  .filter((u) => !collaboratorIds.has(u.id))
+                  .map((u) => (
+                    <button
+                      key={u.id}
+                      onClick={() => handleAdd(u)}
+                      disabled={busyIds.has(u.id)}
+                      className="w-full flex items-center gap-3 px-1 py-2 rounded-lg hover:bg-zinc-800/60 disabled:opacity-50"
+                    >
+                      <Avatar user={u} />
+                      <span className="flex-1 text-left text-sm text-white truncate">@{u.username}</span>
+                      <span className="text-xs text-amber-400 font-semibold">+ Add</span>
+                    </button>
+                  ))}
+            </div>
           </div>
-        ))}
+        )}
       </div>
     </div>
   );
@@ -303,21 +163,41 @@ export default function CollectionDetailPage({ params }) {
   const [collection, setCollection] = useState(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
-  const [showEdit, setShowEdit] = useState(false);
+  const [playAll, setPlayAll] = useState(false);
   const [showCollaborators, setShowCollaborators] = useState(false);
-  const [removingIds, setRemovingIds] = useState(() => new Set());
-  const [player, setPlayer] = useState(null); // { startIndex } | null
+  const [showPrivacyMenu, setShowPrivacyMenu] = useState(false);
+  const [privacyBusy, setPrivacyBusy] = useState(false);
+  const [removingId, setRemovingId] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
-  useEffect(() => {
-    api
+  function load() {
+    return api
       .getCollection(id)
       .then(setCollection)
-      .catch(() => setNotFound(true))
-      .finally(() => setLoading(false));
+      .catch(() => setNotFound(true));
+  }
+
+  useEffect(() => {
+    load().finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
+  async function handlePrivacyChange(privacy) {
+    setPrivacyBusy(true);
+    setShowPrivacyMenu(false);
+    try {
+      await api.updateCollection(id, { privacy });
+      setCollection((prev) => ({ ...prev, privacy }));
+      toast.success('Privacy updated');
+    } catch (err) {
+      toast.error(err.message || "Couldn't update privacy");
+    } finally {
+      setPrivacyBusy(false);
+    }
+  }
+
   async function handleRemoveVideo(videoId) {
-    setRemovingIds((prev) => new Set(prev).add(videoId));
+    setRemovingId(videoId);
     try {
       await api.saveToCollection(id, videoId);
       setCollection((prev) => ({
@@ -325,15 +205,21 @@ export default function CollectionDetailPage({ params }) {
         videos: prev.videos.filter((v) => v.id !== videoId),
         videoCount: prev.videoCount - 1,
       }));
-      toast.success('Removed from collection');
     } catch (err) {
-      toast.error(err.message || 'Could not remove that video.');
+      toast.error(err.message || "Couldn't remove that video");
     } finally {
-      setRemovingIds((prev) => {
-        const next = new Set(prev);
-        next.delete(videoId);
-        return next;
-      });
+      setRemovingId(null);
+    }
+  }
+
+  async function handleDeleteCollection() {
+    try {
+      await api.deleteCollection(id);
+      toast.success('Collection deleted');
+      router.push('/collections');
+    } catch (err) {
+      toast.error(err.message || "Couldn't delete this collection");
+      setConfirmDelete(false);
     }
   }
 
@@ -347,124 +233,185 @@ export default function CollectionDetailPage({ params }) {
 
   if (notFound || !collection) {
     return (
-      <main className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center px-6 text-center">
-        <p className="font-body text-zinc-300 text-sm mb-1">Collection not found</p>
-        <p className="font-body text-zinc-600 text-xs mb-5">It may be private, or no longer exists.</p>
-        <a href="/collections" className="text-amber-400 text-sm font-semibold hover:text-amber-300">
+      <main className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center gap-3">
+        <p className="text-zinc-400 text-sm">This collection doesn't exist, or isn't visible to you.</p>
+        <a href="/collections" className="text-amber-400 text-sm font-semibold">
           ← Back to Collections
         </a>
       </main>
     );
   }
 
-  const allPeople = [collection.owner, ...collection.collaborators].filter(Boolean);
+  const isOwner = collection.myRole === 'owner';
+  const canEdit = isOwner || collection.myRole === 'collaborator';
 
-  return (
-    <main className="min-h-screen bg-zinc-950 px-4 py-8 pb-20">
-      <div className="max-w-4xl mx-auto">
-        <a href="/collections" className="font-mono text-xs text-zinc-500 uppercase tracking-widest hover:text-zinc-300">
-          ← Collections
-        </a>
-
-        <div className="bg-zinc-900 border border-zinc-800 text-white rounded-2xl p-5 mt-4">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="font-display text-2xl text-white tracking-wide truncate">{collection.name}</h1>
-                <span className="font-mono text-[10px] uppercase tracking-widest text-zinc-500 shrink-0">
-                  {PRIVACY_LABEL[collection.privacy]}
-                </span>
-              </div>
-              {collection.description && (
-                <p className="font-body text-sm text-zinc-400 mt-2">{collection.description}</p>
-              )}
-              <p className="font-body text-xs text-zinc-500 mt-3">
-                {collection.videoCount} save{collection.videoCount === 1 ? '' : 's'} · Created by{' '}
-                <a href={`/profile/${collection.owner.id}`} className="text-zinc-200 hover:underline">
-                  @{collection.owner.username}
-                </a>
-              </p>
-            </div>
-            {collection.videoCount > 0 && (
-              <button
-                onClick={() => setPlayer({ startIndex: 0 })}
-                className="shrink-0 bg-amber-500 hover:bg-amber-400 text-black font-bold text-sm px-4 py-2.5 rounded-xl transition-colors flex items-center gap-1.5"
-              >
-                ▶ Play All
-              </button>
-            )}
-          </div>
-
-          <div className="flex items-center justify-between mt-4 pt-4 border-t border-zinc-800">
-            <button onClick={() => setShowCollaborators(true)} className="flex items-center gap-2">
-              <AvatarStack users={allPeople} />
-              <span className="text-xs text-zinc-500 font-semibold">
-                {allPeople.length} {allPeople.length === 1 ? 'person' : 'people'}
-              </span>
-            </button>
-            {collection.isOwner && (
-              <button
-                onClick={() => setShowEdit((v) => !v)}
-                className="text-xs font-semibold text-zinc-300 hover:text-white bg-zinc-800 hover:bg-zinc-700 px-3 py-1.5 rounded-full transition-colors"
-              >
-                {showEdit ? 'Close' : 'Manage Collection'}
-              </button>
-            )}
-          </div>
-
-          {showEdit && collection.isOwner && (
-            <EditCollectionForm collection={collection} onClose={() => setShowEdit(false)} onSaved={(updated) => setCollection((prev) => ({ ...prev, ...updated }))} />
-          )}
+  if (playAll) {
+    return (
+      <main className="min-h-screen bg-black">
+        <div className="fixed top-0 inset-x-0 z-20 flex items-center justify-between px-4 py-3 bg-gradient-to-b from-black/80 to-transparent">
+          <button onClick={() => setPlayAll(false)} className="text-white text-sm font-semibold flex items-center gap-1.5">
+            ← {collection.name}
+          </button>
         </div>
-
         {collection.videos.length === 0 ? (
-          <div className="text-center py-16">
-            <p className="text-zinc-500 text-sm">Nothing saved here yet.</p>
+          <div className="min-h-screen flex items-center justify-center">
+            <p className="text-zinc-500 text-sm">No videos to play.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-3 gap-1 mt-4">
-            {collection.videos.map((v, i) => (
-              <div key={v.id} className="relative aspect-[9/16] bg-zinc-900 group">
-                <button onClick={() => setPlayer({ startIndex: i })} className="block w-full h-full">
-                  {v.thumbnailUrl ? (
-                    <img src={v.thumbnailUrl} alt="" className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full bg-gradient-to-br from-zinc-800 to-zinc-900" />
-                  )}
-                </button>
-                {collection.canEdit && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleRemoveVideo(v.id);
-                    }}
-                    disabled={removingIds.has(v.id)}
-                    aria-label="Remove from collection"
-                    className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/70 text-white flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-100"
-                  >
-                    {removingIds.has(v.id) ? '…' : '✕'}
-                  </button>
-                )}
+          <div className="divide-y divide-zinc-900">
+            {collection.videos.map((video) => (
+              <div key={video.id} className="relative h-[100dvh] bg-black">
+                <VideoCard video={video} />
               </div>
             ))}
           </div>
         )}
+      </main>
+    );
+  }
+
+  return (
+    <main className="min-h-screen bg-zinc-950 px-4 py-8">
+      <div className="max-w-4xl mx-auto">
+        <a href="/collections" className="text-zinc-500 hover:text-zinc-300 text-xs font-semibold mb-4 inline-block">
+          ← All Collections
+        </a>
+
+        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h1 className="font-display text-2xl text-white tracking-wide truncate">{collection.name}</h1>
+              {collection.description && (
+                <p className="font-body text-sm text-zinc-400 mt-1">{collection.description}</p>
+              )}
+            </div>
+
+            {isOwner && (
+              <div className="relative shrink-0">
+                <button
+                  onClick={() => setShowPrivacyMenu((v) => !v)}
+                  disabled={privacyBusy}
+                  className="px-3 py-1.5 rounded-full text-xs font-semibold bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50"
+                >
+                  {PRIVACY_OPTIONS.find((p) => p.value === collection.privacy)?.icon}{' '}
+                  {PRIVACY_OPTIONS.find((p) => p.value === collection.privacy)?.label}
+                </button>
+                {showPrivacyMenu && (
+                  <div className="absolute right-0 top-9 bg-zinc-800 border border-zinc-700 rounded-xl overflow-hidden z-10 w-48">
+                    {PRIVACY_OPTIONS.map((p) => (
+                      <button
+                        key={p.value}
+                        onClick={() => handlePrivacyChange(p.value)}
+                        className="w-full text-left px-3.5 py-2.5 text-xs text-zinc-200 hover:bg-zinc-700 flex items-center gap-2"
+                      >
+                        {p.icon} {p.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center justify-between mt-4">
+            <div className="flex items-center gap-3">
+              <a href={`/profile/${collection.owner.id}`} className="flex items-center gap-2">
+                <Avatar user={collection.owner} size={8} />
+                <span className="text-xs text-zinc-400">@{collection.owner.username}</span>
+              </a>
+
+              {collection.collaborators.length > 0 && (
+                <button onClick={() => setShowCollaborators(true)} className="flex -space-x-2">
+                  {collection.collaborators.slice(0, 4).map((c) => (
+                    <Avatar key={c.id} user={c} size={6} />
+                  ))}
+                </button>
+              )}
+
+              <button
+                onClick={() => setShowCollaborators(true)}
+                className="text-xs text-amber-400 font-semibold hover:text-amber-300"
+              >
+                {canEdit ? 'Manage collaborators' : `${collection.collaborators.length} collaborators`}
+              </button>
+            </div>
+            <span className="font-mono text-[10px] text-zinc-500">
+              {collection.videoCount} save{collection.videoCount === 1 ? '' : 's'}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2 mt-4">
+            <button
+              onClick={() => setPlayAll(true)}
+              disabled={collection.videoCount === 0}
+              className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black text-sm font-bold disabled:opacity-40 transition-colors"
+            >
+              ▶ Play All
+            </button>
+            {isOwner && (
+              <button
+                onClick={() => setConfirmDelete(true)}
+                className="px-4 py-2.5 rounded-xl border border-zinc-700 text-zinc-400 hover:text-rose-400 hover:border-rose-500/40 text-sm font-semibold transition-colors"
+              >
+                Delete
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-6">
+          {collection.videos.length === 0 ? (
+            <div className="text-center py-16">
+              <p className="text-zinc-500 text-sm">No videos saved here yet.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+              {collection.videos.map((v) => (
+                <div key={v.id} className="relative aspect-[9/16] bg-zinc-900 rounded-xl overflow-hidden group">
+                  <a href={`/?video=${v.id}`}>
+                    {v.thumbnailUrl ? (
+                      <img src={v.thumbnailUrl} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-zinc-700 text-2xl">🎬</div>
+                    )}
+                  </a>
+                  <span className="absolute bottom-1.5 left-1.5 font-mono text-[9px] text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+                    @{v.user?.username}
+                  </span>
+                  {canEdit && (
+                    <button
+                      onClick={() => handleRemoveVideo(v.id)}
+                      disabled={removingId === v.id}
+                      aria-label="Remove from collection"
+                      className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/70 text-white text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-100"
+                    >
+                      {removingId === v.id ? '…' : '✕'}
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {showCollaborators && (
-        <CollaboratorsDrawer
-          collection={collection}
-          isOwner={collection.isOwner}
+        <CollaboratorDrawer
+          collectionId={id}
+          collaborators={collection.collaborators}
+          isOwner={isOwner}
           onClose={() => setShowCollaborators(false)}
-          onCollaboratorsChange={(collaborators) => setCollection((prev) => ({ ...prev, collaborators }))}
+          onChanged={(updater) => setCollection((prev) => ({ ...prev, collaborators: updater(prev.collaborators) }))}
         />
       )}
 
-      {player && (
-        <CollectionPlayer
-          videos={collection.videos}
-          startIndex={player.startIndex}
-          onClose={() => setPlayer(null)}
+      {confirmDelete && (
+        <ConfirmModal
+          title="Delete this collection?"
+          message="The videos in it won't be deleted — just unlinked from this collection."
+          confirmLabel="Delete"
+          onConfirm={handleDeleteCollection}
+          onCancel={() => setConfirmDelete(false)}
         />
       )}
     </main>
