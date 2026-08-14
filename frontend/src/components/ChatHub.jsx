@@ -295,7 +295,7 @@ export default function ChatHub() {
       <button
         onClick={() => setOpen((v) => !v)}
         aria-label={open ? 'Close chat and notifications' : 'Open chat and notifications'}
-        className="fixed bottom-20 left-4 z-40 p-3 rounded-full bg-zinc-900/90 border border-zinc-700 text-yellow-400 shadow-xl hover:scale-105 transition"
+        className="fixed bottom-24 right-4 z-40 w-14 h-14 rounded-full bg-zinc-900/95 backdrop-blur-xl border border-zinc-800 text-amber-400 shadow-2xl flex items-center justify-center hover:border-amber-500/50 transition-colors"
       >
         <ChatBubbleIcon />
         {!open && totalBadge > 0 && (
@@ -306,7 +306,7 @@ export default function ChatHub() {
       </button>
 
       <div
-        className={`fixed z-40 left-4 bottom-36 w-[92vw] max-w-sm h-[70vh] max-h-[560px] bg-zinc-900/95 backdrop-blur-xl border border-zinc-800 text-white rounded-3xl shadow-2xl flex flex-col overflow-hidden origin-bottom-left transition-all duration-250 ease-out ${
+        className={`fixed z-40 right-4 bottom-40 w-[92vw] max-w-sm h-[70vh] max-h-[560px] bg-zinc-900/95 backdrop-blur-xl border border-zinc-800 text-white rounded-3xl shadow-2xl flex flex-col overflow-hidden origin-bottom-right transition-all duration-250 ease-out ${
           open ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-95 translate-y-4 pointer-events-none'
         }`}
       >

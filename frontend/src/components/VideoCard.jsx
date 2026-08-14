@@ -6,7 +6,6 @@ import CommentsPanel from './CommentsPanel';
 import ReportModal from './ReportModal';
 import ShareSheet from './ShareSheet';
 import SoundPicker from './SoundPicker';
-import SaveToCollectionModal from './SaveToCollectionModal';
 import { useOptimisticLike } from '../hooks/useOptimisticLike';
 import { useAutoPlayOnScroll } from '../hooks/useAutoPlayOnScroll';
 import { useToast } from '../context/ToastContext';
@@ -115,7 +114,6 @@ const VideoCard = forwardRef(function VideoCard(
   const [showReport, setShowReport] = useState(false);
   const [showShare, setShowShare] = useState(false);
   const [showSoundPicker, setShowSoundPicker] = useState(false);
-  const [showSaveModal, setShowSaveModal] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -595,13 +593,7 @@ const VideoCard = forwardRef(function VideoCard(
             </span>
           </button>
           <button
-            onClick={() => {
-              if (!localStorage.getItem('token')) {
-                window.location.href = '/login';
-                return;
-              }
-              setShowSaveModal(true);
-            }}
+            onClick={toggleBookmark}
             className="flex flex-col items-center gap-1 p-2 -m-2 text-white hover:scale-110 transition-transform"
           >
             <BookmarkIcon
@@ -757,14 +749,6 @@ const VideoCard = forwardRef(function VideoCard(
           onSelect={({ soundId }) => {
             window.location.href = `/upload?trackId=${soundId}`;
           }}
-        />
-      )}
-      {showSaveModal && (
-        <SaveToCollectionModal
-          videoId={video.id}
-          quickSaved={bookmarked}
-          onQuickSaveToggle={toggleBookmark}
-          onClose={() => setShowSaveModal(false)}
         />
       )}
     </div>
