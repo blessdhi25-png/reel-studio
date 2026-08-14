@@ -115,12 +115,12 @@ const VideoCard = forwardRef(function VideoCard(
   const [showReport, setShowReport] = useState(false);
   const [showShare, setShowShare] = useState(false);
   const [showSoundPicker, setShowSoundPicker] = useState(false);
+  const [showSaveModal, setShowSaveModal] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [bookmarked, setBookmarked] = useState(Boolean(video.isBookmarked));
   const [bookmarkCount, setBookmarkCount] = useState(Number(video.bookmarkCount || 0));
-  const [showSaveModal, setShowSaveModal] = useState(false);
   const [audioEnabled, setAudioEnabled] = useState(false);
   const [paused, setPaused] = useState(false);
   const [isOwnVideo, setIsOwnVideo] = useState(false);
@@ -364,14 +364,20 @@ const VideoCard = forwardRef(function VideoCard(
     onToggleFollow?.(video.user.id);
   }
 
-  // Syncs this card's own bookmarked/bookmarkCount display when Quick Save
-  // is toggled from inside SaveToCollectionModal — the modal owns the
-  // actual bookmark/unbookmark API calls now (see its "Quick Save" row),
-  // this just keeps the card's icon fill and counter from going stale
-  // after the modal closes.
-  function handleQuickSaveChange(next) {
-    setBookmarked(next);
-    setBookmarkCount((c) => (next ? c + 1 : Math.max(0, c - 1)));
+  async function toggleBookmark() {
+    if (!localStorage.getItem('token')) {
+      window.location.href = '/login';
+      return;
+    }
+    setBookmarked((prev) => !prev);
+    setBookmarkCount((c) => (bookmarked ? c - 1 : c + 1));
+    try {
+      bookmarked ? await api.unbookmarkVideo(video.id) : await api.bookmarkVideo(video.id);
+    } catch {
+      // revert on failure
+      setBookmarked((prev) => !prev);
+      setBookmarkCount((c) => (bookmarked ? c + 1 : c - 1));
+    }
   }
 
   // Opens the mobile comments sheet and focuses its input — used by the 'C'
@@ -738,15 +744,6 @@ const VideoCard = forwardRef(function VideoCard(
           onReport={() => setShowReport(true)}
         />
       )}
-      {showSaveModal && (
-        <SaveToCollectionModal
-          open={showSaveModal}
-          onClose={() => setShowSaveModal(false)}
-          videoId={video.id}
-          isBookmarked={bookmarked}
-          onQuickSaveChange={handleQuickSaveChange}
-        />
-      )}
       {showSoundPicker && video.track && (
         <SoundPicker
           mode="track-videos"
@@ -760,6 +757,14 @@ const VideoCard = forwardRef(function VideoCard(
           onSelect={({ soundId }) => {
             window.location.href = `/upload?trackId=${soundId}`;
           }}
+        />
+      )}
+      {showSaveModal && (
+        <SaveToCollectionModal
+          videoId={video.id}
+          quickSaved={bookmarked}
+          onQuickSaveToggle={toggleBookmark}
+          onClose={() => setShowSaveModal(false)}
         />
       )}
     </div>
