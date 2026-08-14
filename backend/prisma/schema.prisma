@@ -119,12 +119,6 @@ enum CommunityRole {
   member
 }
 
-enum CollectionPrivacy {
-  public
-  private
-  collaborators
-}
-
 model User {
   id            String   @id @default(uuid())
   username      String   @unique
@@ -185,9 +179,9 @@ model User {
   communitiesCreated    Community[]       @relation("communityCreator")
   communityMemberships  CommunityMember[]
 
-  collectionsOwned      Collection[]              @relation("collectionOwner")
-  collectionItemsAdded  CollectionItem[]          @relation("collectionItemAdder")
-  collectionsSharedWith CollectionCollaborator[]  @relation("collectionCollaborator")
+  collectionsOwned         Collection[]             @relation("collectionOwner")
+  collectionCollaborations CollectionCollaborator[]  @relation("collectionCollaborator")
+  collectionItemsAdded     CollectionItem[]          @relation("collectionItemAdder")
 }
 
 model Block {
@@ -245,6 +239,61 @@ model Video {
   @@index([communityId])
 }
 
+// Deep Bookmarking & Shared Collections — deliberately a separate system
+// from the existing single-tap Bookmark model above rather than replacing
+// it: Bookmark stays as-is for the quick "save this" toggle (still powers
+// the profile's plain "Saved" tab via GET /users/me/bookmarks), while a
+// Collection is a named, organizable folder someone can share and
+// co-curate with others. Saving a video into a Collection does not
+// require it to also be a plain Bookmark, and vice versa — they're
+// independent, coexisting ways to save something, similar to Pinterest's
+// quick-save vs. save-to-board distinction.
+model Collection {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  // 'private' (only owner + collaborators can view) | 'public' (anyone can
+  // view, read-only unless also a collaborator) | 'collaborators' (visible
+  // only to owner + invited collaborators, same as private for viewing —
+  // kept as its own value rather than collapsed into 'private' so the
+  // frontend can show a distinct 👥 badge and copy explaining why).
+  privacy     String   @default("private")
+  createdById String
+  createdBy   User     @relation("collectionOwner", fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  items         CollectionItem[]
+  collaborators CollectionCollaborator[]
+
+  @@index([createdById])
+  @@index([privacy])
+}
+
+model CollectionItem {
+  collectionId String
+  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  videoId      String
+  video        Video      @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  addedById    String
+  addedBy      User       @relation("collectionItemAdder", fields: [addedById], references: [id])
+  addedAt      DateTime   @default(now())
+
+  @@id([collectionId, videoId])
+  @@index([videoId])
+}
+
+model CollectionCollaborator {
+  collectionId String
+  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User       @relation("collectionCollaborator", fields: [userId], references: [id])
+  addedAt      DateTime   @default(now())
+
+  @@id([collectionId, userId])
+  @@index([userId])
+}
+
 // Communities/Interest Circles — a real, user-created group with
 // membership and roles. Not to be confused with the `circle` field on
 // Video above (a fixed 8-item hashtag taxonomy for feed filtering) — that
@@ -282,60 +331,6 @@ model CommunityMember {
 
   @@id([communityId, userId])
 }
-
-// Deep Bookmarking & Shared Collections — a named, organizable folder of
-// saved videos, distinct from the simple one-tap Bookmark model above
-// (which just powers the "Saved" tab on a profile with no organization).
-// A video can be bookmarked and/or filed into any number of Collections
-// independently; the two systems don't reference each other.
-model Collection {
-  id          String            @id @default(uuid())
-  name        String
-  description String?
-  privacy     CollectionPrivacy @default(private)
-  ownerId     String
-  owner       User              @relation("collectionOwner", fields: [ownerId], references: [id])
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
-
-  items         CollectionItem[]
-  collaborators CollectionCollaborator[]
-
-  @@index([ownerId])
-  @@index([privacy])
-}
-
-// Join table: which videos are saved into which collection. addedById is
-// tracked separately from the collection's ownerId since a collaborator
-// (see CollectionCollaborator below) can add/remove items on a collection
-// they don't own.
-model CollectionItem {
-  collectionId String
-  collection   Collection @relation(fields: [collectionId], references: [id])
-  videoId      String
-  video        Video      @relation(fields: [videoId], references: [id])
-  addedById    String
-  addedBy      User       @relation("collectionItemAdder", fields: [addedById], references: [id])
-  createdAt    DateTime   @default(now())
-
-  @@id([collectionId, videoId])
-  @@index([videoId])
-}
-
-// A user invited to co-curate a private/collaborators-only collection —
-// can add and remove videos, same as the owner, but can't change privacy,
-// rename/delete the collection, or manage other collaborators (see
-// permission checks in routes/collections.js).
-model CollectionCollaborator {
-  collectionId String
-  collection   Collection @relation(fields: [collectionId], references: [id])
-  userId       String
-  user         User       @relation("collectionCollaborator", fields: [userId], references: [id])
-  addedAt      DateTime   @default(now())
-
-  @@id([collectionId, userId])
-}
-
 
 // Self-serve artist claim — mirrors how creatorStatus works elsewhere in this
 // app (a simple flag, not a reviewed pipeline): there's no moderation queue
