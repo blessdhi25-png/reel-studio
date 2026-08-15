@@ -156,6 +156,7 @@ export default function SoundPicker({
   const [usingFallback, setUsingFallback] = useState(false);
   const [selected, setSelected] = useState(null);
   const [playingId, setPlayingId] = useState(null);
+  const [isPlaying, setIsPlaying] = useState(false);
   const [trackVideos, setTrackVideos] = useState([]);
   const [trackVideosLoading, setTrackVideosLoading] = useState(mode === 'track-videos');
   const [trackVideosError, setTrackVideosError] = useState(null);
@@ -251,26 +252,54 @@ export default function SoundPicker({
   useEffect(() => {
     return () => {
       audioRef.current?.pause();
+      setIsPlaying(false);
     };
   }, []);
+
+  // Whenever a different track becomes "current" (new selection, or the
+  // active track cleared), stop any playback so the picker never has audio
+  // running for a track that's no longer the one shown as playing.
+  useEffect(() => {
+    if (playingId === null) {
+      audioRef.current?.pause();
+    }
+  }, [playingId]);
 
   function togglePreview(track) {
     const el = audioRef.current;
     if (!el || !track.audioUrl) return;
-    if (playingId === track.id) {
+
+    // Already the active track and actually audible — pause and stop.
+    if (playingId === track.id && isPlaying) {
       el.pause();
       setPlayingId(null);
+      setIsPlaying(false);
       return;
     }
+
+    // New track, or restarting one that was paused/stopped/errored — force
+    // the element to pick up the new (or same) source before playing.
+    // Some mobile browsers (notably iOS Safari) don't reliably swap audio
+    // sources on a bare `src` assignment without an explicit `load()`.
+    el.pause();
     el.src = track.audioUrl;
+    el.load();
     el.currentTime = 0;
-    el.play().catch(() => {});
     setPlayingId(track.id);
+    el.play()
+      .then(() => setIsPlaying(true))
+      .catch(() => {
+        // Autoplay was blocked, or the source failed to load — don't leave
+        // the UI showing a "playing" state for audio that never started.
+        setIsPlaying(false);
+        setPlayingId((current) => (current === track.id ? null : current));
+      });
   }
 
   function handleUseSound() {
     if (!selected) return;
     audioRef.current?.pause();
+    setIsPlaying(false);
     onSelect?.({
       soundId: selected.id,
       soundUrl: selected.audioUrl,
@@ -285,7 +314,20 @@ export default function SoundPicker({
       <div className="absolute inset-0 bg-black/90 backdrop-blur-lg" onClick={onClose} />
       {/* Hidden shared preview player — reused across rows so starting a new
           preview always stops whatever was playing before. */}
-      <audio ref={audioRef} onEnded={() => setPlayingId(null)} className="hidden" />
+      <audio
+        ref={audioRef}
+        onPlay={() => setIsPlaying(true)}
+        onPause={() => setIsPlaying(false)}
+        onEnded={() => {
+          setPlayingId(null);
+          setIsPlaying(false);
+        }}
+        onError={() => {
+          setPlayingId(null);
+          setIsPlaying(false);
+        }}
+        className="hidden"
+      />
 
       <div className="relative w-full max-h-[80%] bg-ink2/95 backdrop-blur-xl border-t border-smoke/20 rounded-t-2xl flex flex-col animate-sheet-up">
         <div className="flex items-center justify-between px-6 py-4 border-b border-smoke/10 shrink-0">
@@ -327,7 +369,7 @@ export default function SoundPicker({
             <TrackRow
               track={activeTrack}
               selected
-              playing={playingId === activeTrack.id}
+              playing={playingId === activeTrack.id && isPlaying}
               onTogglePreview={() => togglePreview(activeTrack)}
               onSelect={() => setSelected(activeTrack)}
             />
@@ -364,7 +406,7 @@ export default function SoundPicker({
                         key={track.id}
                         track={track}
                         selected={selected?.id === track.id}
-                        playing={playingId === track.id}
+                        playing={playingId === track.id && isPlaying}
                         onTogglePreview={() => togglePreview(track)}
                         onSelect={() => setSelected(track)}
                       />
