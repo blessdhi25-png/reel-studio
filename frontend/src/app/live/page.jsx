@@ -2,12 +2,12 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { api } from '@/lib/api';
-import { getSocket } from '@/lib/socket';
-import { useCameraDevices } from '@/lib/useCameraDevices';
-import CameraDeviceSelect from '@/components/CameraDeviceSelect';
-import { LoadingSpinner } from '@/components/LoadingScreen';
-import TipModal from '@/components/TipModal';
+import { api } from '.@/lib/api';
+import { getSocket } from '../../lib/socket';
+import { useCameraDevices } from '.@/lib/useCameraDevices';
+import CameraDeviceSelect from '.@/components/CameraDeviceSelect';
+import { LoadingSpinner } from '.@/components/LoadingScreen';
+import TipModal from '.@/components/TipModal';
 
 const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
 const QUICK_REACTIONS = ['❤️', '🔥', '😂', '👏', '🎉', '😮'];
