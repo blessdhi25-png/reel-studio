@@ -1,15 +1,15 @@
 'use client';
 
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { api } from '@/lib/api';
-import CommentsPanel from '@/components/CommentsPanel';
-import ReportModal from '@/components/ReportModal';
-import ShareSheet from '@/components/ShareSheet';
-import SoundPicker from '@/components/SoundPicker';
-import SaveToCollectionModal from '@/components/SaveToCollectionModal';
-import { useOptimisticLike } from '@/hooks/useOptimisticLike';
-import { useAutoPlayOnScroll } from '@/hooks/useAutoPlayOnScroll';
-import { useToast } from '@/context/ToastContext';
+import { api } from '../lib/api';
+import CommentsPanel from './CommentsPanel';
+import ReportModal from './ReportModal';
+import ShareSheet from './ShareSheet';
+import SoundPicker from './SoundPicker';
+import SaveToCollectionModal from './SaveToCollectionModal';
+import { useOptimisticLike } from '../hooks/useOptimisticLike';
+import { useAutoPlayOnScroll } from '../hooks/useAutoPlayOnScroll';
+import { useToast } from '../context/ToastContext';
 
 // A second tap/click arriving within this window counts as a double-tap
 // (like) rather than two separate single-taps (play/pause). 300ms matches
@@ -97,7 +97,23 @@ function formatTimecode(seconds = 0) {
 }
 
 const VideoCard = forwardRef(function VideoCard(
-  { video, isActive, shouldLoad = true, focusMode = false, onToggleFollow, onActiveTimeUpdate, onDeleted },
+  {
+    video,
+    isActive,
+    shouldLoad = true,
+    focusMode = false,
+    onToggleFollow,
+    onActiveTimeUpdate,
+    onDeleted,
+    // Both optional — when the parent feed owns a shared mute state (the
+    // header mute button in app/page.jsx), it passes isMuted down and
+    // onMuteChange back up so the header button and every card's own
+    // tap-to-unmute/mute-icon gesture stay in sync. When omitted (e.g. the
+    // single-card community feed), the card falls back to its old
+    // fully self-contained localStorage-backed behavior.
+    isMuted,
+    onMuteChange,
+  },
   ref
 ) {
   const videoRef = useRef(null);
@@ -163,8 +179,13 @@ const VideoCard = forwardRef(function VideoCard(
   }, [video.user?.id]);
 
   useEffect(() => {
-    setAudioEnabled(getStoredAudioEnabled());
-  }, []);
+    // Controlled case: re-syncs every time the parent's shared isMuted
+    // flips (e.g. the header mute button), not just on mount. Uncontrolled
+    // case (isMuted undefined, as in the community feed): this only runs
+    // once on mount, same as the old behavior.
+    setAudioEnabled(isMuted !== undefined ? !isMuted : getStoredAudioEnabled());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMuted]);
 
   useEffect(() => {
     const el = videoRef.current;
@@ -274,10 +295,11 @@ const VideoCard = forwardRef(function VideoCard(
     if (!el) return;
 
     // The tap that resolves this is itself the user gesture that lets us
-    // turn sound on going forward — no separate mute control needed.
+    // turn sound on going forward.
     if (!audioEnabled) {
       setAudioEnabled(true);
       window.localStorage.setItem('feedAudioEnabled', 'true');
+      onMuteChange?.(false);
     }
 
     if (el.paused) {
@@ -455,6 +477,7 @@ const VideoCard = forwardRef(function VideoCard(
           setAudioEnabled((prev) => {
             const next = !prev;
             window.localStorage.setItem('feedAudioEnabled', String(next));
+            onMuteChange?.(!next);
             return next;
           });
         }}
