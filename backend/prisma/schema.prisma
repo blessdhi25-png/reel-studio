@@ -119,6 +119,12 @@ enum CommunityRole {
   member
 }
 
+enum CollectionPrivacy {
+  private
+  shared
+  public
+}
+
 model User {
   id            String   @id @default(uuid())
   username      String   @unique
@@ -179,9 +185,9 @@ model User {
   communitiesCreated    Community[]       @relation("communityCreator")
   communityMemberships  CommunityMember[]
 
-  collectionsOwned         Collection[]              @relation("collectionOwner")
-  collectionVideosAdded    CollectionVideo[]
-  collectionCollaborations CollectionCollaborator[]
+  collectionsOwned         Collection[]             @relation("collectionOwner")
+  collectionCollaborations CollectionCollaborator[] @relation("collectionCollaborator")
+  collectionItemsAdded     CollectionItem[]         @relation("collectionItemAdder")
 }
 
 model Block {
@@ -224,7 +230,7 @@ model Video {
   bookmarks    Bookmark[]
   transactions Transaction[]
   feedEvents   FeedEvent[]
-  collectionEntries CollectionVideo[]
+  collectionItems CollectionItem[]
 
   // Optional — a video can be posted directly to a community's own feed.
   // This is deliberately separate from the pre-existing `circle` field
@@ -277,46 +283,51 @@ model CommunityMember {
   @@id([communityId, userId])
 }
 
-// Collections layer on top of the plain per-video Bookmark model above —
-// Bookmark stays a flat "saved for later" list (still used for the quick
-// bookmark-icon toggle and isBookmarked on feed videos); a Collection is a
-// named, privacy-scoped folder a save can also go into. Saving into a
-// collection does not create/require a Bookmark row and vice versa — they
-// track independently, same as e.g. a "liked" video isn't required to also
-// be bookmarked.
+// Deep Bookmarking & Shared Collections — a named, ownable folder of saved
+// videos, distinct from the flat per-user Bookmark model above. A video can
+// be plain-bookmarked, saved into any number of collections, both, or
+// neither, independently (see SaveToCollectionModal.jsx). `shared` privacy
+// means visible to owner + collaborators only; collaborators (below) can
+// add/remove videos but not change privacy or delete the collection itself.
 model Collection {
-  id          String   @id @default(uuid())
+  id          String            @id @default(uuid())
   name        String
   description String?
-  privacy     String   @default("private") // 'private' | 'public' | 'shared' (shared = visible/addable by collaborators, not publicly listed)
+  privacy     CollectionPrivacy @default(private)
   ownerId     String
-  owner       User     @relation("collectionOwner", fields: [ownerId], references: [id])
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  owner       User              @relation("collectionOwner", fields: [ownerId], references: [id])
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
 
-  videos        CollectionVideo[]
+  items         CollectionItem[]
   collaborators CollectionCollaborator[]
 
   @@index([ownerId])
+  @@index([privacy])
 }
 
-model CollectionVideo {
+model CollectionItem {
   collectionId String
   collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
   videoId      String
   video        Video      @relation(fields: [videoId], references: [id])
   addedById    String
-  addedBy      User       @relation(fields: [addedById], references: [id])
+  addedBy      User       @relation("collectionItemAdder", fields: [addedById], references: [id])
   addedAt      DateTime   @default(now())
 
   @@id([collectionId, videoId])
+  @@index([videoId])
 }
 
+// Co-curators — can add/remove videos in a `shared` collection but aren't
+// the owner (can't rename/delete it or manage other collaborators). Not
+// used at all for `private`/`public` collections, which have no
+// collaborator concept.
 model CollectionCollaborator {
   collectionId String
   collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
   userId       String
-  user         User       @relation(fields: [userId], references: [id])
+  user         User       @relation("collectionCollaborator", fields: [userId], references: [id])
   addedAt      DateTime   @default(now())
 
   @@id([collectionId, userId])
