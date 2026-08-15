@@ -6,379 +6,388 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 const router = Router();
 
 const USER_SELECT = { id: true, username: true, avatarUrl: true };
-const PRIVACY_VALUES = ['private', 'public', 'shared'];
+const VALID_PRIVACY = ['private', 'shared', 'public'];
 
-async function getRole(collectionId, userId) {
-  if (!userId) return null;
-  const collection = await prisma.collection.findUnique({
-    where: { id: collectionId },
-    select: { ownerId: true },
-  });
-  if (!collection) return null;
-  if (collection.ownerId === userId) return 'owner';
-  const collab = await prisma.collectionCollaborator.findUnique({
-    where: { collectionId_userId: { collectionId, userId } },
-  });
-  return collab ? 'collaborator' : null;
+const VIDEO_CARD_INCLUDE = {
+  user: { select: { id: true, username: true, avatarUrl: true, stripeOnboarded: true } },
+  // Matches the exact pattern already used in communities.js's posts
+  // route — see that file's comment for why the frontend's
+  // video.track.artistName/coverUrl fields stay unpopulated until a
+  // separate mapping step (done in artists.js's tracks/search endpoint)
+  // gets ported here too. Not something this route introduces or fixes.
+  track: { include: { artist: { select: { stageName: true } } } },
+};
+
+// Shapes a Collection row (with items/_count/owner/collaborators already
+// included) into the list/response format the frontend expects — shared
+// by GET /collections and POST /collections so a freshly created
+// collection round-trips in exactly the shape the list already uses.
+function shapeCollection(c, { viewerId, role, savedHere } = {}) {
+  return {
+    id: c.id,
+    name: c.name,
+    description: c.description,
+    privacy: c.privacy,
+    ownerId: c.ownerId,
+    owner: c.owner ? { id: c.owner.id, username: c.owner.username, avatarUrl: c.owner.avatarUrl } : undefined,
+    createdAt: c.createdAt,
+    updatedAt: c.updatedAt,
+    videoCount: c._count?.items ?? 0,
+    previewThumbnails: (c.items || []).map((i) => i.video?.thumbnailUrl).filter(Boolean),
+    role: role || (viewerId && c.ownerId === viewerId ? 'owner' : undefined),
+    ...(savedHere !== undefined ? { savedHere } : {}),
+  };
 }
 
-// Shapes a Video row into the same object <VideoCard> already knows how to
-// render (isLiked/isBookmarked/flattened track/user.isFollowing) — copied
-// from GET /communities/:id/posts' shaping in routes/communities.js, so the
-// collection detail page's "Play All" reel can mount <VideoCard> directly
-// against these results with zero translation layer.
-async function shapeVideosForViewer(videos, viewerId) {
-  let likedIds = new Set();
-  let bookmarkedIds = new Set();
-  let followedIds = new Set();
-  if (viewerId && videos.length) {
-    const authorIds = [...new Set(videos.map((v) => v.userId))];
-    const videoIds = videos.map((v) => v.id);
-    const [likes, bookmarks, follows] = await Promise.all([
-      prisma.like.findMany({ where: { userId: viewerId, videoId: { in: videoIds } }, select: { videoId: true } }),
-      prisma.bookmark.findMany({ where: { userId: viewerId, videoId: { in: videoIds } }, select: { videoId: true } }),
-      prisma.follow.findMany({ where: { followerId: viewerId, followeeId: { in: authorIds } }, select: { followeeId: true } }),
-    ]);
-    likedIds = new Set(likes.map((l) => l.videoId));
-    bookmarkedIds = new Set(bookmarks.map((b) => b.videoId));
-    followedIds = new Set(follows.map((f) => f.followeeId));
+router.get('/collections', optionalAuth, asyncHandler(async (req, res) => {
+  const { tab, videoId } = req.query;
+
+  // 'mine'/'shared' (and the default, which merges both) need a signed-in
+  // viewer — rather than 401 a hub page that might render before auth
+  // state settles, just return an empty list. 'public' works signed out.
+  if (tab !== 'public' && !req.userId) {
+    return res.json({ collections: [] });
   }
 
-  return videos.map((v) => ({
-    ...v,
-    isLiked: likedIds.has(v.id),
-    isBookmarked: bookmarkedIds.has(v.id),
-    user: { ...v.user, isFollowing: followedIds.has(v.userId) },
-    track: v.track
-      ? {
-          id: v.track.id,
-          title: v.track.title,
-          audioUrl: v.track.audioUrl,
-          artistName: v.track.artist.stageName,
-          durationSeconds: v.track.durationSeconds,
-        }
-      : null,
-  }));
-}
-
-// ---------------------------------------------------------------------------
-// GET /collections — one request covers all three hub tabs (My Collections,
-// Shared with Me, Public Collections); the frontend buckets by the `role`
-// this returns per row. Same reasoning as GET /communities' "My Circles" vs
-// "Explore All" split (see routes/communities.js): the dataset per user is
-// small enough that one request beats three separate round-trips, and
-// switching tabs client-side is instant instead of re-fetching.
-// ---------------------------------------------------------------------------
-router.get(
-  '/collections',
-  requireAuth,
-  asyncHandler(async (req, res) => {
-    const { videoId } = req.query;
-    try {
-      const collections = await prisma.collection.findMany({
-        where: {
-          OR: [
-            { ownerId: req.userId },
-            { collaborators: { some: { userId: req.userId } } },
-            { privacy: 'public' },
-          ],
+  let rows = [];
+  try {
+    if (tab === 'public') {
+      rows = await prisma.collection.findMany({
+        where: { privacy: 'public', ...(req.userId ? { ownerId: { not: req.userId } } : {}) },
+        orderBy: { updatedAt: 'desc' },
+        take: 60,
+        include: {
+          owner: { select: USER_SELECT },
+          _count: { select: { items: true } },
+          items: { take: 4, orderBy: { addedAt: 'desc' }, include: { video: { select: { thumbnailUrl: true } } } },
         },
+      });
+    } else if (tab === 'mine') {
+      rows = await prisma.collection.findMany({
+        where: { ownerId: req.userId },
         orderBy: { updatedAt: 'desc' },
         include: {
           owner: { select: USER_SELECT },
-          collaborators: { select: { userId: true, user: { select: USER_SELECT } } },
-          _count: { select: { videos: true } },
-          videos: {
-            orderBy: { addedAt: 'desc' },
-            take: 4,
-            include: { video: { select: { id: true, thumbnailUrl: true } } },
-          },
+          _count: { select: { items: true } },
+          items: { take: 4, orderBy: { addedAt: 'desc' }, include: { video: { select: { thumbnailUrl: true } } } },
         },
       });
-
-      // Only computed when SaveToCollectionModal passes ?videoId= — tells
-      // it which of the user's collections already contain this exact
-      // video, so it can render pre-checked toggles instead of opening
-      // with everything blank every time.
-      let savedInSet = new Set();
-      if (videoId) {
-        const saved = await prisma.collectionVideo.findMany({
-          where: { videoId, collectionId: { in: collections.map((c) => c.id) } },
-          select: { collectionId: true },
-        });
-        savedInSet = new Set(saved.map((s) => s.collectionId));
-      }
-
-      res.json(
-        collections.map((c) => ({
-          id: c.id,
-          name: c.name,
-          description: c.description,
-          privacy: c.privacy,
-          owner: c.owner,
-          role: c.ownerId === req.userId ? 'owner' : c.collaborators.some((cl) => cl.userId === req.userId) ? 'collaborator' : 'viewer',
-          videoCount: c._count.videos,
-          collaboratorCount: c.collaborators.length,
-          previewThumbnails: c.videos.map((v) => v.video.thumbnailUrl).filter(Boolean),
-          ...(videoId ? { savedHere: savedInSet.has(c.id) } : {}),
-          createdAt: c.createdAt,
-          updatedAt: c.updatedAt,
-        }))
-      );
-    } catch (err) {
-      console.error('[collections] GET /collections failed:', { userId: req.userId, videoId, error: err.message, stack: err.stack });
-      res.status(500).json({ error: 'Failed to load collections' });
-    }
-  })
-);
-
-router.post(
-  '/collections',
-  requireAuth,
-  asyncHandler(async (req, res) => {
-    const { name, description, privacy } = req.body;
-    if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
-    if (privacy && !PRIVACY_VALUES.includes(privacy)) {
-      return res.status(400).json({ error: `privacy must be one of: ${PRIVACY_VALUES.join(', ')}` });
-    }
-
-    try {
-      const collection = await prisma.collection.create({
-        data: {
-          name: name.trim().slice(0, 80),
-          description: description?.trim().slice(0, 300) || null,
-          privacy: privacy || 'private',
-          ownerId: req.userId,
-        },
-        include: { owner: { select: USER_SELECT } },
-      });
-
-      res.status(201).json({
-        ...collection,
-        role: 'owner',
-        videoCount: 0,
-        collaboratorCount: 0,
-        previewThumbnails: [],
-      });
-    } catch (err) {
-      console.error('[collections] POST /collections failed:', { userId: req.userId, body: req.body, error: err.message, stack: err.stack });
-      res.status(500).json({ error: 'Failed to create collection' });
-    }
-  })
-);
-
-router.get(
-  '/collections/:id',
-  optionalAuth,
-  asyncHandler(async (req, res) => {
-    try {
-      const collection = await prisma.collection.findUnique({
-        where: { id: req.params.id },
+    } else if (tab === 'shared') {
+      rows = await prisma.collection.findMany({
+        where: { collaborators: { some: { userId: req.userId } } },
+        orderBy: { updatedAt: 'desc' },
         include: {
           owner: { select: USER_SELECT },
-          collaborators: { include: { user: { select: USER_SELECT } } },
+          _count: { select: { items: true } },
+          items: { take: 4, orderBy: { addedAt: 'desc' }, include: { video: { select: { thumbnailUrl: true } } } },
         },
       });
-      if (!collection) return res.status(404).json({ error: 'Collection not found' });
-
-      const isCollaborator = req.userId ? collection.collaborators.some((c) => c.userId === req.userId) : false;
-      const isOwner = collection.ownerId === req.userId;
-      const canView =
-        collection.privacy === 'public' || isOwner || (collection.privacy === 'shared' && isCollaborator);
-      if (!canView) return res.status(404).json({ error: 'Collection not found' });
-
-      const entries = await prisma.collectionVideo.findMany({
-        where: { collectionId: collection.id },
-        orderBy: { addedAt: 'desc' },
+    } else {
+      // Default (no tab, e.g. SaveToCollectionModal): owned + collaborator
+      // collections merged — every collection the viewer can actually save
+      // into.
+      rows = await prisma.collection.findMany({
+        where: { OR: [{ ownerId: req.userId }, { collaborators: { some: { userId: req.userId } } }] },
+        orderBy: { updatedAt: 'desc' },
         include: {
-          addedBy: { select: USER_SELECT },
-          video: {
-            include: {
-              user: { select: { id: true, username: true, avatarUrl: true, stripeOnboarded: true } },
-              track: { include: { artist: { select: { stageName: true } } } },
-            },
-          },
+          owner: { select: USER_SELECT },
+          _count: { select: { items: true } },
+          items: { take: 4, orderBy: { addedAt: 'desc' }, include: { video: { select: { thumbnailUrl: true } } } },
         },
       });
+    }
+  } catch (err) {
+    console.error(`[collections] GET /collections failed (tab=${tab ?? 'default'}, userId=${req.userId ?? 'anon'}):`, err);
+    throw err;
+  }
 
-      const shapedVideos = await shapeVideosForViewer(entries.map((e) => e.video), req.userId);
-      const videos = entries.map((e, i) => ({
-        ...shapedVideos[i],
-        addedBy: e.addedBy,
-        addedAt: e.addedAt,
-      }));
-
-      res.json({
-        id: collection.id,
-        name: collection.name,
-        description: collection.description,
-        privacy: collection.privacy,
-        owner: collection.owner,
-        collaborators: collection.collaborators.map((c) => ({ ...c.user, addedAt: c.addedAt })),
-        myRole: isOwner ? 'owner' : isCollaborator ? 'collaborator' : null,
-        videoCount: videos.length,
-        videos,
-        createdAt: collection.createdAt,
-        updatedAt: collection.updatedAt,
+  // items above only carries the 4 most recent (for thumbnail previews),
+  // so whether *this specific* videoId is saved needs its own lookup —
+  // the target video may not be among those 4 even when it is saved.
+  let savedIds = new Set();
+  if (videoId && rows.length) {
+    try {
+      const saved = await prisma.collectionItem.findMany({
+        where: { videoId, collectionId: { in: rows.map((r) => r.id) } },
+        select: { collectionId: true },
       });
+      savedIds = new Set(saved.map((s) => s.collectionId));
     } catch (err) {
-      console.error('[collections] GET /collections/:id failed:', { collectionId: req.params.id, userId: req.userId, error: err.message, stack: err.stack });
-      res.status(500).json({ error: 'Failed to load collection' });
+      console.error(`[collections] GET /collections savedHere lookup failed (videoId=${videoId}):`, err);
+      throw err;
     }
-  })
-);
+  }
 
-router.patch(
-  '/collections/:id',
-  requireAuth,
-  asyncHandler(async (req, res) => {
-    try {
-      const collection = await prisma.collection.findUnique({ where: { id: req.params.id }, select: { ownerId: true } });
-      if (!collection) return res.status(404).json({ error: 'Collection not found' });
-      if (collection.ownerId !== req.userId) return res.status(403).json({ error: 'Only the owner can edit this collection' });
+  const collections = rows.map((c) =>
+    shapeCollection(c, {
+      viewerId: req.userId,
+      role: tab === 'public' ? 'public' : tab === 'shared' ? 'collaborator' : c.ownerId === req.userId ? 'owner' : 'collaborator',
+      savedHere: videoId ? savedIds.has(c.id) : undefined,
+    })
+  );
 
-      const { name, description, privacy } = req.body;
-      const data = {};
-      if (name !== undefined) {
-        if (!name.trim()) return res.status(400).json({ error: 'name cannot be empty' });
-        data.name = name.trim().slice(0, 80);
-      }
-      if (description !== undefined) data.description = description?.trim().slice(0, 300) || null;
-      if (privacy !== undefined) {
-        if (!PRIVACY_VALUES.includes(privacy)) {
-          return res.status(400).json({ error: `privacy must be one of: ${PRIVACY_VALUES.join(', ')}` });
-        }
-        data.privacy = privacy;
-      }
+  res.json({ collections });
+}));
 
-      const updated = await prisma.collection.update({ where: { id: req.params.id }, data });
-      res.json(updated);
-    } catch (err) {
-      console.error('[collections] PATCH /collections/:id failed:', { collectionId: req.params.id, userId: req.userId, error: err.message, stack: err.stack });
-      res.status(500).json({ error: 'Failed to update collection' });
-    }
-  })
-);
+router.post('/collections', requireAuth, asyncHandler(async (req, res) => {
+  const { name, description, privacy } = req.body;
+  if (!name?.trim()) return res.status(400).json({ error: 'A collection needs a name' });
+  const safePrivacy = VALID_PRIVACY.includes(privacy) ? privacy : 'private';
 
-router.delete(
-  '/collections/:id',
-  requireAuth,
-  asyncHandler(async (req, res) => {
-    try {
-      const collection = await prisma.collection.findUnique({ where: { id: req.params.id }, select: { ownerId: true } });
-      if (!collection) return res.status(404).json({ error: 'Collection not found' });
-      if (collection.ownerId !== req.userId) return res.status(403).json({ error: 'Only the owner can delete this collection' });
+  let collection;
+  try {
+    collection = await prisma.collection.create({
+      data: {
+        name: name.trim(),
+        description: description?.trim() || null,
+        privacy: safePrivacy,
+        ownerId: req.userId,
+      },
+      include: { owner: { select: USER_SELECT }, _count: { select: { items: true } }, items: true },
+    });
+  } catch (err) {
+    console.error(`[collections] POST /collections failed (userId=${req.userId}, name=${name}):`, err);
+    throw err;
+  }
 
-      // CollectionVideo/CollectionCollaborator cascade on Collection delete
-      // (see schema.prisma) — the underlying videos themselves are
-      // untouched, only unlinked from this (now-gone) collection.
-      await prisma.collection.delete({ where: { id: req.params.id } });
-      res.json({ ok: true });
-    } catch (err) {
-      console.error('[collections] DELETE /collections/:id failed:', { collectionId: req.params.id, userId: req.userId, error: err.message, stack: err.stack });
-      res.status(500).json({ error: 'Failed to delete collection' });
-    }
-  })
-);
+  res.status(201).json(shapeCollection(collection, { viewerId: req.userId, role: 'owner' }));
+}));
 
-// POST /collections/:id/save — toggle a video's membership in this
-// collection. Owner or collaborator only; a collection's own privacy
-// setting governs who can *see* it, not who can edit its contents.
-router.post(
-  '/collections/:id/save',
-  requireAuth,
-  asyncHandler(async (req, res) => {
-    const { videoId } = req.body;
-    if (!videoId) return res.status(400).json({ error: 'videoId is required' });
+router.get('/collections/:id', optionalAuth, asyncHandler(async (req, res) => {
+  let collection;
+  try {
+    collection = await prisma.collection.findUnique({
+      where: { id: req.params.id },
+      include: {
+        owner: { select: USER_SELECT },
+        collaborators: { include: { user: { select: USER_SELECT } } },
+        _count: { select: { items: true } },
+      },
+    });
+  } catch (err) {
+    console.error(`[collections] GET /collections/:id lookup failed (id=${req.params.id}):`, err);
+    throw err;
+  }
+  if (!collection) return res.status(404).json({ error: 'Collection not found' });
 
-    try {
-      const role = await getRole(req.params.id, req.userId);
-      if (!role) return res.status(403).json({ error: "You don't have permission to edit this collection" });
+  const isOwner = req.userId && collection.ownerId === req.userId;
+  const isCollaborator = req.userId && collection.collaborators.some((c) => c.userId === req.userId);
 
-      const video = await prisma.video.findUnique({ where: { id: videoId }, select: { id: true } });
-      if (!video) return res.status(404).json({ error: 'Video not found' });
+  // Privacy gates visibility only — membership (owner/collaborator) below
+  // separately gates who can edit it, same split SaveToCollectionModal's
+  // client-side filter already assumes.
+  if (collection.privacy !== 'public' && !isOwner && !isCollaborator) {
+    return res.status(404).json({ error: 'Collection not found' });
+  }
 
-      const existing = await prisma.collectionVideo.findUnique({
+  let items;
+  try {
+    items = await prisma.collectionItem.findMany({
+      where: { collectionId: collection.id },
+      orderBy: { addedAt: 'desc' },
+      include: {
+        video: { include: VIDEO_CARD_INCLUDE },
+        addedBy: { select: USER_SELECT },
+      },
+    });
+  } catch (err) {
+    console.error(`[collections] GET /collections/:id item lookup failed (id=${collection.id}):`, err);
+    throw err;
+  }
+
+  res.json({
+    id: collection.id,
+    name: collection.name,
+    description: collection.description,
+    privacy: collection.privacy,
+    owner: { id: collection.owner.id, username: collection.owner.username, avatarUrl: collection.owner.avatarUrl },
+    collaborators: collection.collaborators.map((c) => c.user),
+    videoCount: collection._count.items,
+    createdAt: collection.createdAt,
+    updatedAt: collection.updatedAt,
+    myRole: isOwner ? 'owner' : isCollaborator ? 'collaborator' : collection.privacy === 'public' ? 'viewer' : null,
+    videos: items.map((i) => ({ ...i.video, savedAt: i.addedAt, addedBy: i.addedBy })),
+  });
+}));
+
+router.patch('/collections/:id', requireAuth, asyncHandler(async (req, res) => {
+  let collection;
+  try {
+    collection = await prisma.collection.findUnique({ where: { id: req.params.id } });
+  } catch (err) {
+    console.error(`[collections] PATCH /collections/:id lookup failed (id=${req.params.id}):`, err);
+    throw err;
+  }
+  if (!collection) return res.status(404).json({ error: 'Collection not found' });
+  if (collection.ownerId !== req.userId) {
+    return res.status(403).json({ error: 'Only the owner can edit this collection' });
+  }
+
+  const { name, description, privacy } = req.body;
+  const data = {};
+  if (name !== undefined) {
+    if (!name.trim()) return res.status(400).json({ error: 'A collection needs a name' });
+    data.name = name.trim();
+  }
+  if (description !== undefined) data.description = description?.trim() || null;
+  if (privacy !== undefined) {
+    if (!VALID_PRIVACY.includes(privacy)) return res.status(400).json({ error: 'Invalid privacy value' });
+    data.privacy = privacy;
+  }
+
+  let updated;
+  try {
+    updated = await prisma.collection.update({
+      where: { id: req.params.id },
+      data,
+      include: { owner: { select: USER_SELECT }, _count: { select: { items: true } }, items: true },
+    });
+  } catch (err) {
+    console.error(`[collections] PATCH /collections/:id failed (id=${req.params.id}, fields=${Object.keys(data).join(',')}):`, err);
+    throw err;
+  }
+
+  res.json(shapeCollection(updated, { viewerId: req.userId, role: 'owner' }));
+}));
+
+router.delete('/collections/:id', requireAuth, asyncHandler(async (req, res) => {
+  let collection;
+  try {
+    collection = await prisma.collection.findUnique({ where: { id: req.params.id } });
+  } catch (err) {
+    console.error(`[collections] DELETE /collections/:id lookup failed (id=${req.params.id}):`, err);
+    throw err;
+  }
+  if (!collection) return res.status(404).json({ error: 'Collection not found' });
+  if (collection.ownerId !== req.userId) {
+    return res.status(403).json({ error: 'Only the owner can delete this collection' });
+  }
+
+  try {
+    // CollectionItem/CollectionCollaborator rows cascade-delete with the
+    // collection (see prisma/schema.prisma), so this is a single delete.
+    await prisma.collection.delete({ where: { id: req.params.id } });
+  } catch (err) {
+    console.error(`[collections] DELETE /collections/:id failed (id=${req.params.id}):`, err);
+    throw err;
+  }
+
+  res.json({ ok: true });
+}));
+
+router.post('/collections/:id/save', requireAuth, asyncHandler(async (req, res) => {
+  const { videoId } = req.body;
+  if (!videoId) return res.status(400).json({ error: 'videoId is required' });
+
+  let collection;
+  try {
+    collection = await prisma.collection.findUnique({
+      where: { id: req.params.id },
+      include: { collaborators: { select: { userId: true } } },
+    });
+  } catch (err) {
+    console.error(`[collections] POST /collections/:id/save lookup failed (id=${req.params.id}):`, err);
+    throw err;
+  }
+  if (!collection) return res.status(404).json({ error: 'Collection not found' });
+
+  const canEdit = collection.ownerId === req.userId || collection.collaborators.some((c) => c.userId === req.userId);
+  if (!canEdit) {
+    return res.status(403).json({ error: "You can't save videos to this collection" });
+  }
+
+  try {
+    const existing = await prisma.collectionItem.findUnique({
+      where: { collectionId_videoId: { collectionId: req.params.id, videoId } },
+    });
+
+    if (existing) {
+      await prisma.collectionItem.delete({
         where: { collectionId_videoId: { collectionId: req.params.id, videoId } },
       });
-
-      if (existing) {
-        await prisma.collectionVideo.delete({
-          where: { collectionId_videoId: { collectionId: req.params.id, videoId } },
-        });
-      } else {
-        await prisma.collectionVideo.create({
-          data: { collectionId: req.params.id, videoId, addedById: req.userId },
-        });
-      }
-      await prisma.collection.update({ where: { id: req.params.id }, data: { updatedAt: new Date() } });
-
-      const videoCount = await prisma.collectionVideo.count({ where: { collectionId: req.params.id } });
-      res.json({ saved: !existing, videoCount });
-    } catch (err) {
-      console.error('[collections] POST /collections/:id/save failed:', { collectionId: req.params.id, userId: req.userId, body: req.body, error: err.message, stack: err.stack });
-      res.status(500).json({ error: 'Failed to update this save' });
-    }
-  })
-);
-
-// POST /collections/:id/collaborators — owner-only. Collaborators can add
-// or remove *videos* (see /save above) but not other collaborators — that
-// stays a flat, non-recursive invite tier the owner alone controls.
-router.post(
-  '/collections/:id/collaborators',
-  requireAuth,
-  asyncHandler(async (req, res) => {
-    const { userId } = req.body;
-    if (!userId) return res.status(400).json({ error: 'userId is required' });
-
-    try {
-      const collection = await prisma.collection.findUnique({ where: { id: req.params.id }, select: { ownerId: true } });
-      if (!collection) return res.status(404).json({ error: 'Collection not found' });
-      if (collection.ownerId !== req.userId) return res.status(403).json({ error: 'Only the owner can add collaborators' });
-      if (userId === collection.ownerId) return res.status(400).json({ error: 'The owner is already on this collection' });
-
-      const target = await prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
-      if (!target) return res.status(404).json({ error: 'User not found' });
-
-      const collaborator = await prisma.collectionCollaborator.upsert({
-        where: { collectionId_userId: { collectionId: req.params.id, userId } },
-        create: { collectionId: req.params.id, userId },
-        update: {},
-        include: { user: { select: USER_SELECT } },
+      res.json({ saved: false });
+    } else {
+      await prisma.collectionItem.create({
+        data: { collectionId: req.params.id, videoId, addedById: req.userId },
       });
-
-      res.status(201).json({ ...collaborator.user, addedAt: collaborator.addedAt });
-    } catch (err) {
-      console.error('[collections] POST /collections/:id/collaborators failed:', { collectionId: req.params.id, userId: req.userId, body: req.body, error: err.message, stack: err.stack });
-      res.status(500).json({ error: 'Failed to add collaborator' });
+      res.json({ saved: true });
     }
-  })
-);
+  } catch (err) {
+    console.error(`[collections] POST /collections/:id/save failed (id=${req.params.id}, videoId=${videoId}, userId=${req.userId}):`, err);
+    throw err;
+  }
+}));
 
-router.delete(
-  '/collections/:id/collaborators/:userId',
-  requireAuth,
-  asyncHandler(async (req, res) => {
-    try {
-      const collection = await prisma.collection.findUnique({ where: { id: req.params.id }, select: { ownerId: true } });
-      if (!collection) return res.status(404).json({ error: 'Collection not found' });
-      // Owner can remove anyone; a collaborator may remove only themselves
-      // (leave), matching the "co-curators can add/remove videos" spec —
-      // never other people's membership.
-      const isOwner = collection.ownerId === req.userId;
-      const isSelf = req.params.userId === req.userId;
-      if (!isOwner && !isSelf) return res.status(403).json({ error: "You don't have permission to remove this collaborator" });
+router.post('/collections/:id/collaborators', requireAuth, asyncHandler(async (req, res) => {
+  const { userId, username } = req.body;
+  if (!userId && !username) return res.status(400).json({ error: 'userId or username is required' });
 
-      await prisma.collectionCollaborator.deleteMany({
-        where: { collectionId: req.params.id, userId: req.params.userId },
-      });
-      res.json({ ok: true });
-    } catch (err) {
-      console.error('[collections] DELETE /collections/:id/collaborators/:userId failed:', { collectionId: req.params.id, userId: req.userId, error: err.message, stack: err.stack });
-      res.status(500).json({ error: 'Failed to remove collaborator' });
-    }
-  })
-);
+  let collection;
+  try {
+    collection = await prisma.collection.findUnique({ where: { id: req.params.id } });
+  } catch (err) {
+    console.error(`[collections] POST /collections/:id/collaborators lookup failed (id=${req.params.id}):`, err);
+    throw err;
+  }
+  if (!collection) return res.status(404).json({ error: 'Collection not found' });
+  if (collection.ownerId !== req.userId) {
+    return res.status(403).json({ error: 'Only the owner can add collaborators' });
+  }
+
+  let targetUser;
+  try {
+    targetUser = userId
+      ? await prisma.user.findUnique({ where: { id: userId }, select: USER_SELECT })
+      : await prisma.user.findUnique({ where: { username }, select: USER_SELECT });
+  } catch (err) {
+    console.error(`[collections] POST /collections/:id/collaborators user lookup failed (id=${req.params.id}):`, err);
+    throw err;
+  }
+  if (!targetUser) return res.status(404).json({ error: 'User not found' });
+  if (targetUser.id === collection.ownerId) {
+    return res.status(400).json({ error: 'The owner is already part of this collection' });
+  }
+
+  try {
+    await prisma.collectionCollaborator.upsert({
+      where: { collectionId_userId: { collectionId: req.params.id, userId: targetUser.id } },
+      update: {},
+      create: { collectionId: req.params.id, userId: targetUser.id },
+    });
+  } catch (err) {
+    console.error(`[collections] POST /collections/:id/collaborators upsert failed (id=${req.params.id}, targetUserId=${targetUser.id}):`, err);
+    throw err;
+  }
+
+  res.status(201).json(targetUser);
+}));
+
+router.delete('/collections/:id/collaborators/:userId', requireAuth, asyncHandler(async (req, res) => {
+  let collection;
+  try {
+    collection = await prisma.collection.findUnique({ where: { id: req.params.id } });
+  } catch (err) {
+    console.error(`[collections] DELETE /collections/:id/collaborators/:userId lookup failed (id=${req.params.id}):`, err);
+    throw err;
+  }
+  if (!collection) return res.status(404).json({ error: 'Collection not found' });
+  // The owner can remove anyone; a collaborator can only remove themself
+  // (leave), matching the "co-curator, not co-owner" model — see the
+  // CollectionCollaborator comment in schema.prisma.
+  if (collection.ownerId !== req.userId && req.userId !== req.params.userId) {
+    return res.status(403).json({ error: "You can't remove that collaborator" });
+  }
+
+  try {
+    await prisma.collectionCollaborator.delete({
+      where: { collectionId_userId: { collectionId: req.params.id, userId: req.params.userId } },
+    });
+  } catch (err) {
+    console.error(`[collections] DELETE /collections/:id/collaborators/:userId failed (id=${req.params.id}, targetUserId=${req.params.userId}):`, err);
+    throw err;
+  }
+
+  res.json({ ok: true });
+}));
 
 export default router;
