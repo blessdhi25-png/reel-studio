@@ -1,13 +1,13 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, use } from 'react';
 import { useRouter } from 'next/navigation';
-import { api } from '@/lib/api';
-import { getSocket } from '@/lib/socket';
-import { useCameraDevices } from '@/lib/useCameraDevices';
-import CameraDeviceSelect from '@/components/CameraDeviceSelect';
-import { LoadingSpinner } from '@/components/LoadingScreen';
-import TipModal from '@/components/TipModal';
+import { api } from '../../../lib/api';
+import { getSocket } from '../../../lib/socket';
+import { useCameraDevices } from '../../../lib/useCameraDevices';
+import CameraDeviceSelect from '../../../components/CameraDeviceSelect';
+import { LoadingSpinner } from '../../../components/LoadingScreen';
+import TipModal from '../../../components/TipModal';
 
 const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
 const QUICK_REACTIONS = ['❤️', '🔥', '😂', '👏', '🎉', '😮'];
@@ -18,7 +18,8 @@ function formatViewers(n) {
 }
 
 export default function LiveRoomPage({ params }) {
-  const { id: streamId } = params;
+  const resolvedParams = use(params);
+  const streamId = resolvedParams.id;
   const router = useRouter();
 
   const [stream, setStream] = useState(null);
@@ -103,8 +104,6 @@ export default function LiveRoomPage({ params }) {
       media = await navigator.mediaDevices.getUserMedia(buildConstraints({ audio: true }));
     } catch {
       setError('Camera/mic access is required to join with video. You can still watch and chat below.');
-      // Fall through — a viewer without camera access can still join the
-      // room for chat, reactions, and tipping; they just won't publish.
     }
 
     if (media) {
@@ -147,7 +146,7 @@ export default function LiveRoomPage({ params }) {
         try {
           await pc.addIceCandidate(signal.candidate);
         } catch {
-          // ICE candidates can arrive before remote description is set; safe to ignore occasional failures.
+          // ICE candidates can arrive before remote description is set; safe to ignore.
         }
       }
     });
@@ -276,7 +275,6 @@ export default function LiveRoomPage({ params }) {
       <div className="absolute inset-0">
         {joined ? (
           <div className="w-full h-full grid grid-cols-1">
-            {/* Host / self tile fills the backdrop; guests ride in PiP below */}
             <div className="relative w-full h-full bg-zinc-900">
               {localStreamRef.current ? (
                 <video
@@ -309,7 +307,6 @@ export default function LiveRoomPage({ params }) {
             )}
           </div>
         )}
-        {/* Dark gradient so overlays stay legible over any video content */}
         <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-black/70 pointer-events-none" />
       </div>
 
@@ -342,7 +339,7 @@ export default function LiveRoomPage({ params }) {
         }
       `}</style>
 
-      {/* ---------- Top bar: back, LIVE badge, viewers, title, end button ---------- */}
+      {/* ---------- Top bar ---------- */}
       <div className="relative z-20 flex items-start justify-between gap-3 px-4 pt-4">
         <div className="flex items-center gap-2 flex-wrap">
           <button
@@ -380,7 +377,7 @@ export default function LiveRoomPage({ params }) {
         </div>
       </div>
 
-      {/* ---------- Pinned Q&A / announcement banner ---------- */}
+      {/* ---------- Pinned message banner ---------- */}
       {pinned && (
         <div className="relative z-20 px-4 mt-3">
           <div className="bg-amber-500/10 backdrop-blur-md border border-amber-500/40 rounded-2xl px-4 py-2.5 flex items-start gap-2 max-w-lg">
@@ -418,7 +415,7 @@ export default function LiveRoomPage({ params }) {
         </div>
       )}
 
-      {/* ---------- Join CTA (pre-join state) ---------- */}
+      {/* ---------- Join CTA ---------- */}
       {!joined && !hasEnded && (
         <div className="relative z-20 px-4 pb-6 flex flex-col items-center gap-3">
           {devices.length > 1 && (
@@ -439,9 +436,8 @@ export default function LiveRoomPage({ params }) {
         </div>
       )}
 
-      {/* ---------- Bottom bar: chat ticker (left) + tip/reaction/mic controls (right) ---------- */}
+      {/* ---------- Bottom bar ---------- */}
       <div className="relative z-20 flex items-end justify-between gap-3 p-4">
-        {/* Floating bottom-left live chat ticker */}
         <div className="w-full max-w-sm bg-zinc-900/95 backdrop-blur-xl border border-zinc-800 rounded-2xl flex flex-col overflow-hidden shadow-2xl">
           <div ref={chatScrollRef} className="max-h-52 overflow-y-auto px-3.5 pt-3 pb-2 space-y-1.5">
             {chatMessages.length === 0 && (
@@ -505,7 +501,7 @@ export default function LiveRoomPage({ params }) {
           )}
         </div>
 
-        {/* Right-side action rail */}
+        {/* Right action controls */}
         <div className="flex flex-col items-center gap-3 shrink-0 pb-1">
           {!isHost && !hasEnded && (
             <button
