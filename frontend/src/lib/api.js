@@ -339,6 +339,10 @@ adminGetStats: () => request('/admin/stats'),
 
   // Studio (analytics) & Promote (boost)
   getStudioOverview: () => request('/studio/overview'),
+  // request() already attaches the Authorization bearer token from
+  // localStorage on every call (see request() above) — no separate
+  // token-handling needed here.
+  getCreatorAnalytics: () => request('/analytics/overview'),
   getBoostTiers: () => request('/boost/tiers'),
   boostVideoCheckout: (id, tier) =>
     request(`/videos/${id}/boost/checkout`, { method: 'POST', body: { tier } }),
