@@ -588,3 +588,38 @@ model StoryInteraction {
 
   @@unique([storyId, userId, type])
 }
+
+model UserInterest {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tag       String
+  weight    Float    @default(1.0) // Increases on views, likes, shares
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, tag])
+}
+
+model WatchLog {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  videoId      String
+  video        Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  watchSeconds Float
+  completed    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+}
+
+model Comment {
+  id        String    @id @default(uuid())
+  content   String
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  videoId   String
+  video     Video     @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  parentId  String?
+  parent    Comment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies   Comment[] @relation("CommentReplies")
+  createdAt DateTime  @default(now())
+}
