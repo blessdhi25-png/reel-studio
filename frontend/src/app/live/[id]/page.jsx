@@ -2,12 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { api } from '@/lib/api';
-import { useCameraDevices } from '@/lib/useCameraDevices';
-import CameraDeviceSelect from '@/components/CameraDeviceSelect';
-//import { api } from '../../lib/api';
-//import { useCameraDevices } from '../../lib/useCameraDevices';
-//import CameraDeviceSelect from '../../components/CameraDeviceSelect';
+import { api } from '../../lib/api';
+import { useCameraDevices } from '../../lib/useCameraDevices';
+import CameraDeviceSelect from '../../components/CameraDeviceSelect';
 
 const CATEGORIES = ['All', 'Gaming', 'Music', 'Chatting', 'Tech'];
 
