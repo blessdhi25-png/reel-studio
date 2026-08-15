@@ -4,16 +4,16 @@ export const dynamic = 'force-dynamic';
 
 import { Suspense, useEffect, useRef, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { api } from '@/lib/api';
-import { getSocket } from '@/lib/socket';
-import VideoCard from '@/components/VideoCard';
-import DesktopRail from '@/components/DesktopRail';
-import SprocketRail from '@/components/SprocketRail';
-import { loadTuningWeights } from '@/components/TuneFeedPanel';
-import FeedFiltersDrawer from '@/components/FeedFiltersDrawer';
-import Logo from '@/components/Logo';
-import StoriesBar from '@/components/StoriesBar';
-import TopHeaderNav from '@/components/TopHeaderNav';
+import { api } from '../lib/api';
+import { getSocket } from '../lib/socket';
+import VideoCard from '../components/VideoCard';
+import DesktopRail from '../components/DesktopRail';
+import SprocketRail from '../components/SprocketRail';
+import { loadTuningWeights } from '../components/TuneFeedPanel';
+import FeedFiltersDrawer from '../components/FeedFiltersDrawer';
+import Logo from '../components/Logo';
+import StoriesBar from '../components/StoriesBar';
+import TopHeaderNav from '../components/TopHeaderNav';
 
 const FILTERS = [
   { label: 'All', value: null },
@@ -74,6 +74,10 @@ export default function FeedPage() {
   // Mobile TopHeaderNav Tab Handler
   function handleMobileTabSelect(tabLabel) {
     setActiveTab(tabLabel);
+    // Case-insensitive match against FILTERS by label — this is how tabs
+    // shared with the desktop nav (All, Shorts, LIVE, Communities,
+    // Collections) get routed/filtered. Keep TopHeaderNav's NAV_TABS
+    // labels in sync with FILTERS' labels or this silently no-ops.
     const match = FILTERS.find((f) => f.label.toLowerCase() === tabLabel.toLowerCase());
     if (match) {
       handleFilterClick(match);
@@ -81,6 +85,11 @@ export default function FeedPage() {
       setFilter('short');
     } else if (tabLabel === 'Following') {
       setFilter('following');
+    } else if (tabLabel === 'DMs') {
+      // DMs has no FILTERS entry (it's a standalone header link on
+      // desktop, not part of the tab/filter row), so it needs its own
+      // explicit route here.
+      router.push('/messages');
     } else {
       setFilter(null);
     }
@@ -230,6 +239,13 @@ export default function FeedPage() {
     if (!el) return;
     el.scrollTo({ top: clamped * el.clientHeight, behavior: 'smooth' });
   }
+
+  // Video currently centered in the feed — feeds the desktop side rail
+  // (comments/details) and its seek callback below. This was previously
+  // referenced in the JSX without ever being declared, which threw a
+  // ReferenceError on every render and crashed the whole page (not just
+  // the desktop rail) — including the nav.
+  const activeVideo = videos[activeIndex] || null;
 
   // Desktop Header
   const desktopHeader = (
