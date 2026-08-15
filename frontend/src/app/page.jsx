@@ -2,10 +2,6 @@
 
 export const dynamic = 'force-dynamic';
 
-export default function FeedPage() {
-  const [activeTab, setActiveTab] = useState('All');
-  const [isMuted, setIsMuted] = useState(false);
-
 import { Suspense, useEffect, useRef, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
@@ -17,13 +13,9 @@ import { loadTuningWeights } from '@/components/TuneFeedPanel';
 import FeedFiltersDrawer from '@/components/FeedFiltersDrawer';
 import Logo from '@/components/Logo';
 import StoriesBar from '@/components/StoriesBar';
-//
-import { useState } from 'react';
 import TopHeaderNav from '@/components/TopHeaderNav';
 
-
-// Top feed filter tabs — All / Shorts / Features filter the feed in place.
-// LIVE, Communities, and Collections navigate to their dedicated routes.
+// Top feed filter tabs
 const FILTERS = [
   { label: 'All', value: null },
   { label: 'Shorts', value: 'short' },
@@ -33,15 +25,6 @@ const FILTERS = [
   { label: 'Collections', href: '/collections' },
 ];
 
-// useSearchParams() opts the whole route out of static rendering unless a
-// Suspense boundary sits above whatever calls it — that's what was failing
-// the Vercel build ("useSearchParams() should be wrapped in a suspense
-// boundary at page '/'"). Isolating the hook into this tiny component (it
-// renders nothing — it just reads the ?circle= deep link once and hands it
-// up) means only this sliver suspends during prerender, not the entire
-// feed. Wrapping the whole page instead would work too, but would mean the
-// entire video feed waits behind a loading fallback for no reason, since
-// nothing else on the page actually depends on search params.
 function CircleParamSync({ onCircle }) {
   const searchParams = useSearchParams();
 
@@ -55,14 +38,16 @@ function CircleParamSync({ onCircle }) {
 
 export default function FeedPage() {
   const router = useRouter();
+  
+  // Custom Header & Audio states
+  const [activeTab, setActiveTab] = useState('All');
+  const [isMuted, setIsMuted] = useState(false);
+
+  // Core Feed States
   const [videos, setVideos] = useState([]);
   const [nextCursor, setNextCursor] = useState(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
-  // True only until the very first getFeed() call settles — distinguishes
-  // "haven't heard back yet" from "heard back, and there really are zero
-  // videos," so the empty-state message doesn't flash for a moment on
-  // every load before the real feed arrives.
   const [initialLoading, setInitialLoading] = useState(true);
   const [filter, setFilter] = useState(null); // null = mixed, 'short', 'long'
   const [circle, setCircle] = useState(null); // null = all circles
@@ -75,6 +60,8 @@ export default function FeedPage() {
   const [activeTime, setActiveTime] = useState(0);
   const [celebration, setCelebration] = useState(null);
 
+  const [isDesktop, setIsDesktop] = useState(null);
+
   function handleFilterClick(opt) {
     if (opt.href) {
       router.push(opt.href);
@@ -82,16 +69,6 @@ export default function FeedPage() {
     }
     setFilter(opt.value);
   }
-
-  // null until the first effect runs on the client — we deliberately render
-  // neither layout until we know the viewport. Rendering both (one merely
-  // CSS-hidden) used to mount two <video> elements for the same clip at
-  // once; the hidden one kept autoplaying — and playing audio — in the
-  // background, which is why pausing the visible player didn't actually
-  // silence anything, and why the mute toggle looked broken (it only ever
-  // muted whichever copy you could see). Only ever mounting one instance
-  // per video fixes both.
-  const [isDesktop, setIsDesktop] = useState(null);
 
   useEffect(() => {
     const mq = window.matchMedia('(min-width: 768px)');
@@ -105,14 +82,8 @@ export default function FeedPage() {
     setTuningWeights(loadTuningWeights());
   }, []);
 
-  // Deep link from the Topic Circles page (/?circle=name) — applied once on
-  // load via <CircleParamSync>, rendered further down, so a direct link
-  // still lands filtered instead of on "All circles".
-
   const mobileContainerRef = useRef(null);
   const desktopContainerRef = useRef(null);
-  // Keyed by video id (not array index) so refs stay correct even if the
-  // feed list is refetched/reordered underneath an in-progress interaction.
   const videoCardRefs = useRef({});
   const desktopRailRef = useRef(null);
 
@@ -130,9 +101,6 @@ export default function FeedPage() {
     const onNew = () => setUnreadCount((c) => c + 1);
     socket.on('notification:new', onNew);
 
-    // Fires the moment the Stripe webhook confirms a tip paid to *this*
-    // logged-in user — real-time, not just "eventually shows up in the
-    // notification bell." Drives the celebration banner below.
     const onTip = (payload) => {
       setCelebration(payload);
       setTimeout(() => setCelebration((c) => (c === payload ? null : c)), 4000);
@@ -155,19 +123,6 @@ export default function FeedPage() {
       .getFeed(filter, undefined, tuningWeights, circle)
       .then((data) => {
         let videos = data.videos;
-        // See app/upload/page.jsx — after a successful upload it stashes a
-        // lightweight optimistic entry here so the clip shows up right away
-        // instead of waiting on a network round trip. Handling here has to
-        // avoid three bugs the naive version had:
-        //   1. Removing it from sessionStorage on the very first fetch
-        //      regardless of outcome — that meant switching tabs (which
-        //      re-runs this effect) right after upload lost it for good
-        //      even though it hadn't actually shown up under that tab yet.
-        //   2. Not checking videoType — it would get prepended under every
-        //      tab, including ones it doesn't belong in.
-        //   3. No expiry — a stash that's never superseded (e.g. the user
-        //      never returns to a matching tab) would sit in sessionStorage
-        //      indefinitely.
         const PENDING_TTL_MS = 5 * 60 * 1000;
         const pendingRaw = typeof window !== 'undefined' ? sessionStorage.getItem('pendingUpload') : null;
         if (pendingRaw) {
@@ -176,37 +131,21 @@ export default function FeedPage() {
             const alreadyInResults = videos.some((v) => v.id === pending.id);
             const expired = !pending.postedAt || Date.now() - pending.postedAt > PENDING_TTL_MS;
             if (alreadyInResults || expired) {
-              // Superseded by the real (now-published) video, or just old —
-              // either way there's nothing left for the stash to do.
               sessionStorage.removeItem('pendingUpload');
             } else if (filter === null || filter === pending.videoType) {
-              // Matches the tab currently being viewed — show it, but leave
-              // the stash in place until a real fetch confirms it's there,
-              // so switching tabs and back doesn't lose it.
               videos = [pending, ...videos];
             }
-            // else: doesn't match this tab — leave it stashed, untouched,
-            // for whichever tab it does belong to.
           } catch {
             sessionStorage.removeItem('pendingUpload');
           }
         }
         setVideos(videos);
-        // The initial batch's own cursor — a fresh filter/circle/weights
-        // change is a brand-new query, so this always resets rather than
-        // carrying over whatever cursor the previous query was on.
         setNextCursor(data.nextCursor || null);
       })
       .catch(() => {})
       .finally(() => setInitialLoading(false));
   }, [filter, tuningWeights, circle]);
 
-  // Infinite scroll: previously the feed fetched exactly one batch and
-  // dead-ended — there was no code path that ever requested a second page,
-  // even though the backend (GET /videos/feed) already returns a real
-  // cursor for this. Fetches the next batch once the viewer is within 3
-  // cards of the end, using that same cursor, and appends rather than
-  // replacing so scroll position isn't disturbed.
   useEffect(() => {
     if (!nextCursor || loadingMore) return;
     if (activeIndex < videos.length - 3) return;
@@ -222,18 +161,10 @@ export default function FeedPage() {
         });
         setNextCursor(data.nextCursor || null);
       })
-      .catch(() => {
-        // Leave nextCursor as-is so scrolling further re-triggers a retry,
-        // rather than permanently giving up on this query after one
-        // transient network failure.
-      })
+      .catch(() => {})
       .finally(() => setLoadingMore(false));
   }, [activeIndex, nextCursor, loadingMore, videos.length, filter, tuningWeights, circle]);
 
-  // Single source of truth for follow state. VideoCard's own avatar badge and
-  // DesktopRail's Follow button both show the same creator when that
-  // creator's video is active — without this, following from one doesn't
-  // reflect in the other until the next feed reload.
   async function handleToggleFollow(userId) {
     if (!localStorage.getItem('token')) {
       window.location.href = '/login';
@@ -254,18 +185,10 @@ export default function FeedPage() {
     }
   }
 
-  // Feed-level counterpart to VideoCard's delete flow: the video record and
-  // Cloudinary assets are already gone server-side by the time this fires
-  // (see confirmDelete in VideoCard.jsx) — this just drops it from the
-  // array that's actually driving the feed, so it disappears from view
-  // immediately without needing a full feed refetch.
   function handleVideoDeleted(videoId) {
     setVideos((prev) => prev.filter((v) => v.id !== videoId));
   }
 
-  // Active-index tracking — mobile and desktop each scroll their own
-  // container (only one is ever mounted per breakpoint at a time), both
-  // feeding the same activeIndex state.
   useEffect(() => {
     const mobileEl = mobileContainerRef.current;
     const desktopEl = desktopContainerRef.current;
@@ -292,8 +215,6 @@ export default function FeedPage() {
     el.scrollTo({ top: clamped * el.clientHeight, behavior: 'smooth' });
   }
 
-  // Power-user keyboard controls. Ignored while typing in an input/textarea
-  // so shortcuts don't fight with comment composers, search boxes, etc.
   useEffect(() => {
     function onKeyDown(e) {
       const tag = document.activeElement?.tagName;
@@ -349,76 +270,7 @@ export default function FeedPage() {
 
   const activeVideo = videos[activeIndex];
 
-  // Single header bar, single row — circles and feed-tuning used to render
-  // openly on the canvas below this (and, before that, as two independently
-  // `fixed` pieces that overlapped each other and the video's own overlay
-  // badges). Both now live in FeedFiltersDrawer, opened from the ⋯ button
-  // here, so the default view is just the tabs and two icons.
-  const mobileTopNav = (
-    <div
-      className="fixed top-0 inset-x-0 z-20 px-4 pb-2"
-      style={{ paddingTop: 'max(1.25rem, calc(env(safe-area-inset-top) + 0.75rem))' }}
-    >
-      <div className="flex items-center justify-between gap-4">
-        <a href="/" className="shrink-0" aria-label="Reel Studio home">
-          <Logo size="sm" showText={false} />
-        </a>
-        <div className="flex-1 min-w-0 flex overflow-x-auto no-scrollbar scroll-smooth">
-          <div className="flex gap-1 bg-ink2/80 rounded-sprocket p-1 font-mono text-xs uppercase tracking-widest mx-auto">
-            {FILTERS.map((opt) => (
-              <button
-                key={opt.label}
-                onClick={() => handleFilterClick(opt)}
-                className={`px-3 py-1 rounded-sprocket shrink-0 whitespace-nowrap ${
-                  !opt.href && filter === opt.value ? 'bg-reel text-ink' : 'text-smoke'
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="shrink-0 flex items-center gap-3 font-mono text-[11px] uppercase tracking-widest overflow-x-auto no-scrollbar scroll-smooth">
-          {user ? (
-            <>
-              {(user.role === 'admin' || user.role === 'moderator') && (
-                <a href="/admin" className="shrink-0 whitespace-nowrap text-yellow-400">Admin</a>
-              )}
-              <a href="/live" className="shrink-0 whitespace-nowrap text-smoke">Live</a>
-              <a href="/messages" className="relative shrink-0 whitespace-nowrap text-smoke">
-                DMs
-                {unreadCount > 0 && (
-                  <span className="absolute -top-2 -right-3 bg-reel text-ink rounded-full w-4 h-4 flex items-center justify-center text-[9px]">
-                    {unreadCount > 9 ? '9+' : unreadCount}
-                  </span>
-                )}
-              </a>
-            </>
-          ) : (
-            <a href="/login" className="shrink-0 whitespace-nowrap text-smoke">Log in</a>
-          )}
-          <a href="/search" aria-label="Search" className="shrink-0 text-bone">
-            <SearchIcon />
-          </a>
-          <button
-            onClick={() => setFiltersOpen(true)}
-            aria-label="Filters and feed tuning"
-            className="relative shrink-0 text-bone"
-          >
-            <DotsIcon />
-            {circle !== null && (
-              <span className="absolute -top-1.5 -right-1.5 w-2 h-2 rounded-full bg-reel" />
-            )}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-
-  // Desktop-only header bar — replaces the floating pill nav with a single
-  // balanced strip: identity on the left, feed filters centered, secondary
-  // links on the right.
+  // Desktop Header
   const desktopHeader = (
     <header className="hidden md:flex h-16 items-center justify-between gap-6 px-6 border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-md shrink-0 z-20">
       <div className="flex items-center gap-4 min-w-0 flex-1">
@@ -494,66 +346,37 @@ export default function FeedPage() {
     </header>
   );
 
-// src/app/page.jsx
-
-  return (
-    <main className="relative w-full h-screen bg-black overflow-hidden">
-      
-      {/* 📍 EXACT POSITION 1: Top Navigation Header Overlay */}
-      <TopHeaderNav
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        isMuted={isMuted}
-        onMuteToggle={() => setIsMuted((prev) => !prev)}
-        onSearchClick={() => router.push('/search')}
-      />
-
-      {/* 📍 EXACT POSITION 2: Story Avatar Container (Adjust top position to prevent overlap) */}
-      <div className="fixed top-16 left-4 z-40 flex items-center gap-2 pointer-events-auto">
-        {/* Your Story Bubble Component */}
-      </div>
-
-      {/* 📍 Video Feed Reel Stack */}
-      <div className="w-full h-full">
-        {/* Reel Video Feed */}
-      </div>
-
-    </main>
-  );
-}
-  
   return (
     <main className="relative h-dvh w-full overflow-hidden bg-ink flex flex-col">
-      {/* Deep-link param read isolated here + Suspense-wrapped: satisfies
-          Next.js's requirement that useSearchParams() have a Suspense
-          boundary above it during static prerendering, without suspending
-          the rest of the page (this renders nothing visible either way). */}
       <Suspense fallback={null}>
         <CircleParamSync onCircle={setCircle} />
       </Suspense>
 
+      {/* Desktop Header Navigation */}
       {!focusMode && isDesktop && (
         <>
           {desktopHeader}
-          {/* Desktop feed is normal (non-fixed) flow, so StoriesBar just
-              sits in-flow below the header — see StoriesBar.jsx's own
-              usage note for why mobile (below) needs a different approach. */}
           <StoriesBar className="border-b border-zinc-800 bg-zinc-950/80" />
         </>
       )}
+
+      {/* Mobile Top Overlay Header Navigation */}
       {!focusMode && isDesktop === false && (
         <>
-          {mobileTopNav}
-          {/* Overlaid just below the (short, fixed) mobile top nav — not
-              inside the snap-scroll feed container below, so it doesn't
-              become its own swipeable "page" in that container. */}
-          <div className="fixed inset-x-0 z-20" style={{ top: 'calc(env(safe-area-inset-top) + 3.25rem)' }}>
+          <TopHeaderNav
+            activeTab={activeTab}
+            setActiveTab={setActiveTab}
+            isMuted={isMuted}
+            onMuteToggle={() => setIsMuted((prev) => !prev)}
+            onSearchClick={() => router.push('/search')}
+          />
+          <div className="fixed inset-x-0 z-20" style={{ top: 'calc(env(safe-area-inset-top) + 3.75rem)' }}>
             <StoriesBar />
           </div>
         </>
       )}
 
-      {/* ── Mobile: full-bleed vertical swipe feed ── */}
+      {/* Mobile Feed Section */}
       {isDesktop === false && (
         <div className="h-full w-full flex-1 min-h-0">
           <SprocketRail count={videos.length} activeIndex={activeIndex} />
@@ -593,7 +416,7 @@ export default function FeedPage() {
         </div>
       )}
 
-      {/* ── Desktop: dual-pane workspace — glass video canvas + glass rail ── */}
+      {/* Desktop Workspace Section */}
       {isDesktop === true && (
         <div className="flex-1 min-h-0 flex gap-4 p-4">
           <div className="flex-1 flex items-center justify-center min-w-0">
@@ -649,10 +472,6 @@ export default function FeedPage() {
         </div>
       )}
 
-      {/* Tip celebration banner — real-time via the 'tip:received' socket
-          event, fired the instant the Stripe webhook confirms payment.
-          Sits above both layouts so it works whether the recipient is
-          browsing on mobile or desktop. */}
       {celebration && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-30 animate-[fadeIn_0.2s_ease-out]">
           <div className="bg-reel text-ink font-body font-semibold px-5 py-3 rounded-sprocket shadow-lg flex items-center gap-2">
@@ -675,7 +494,6 @@ export default function FeedPage() {
         onWeightsChange={setTuningWeights}
       />
 
-      {/* Keyboard shortcut legend — desktop only, tucked out of the way */}
       {!focusMode && (
         <div className="hidden md:block fixed bottom-4 left-4 z-20 font-mono text-[10px] text-smoke/50 uppercase tracking-widest">
           J/K scroll · L like · C comment · F focus
@@ -685,9 +503,6 @@ export default function FeedPage() {
   );
 }
 
-// Shown at the end of the feed while the next infinite-scroll batch is
-// in flight — matches VideoCard's full-bleed layout so it doesn't cause a
-// layout jump when the real card swaps in.
 function FeedSkeletonCard() {
   return (
     <div className="relative h-full w-full flex items-center justify-center bg-ink">
