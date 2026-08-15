@@ -8,10 +8,10 @@ import CameraDeviceSelect from '@/components/CameraDeviceSelect';
 
 const CATEGORIES = ['All', 'Gaming', 'Music', 'Chatting', 'Tech'];
 
-// The backend doesn't persist a stream category yet, so we derive a stable
-function formatViewers(n) {
-  if (n >= 1000) return `${(n / 1000).toFixed(n % 1000 === 0 ? 0 : 1)}K`;
-  return `${n}`;
+function formatViewers(n = 0) {
+  const num = Number(n) || 0;
+  if (num >= 1000) return `${(num / 1000).toFixed(num % 1000 === 0 ? 0 : 1)}K`;
+  return `${num}`;
 }
 
 export default function LiveBrowsePage() {
@@ -24,15 +24,21 @@ export default function LiveBrowsePage() {
   const [currentUser, setCurrentUser] = useState(null);
 
   useEffect(() => {
-    setCurrentUser(JSON.parse(localStorage.getItem('user') || 'null'));
+    try {
+      const userRaw = localStorage.getItem('user');
+      if (userRaw) setCurrentUser(JSON.parse(userRaw));
+    } catch {
+      // Handle parse error silently
+    }
   }, []);
 
   useEffect(() => {
     setLoading(true);
+    setError(null);
     api
       .getLiveStreams(activeCategory)
-      .then(setStreams)
-      .catch((err) => setError(err.message))
+      .then((res) => setStreams(Array.isArray(res) ? res : []))
+      .catch((err) => setError(err?.message || 'Failed to fetch streams'))
       .finally(() => setLoading(false));
   }, [activeCategory]);
 
@@ -44,7 +50,7 @@ export default function LiveBrowsePage() {
   const [featured, ...rest] = enriched;
 
   function openGoLive() {
-    if (typeof window === 'undefined' || !window.localStorage.getItem('token')) {
+    if (typeof window === 'undefined' || !localStorage.getItem('token')) {
       router.push('/login');
       return;
     }
@@ -129,7 +135,7 @@ function FeaturedBroadcast({ stream, currentUser, router }) {
 
   async function toggleFollow(e) {
     e.stopPropagation();
-    if (typeof window === 'undefined' || !window.localStorage.getItem('token')) {
+    if (typeof window === 'undefined' || !localStorage.getItem('token')) {
       router.push('/login');
       return;
     }
@@ -143,7 +149,7 @@ function FeaturedBroadcast({ stream, currentUser, router }) {
         setFollowing(true);
       }
     } catch {
-      // ignore — non-critical UI action
+      // Non-critical action fallback
     } finally {
       setFollowBusy(false);
     }
@@ -166,7 +172,6 @@ function FeaturedBroadcast({ stream, currentUser, router }) {
         )}
       </div>
 
-      {/* Overlays */}
       <div className="absolute top-4 left-4 flex items-center gap-2">
         <span className="bg-red-600/90 text-white text-xs font-bold px-3 py-1 rounded-full backdrop-blur-md flex items-center gap-1.5">
           <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" /> LIVE
@@ -178,7 +183,6 @@ function FeaturedBroadcast({ stream, currentUser, router }) {
         </span>
       </div>
 
-      {/* Bottom Creator Bar */}
       <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent p-5 md:p-6">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
@@ -307,35 +311,50 @@ function GoLiveModal({ onClose, onStarted }) {
     selectedDeviceId,
     setSelectedDeviceId,
     builtInDeviceId,
-    permissionError,
     ready,
     buildConstraints,
   } = useCameraDevices();
 
   useEffect(() => {
-    if (!ready) return; // wait for device enumeration so we open the right camera the first time
+    if (!ready) return;
     let cancelled = false;
-    async function start() {
-      streamRef.current?.getTracks().forEach((t) => t.stop());
+
+    async function startMedia() {
+      setCamError(null);
+      // Clean up existing stream tracks
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+      }
       try {
-        const stream = await navigator.mediaDevices.getUserMedia(buildConstraints({ audio: true }));
+        const constraints = buildConstraints
+          ? buildConstraints({ audio: true })
+          : { video: selectedDeviceId ? { deviceId: selectedDeviceId } : true, audio: true };
+
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        
         if (cancelled) {
           stream.getTracks().forEach((t) => t.stop());
           return;
         }
+
         streamRef.current = stream;
         if (videoRef.current) videoRef.current.srcObject = stream;
-      } catch {
-        setCamError('Camera access was denied or unavailable. You can still go live without a preview.');
+      } catch (err) {
+        if (!cancelled) {
+          setCamError('Camera access was denied or unavailable. You can still go live without a preview.');
+        }
       }
     }
-    start();
+
+    startMedia();
+
     return () => {
       cancelled = true;
-      streamRef.current?.getTracks().forEach((t) => t.stop());
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+      }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, selectedDeviceId]);
+  }, [ready, selectedDeviceId, buildConstraints]);
 
   useEffect(() => {
     streamRef.current?.getVideoTracks().forEach((t) => (t.enabled = cameraOn));
@@ -359,7 +378,7 @@ function GoLiveModal({ onClose, onStarted }) {
       streamRef.current?.getTracks().forEach((t) => t.stop());
       onStarted(stream);
     } catch (err) {
-      setError(err.message);
+      setError(err?.message || 'Failed to start stream');
     } finally {
       setStarting(false);
     }
@@ -417,7 +436,7 @@ function GoLiveModal({ onClose, onStarted }) {
             </button>
           </div>
 
-          {devices.length > 1 && (
+          {devices?.length > 1 && (
             <div className="absolute top-3 right-3">
               <CameraDeviceSelect
                 devices={devices}
