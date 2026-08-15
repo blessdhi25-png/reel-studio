@@ -2,7 +2,6 @@
 
 export const dynamic = 'force-dynamic';
 
-// ✅ ALL imports must be at the very top
 import { Suspense, useEffect, useRef, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
@@ -38,26 +37,53 @@ function CircleParamSync({ onCircle }) {
 
 export default function FeedPage() {
   const router = useRouter();
-  
-  // ✅ Move state hooks inside the component body
+
+  // Audio & Header state
   const [activeTab, setActiveTab] = useState('All');
-  const [isMuted, setIsMuted] = useState(false);
+  const [isMuted, setIsMuted] = useState(true);
 
   // Core Feed States
   const [videos, setVideos] = useState([]);
   const [nextCursor, setNextCursor] = useState(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [filter, setFilter] = useState(null); // null = mixed, 'short', 'long'
+  const [circle, setCircle] = useState(null);
+  const [circles, setCircles] = useState([]);
+  const [user, setUser] = useState(null);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [focusMode, setFocusMode] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [tuningWeights, setTuningWeights] = useState({ nicheWeight: 50, freshWeight: 50, localWeight: 50 });
+  const [activeTime, setActiveTime] = useState(0);
+  const [celebration, setCelebration] = useState(null);
 
-  // ... rest of your FeedPage component code ...
-}
+  const [isDesktop, setIsDesktop] = useState(null);
 
+  // Unified click handler for filter tabs
   function handleFilterClick(opt) {
     if (opt.href) {
       router.push(opt.href);
       return;
     }
+    setActiveTab(opt.label);
     setFilter(opt.value);
+  }
+
+  // Mobile TopHeaderNav Tab Handler
+  function handleMobileTabSelect(tabLabel) {
+    setActiveTab(tabLabel);
+    const match = FILTERS.find((f) => f.label.toLowerCase() === tabLabel.toLowerCase());
+    if (match) {
+      handleFilterClick(match);
+    } else if (tabLabel === 'Shorts') {
+      setFilter('short');
+    } else if (tabLabel === 'Following') {
+      setFilter('following');
+    } else {
+      setFilter(null);
+    }
   }
 
   useEffect(() => {
@@ -112,7 +138,7 @@ export default function FeedPage() {
     api
       .getFeed(filter, undefined, tuningWeights, circle)
       .then((data) => {
-        let videos = data.videos;
+        let videos = data.videos || [];
         const PENDING_TTL_MS = 5 * 60 * 1000;
         const pendingRaw = typeof window !== 'undefined' ? sessionStorage.getItem('pendingUpload') : null;
         if (pendingRaw) {
@@ -146,7 +172,7 @@ export default function FeedPage() {
       .then((data) => {
         setVideos((prev) => {
           const seen = new Set(prev.map((v) => v.id));
-          const fresh = data.videos.filter((v) => !seen.has(v.id));
+          const fresh = (data.videos || []).filter((v) => !seen.has(v.id));
           return [...prev, ...fresh];
         });
         setNextCursor(data.nextCursor || null);
@@ -205,64 +231,9 @@ export default function FeedPage() {
     el.scrollTo({ top: clamped * el.clientHeight, behavior: 'smooth' });
   }
 
-  useEffect(() => {
-    function onKeyDown(e) {
-      const tag = document.activeElement?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || document.activeElement?.isContentEditable) return;
-
-      const activeVideo = videos[activeIndex];
-      const activeCard = activeVideo && videoCardRefs.current[activeVideo.id];
-
-      switch (e.key) {
-        case 'j':
-        case 'J':
-        case 'ArrowDown':
-          e.preventDefault();
-          scrollToIndex(activeIndex + 1);
-          break;
-        case 'k':
-        case 'K':
-        case 'ArrowUp':
-          e.preventDefault();
-          scrollToIndex(activeIndex - 1);
-          break;
-        case 'l':
-        case 'L':
-          activeCard?.toggleLike();
-          break;
-        case 'c':
-        case 'C':
-          if (isDesktop) {
-            desktopRailRef.current?.focusComments();
-          } else {
-            activeCard?.openComments();
-          }
-          break;
-        case 'f':
-        case 'F': {
-          const next = !focusMode;
-          setFocusMode(next);
-          if (next && document.documentElement.requestFullscreen) {
-            document.documentElement.requestFullscreen().catch(() => {});
-          } else if (!next && document.fullscreenElement && document.exitFullscreen) {
-            document.exitFullscreen().catch(() => {});
-          }
-          break;
-        }
-        default:
-          break;
-      }
-    }
-
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [videos, activeIndex, focusMode, isDesktop]);
-
-  const activeVideo = videos[activeIndex];
-
   // Desktop Header
   const desktopHeader = (
-    <header className="hidden md:flex h-16 items-center justify-between gap-6 px-6 border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-md shrink-0 z-20">
+    <header className="hidden md:flex h-16 items-center justify-between gap-6 px-6 border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-md shrink-0 z-30 relative">
       <div className="flex items-center gap-4 min-w-0 flex-1">
         <a href="/" className="shrink-0" aria-label="Reel Studio home">
           <Logo size="sm" showText />
@@ -288,13 +259,16 @@ export default function FeedPage() {
         )}
       </div>
 
-      <div className="flex gap-1 bg-zinc-900/80 border border-zinc-800 rounded-xl p-1 font-mono text-xs uppercase tracking-widest shrink-0">
+      <div className="flex gap-1 bg-zinc-900/80 border border-zinc-800 rounded-xl p-1 font-mono text-xs uppercase tracking-widest shrink-0 z-10">
         {FILTERS.map((opt) => (
           <button
             key={opt.label}
+            type="button"
             onClick={() => handleFilterClick(opt)}
-            className={`px-3 py-1.5 rounded-lg transition-colors ${
-              !opt.href && filter === opt.value ? 'bg-amber-500 text-black font-bold' : 'text-zinc-400 hover:text-white'
+            className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer ${
+              (opt.value === filter && !opt.href) || activeTab === opt.label
+                ? 'bg-amber-500 text-black font-bold'
+                : 'text-zinc-400 hover:text-white'
             }`}
           >
             {opt.label}
@@ -303,7 +277,7 @@ export default function FeedPage() {
       </div>
 
       <div className="flex items-center justify-end gap-5 font-mono text-xs uppercase tracking-widest flex-1">
-        {user ? (
+        {user && (
           <>
             {(user.role === 'admin' || user.role === 'moderator') && (
               <a href="/admin" className="text-yellow-400 hover:text-yellow-300">Admin</a>
@@ -318,14 +292,27 @@ export default function FeedPage() {
               )}
             </a>
           </>
-        ) : null}
-        <a href="/search" aria-label="Search" className="text-zinc-300 hover:text-white">
-          <SearchIcon />
-        </a>
+        )}
         <button
+          type="button"
+          onClick={() => setIsMuted((prev) => !prev)}
+          className="text-zinc-300 hover:text-white px-2 py-1 rounded bg-zinc-800/50"
+        >
+          {isMuted ? '🔇 Mute' : '🔊 Sound'}
+        </button>
+        <button
+          type="button"
+          onClick={() => router.push('/search')}
+          aria-label="Search"
+          className="text-zinc-300 hover:text-white cursor-pointer"
+        >
+          <SearchIcon />
+        </button>
+        <button
+          type="button"
           onClick={() => setFiltersOpen(true)}
           aria-label="Filters and feed tuning"
-          className="relative text-zinc-300 hover:text-white"
+          className="relative text-zinc-300 hover:text-white cursor-pointer"
         >
           <DotsIcon />
           {circle !== null && (
@@ -342,7 +329,7 @@ export default function FeedPage() {
         <CircleParamSync onCircle={setCircle} />
       </Suspense>
 
-      {/* Desktop Header Navigation */}
+      {/* Desktop Header */}
       {!focusMode && isDesktop && (
         <>
           {desktopHeader}
@@ -350,25 +337,25 @@ export default function FeedPage() {
         </>
       )}
 
-      {/* Mobile Top Overlay Header Navigation */}
+      {/* Mobile Header Overlay */}
       {!focusMode && isDesktop === false && (
-        <>
+        <div className="fixed top-0 inset-x-0 z-40 pointer-events-auto">
           <TopHeaderNav
             activeTab={activeTab}
-            setActiveTab={setActiveTab}
+            setActiveTab={handleMobileTabSelect}
             isMuted={isMuted}
             onMuteToggle={() => setIsMuted((prev) => !prev)}
             onSearchClick={() => router.push('/search')}
           />
-          <div className="fixed inset-x-0 z-20" style={{ top: 'calc(env(safe-area-inset-top) + 3.75rem)' }}>
+          <div className="relative z-10" style={{ marginTop: '3.75rem' }}>
             <StoriesBar />
           </div>
-        </>
+        </div>
       )}
 
-      {/* Mobile Feed Section */}
+      {/* Mobile Feed */}
       {isDesktop === false && (
-        <div className="h-full w-full flex-1 min-h-0">
+        <div className="h-full w-full flex-1 min-h-0 pt-14">
           <SprocketRail count={videos.length} activeIndex={activeIndex} />
           <div
             ref={mobileContainerRef}
@@ -380,6 +367,7 @@ export default function FeedPage() {
                   ref={(el) => { videoCardRefs.current[video.id] = el; }}
                   video={video}
                   isActive={i === activeIndex}
+                  isMuted={isMuted}
                   shouldLoad={Math.abs(i - activeIndex) <= 1}
                   focusMode={focusMode}
                   onToggleFollow={handleToggleFollow}
@@ -399,14 +387,14 @@ export default function FeedPage() {
             )}
             {videos.length === 0 && !initialLoading && (
               <div className="h-dvh flex items-center justify-center">
-                <p className="font-body text-smoke">No videos yet — be the first to post.</p>
+                <p className="font-body text-smoke">No videos found for this filter.</p>
               </div>
             )}
           </div>
         </div>
       )}
 
-      {/* Desktop Workspace Section */}
+      {/* Desktop Workspace */}
       {isDesktop === true && (
         <div className="flex-1 min-h-0 flex gap-4 p-4">
           <div className="flex-1 flex items-center justify-center min-w-0">
@@ -421,6 +409,7 @@ export default function FeedPage() {
                       ref={(el) => { videoCardRefs.current[video.id] = el; }}
                       video={video}
                       isActive={i === activeIndex}
+                      isMuted={isMuted}
                       shouldLoad={Math.abs(i - activeIndex) <= 1}
                       focusMode={focusMode}
                       onToggleFollow={handleToggleFollow}
@@ -441,14 +430,14 @@ export default function FeedPage() {
                 )}
                 {videos.length === 0 && !initialLoading && (
                   <div className="h-full flex items-center justify-center">
-                    <p className="font-body text-smoke text-center px-6">No videos yet — be the first to post.</p>
+                    <p className="font-body text-smoke text-center px-6">No videos found for this filter.</p>
                   </div>
                 )}
               </div>
             </div>
           </div>
 
-          {!focusMode && (
+          {!focusMode && activeVideo && (
             <div className="w-full max-w-md shrink-0 bg-zinc-900/60 border border-zinc-800 rounded-2xl backdrop-blur-md shadow-2xl p-4 overflow-hidden">
               <DesktopRail
                 ref={desktopRailRef}
@@ -463,8 +452,8 @@ export default function FeedPage() {
       )}
 
       {celebration && (
-        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-30 animate-[fadeIn_0.2s_ease-out]">
-          <div className="bg-reel text-ink font-body font-semibold px-5 py-3 rounded-sprocket shadow-lg flex items-center gap-2">
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 animate-[fadeIn_0.2s_ease-out]">
+          <div className="bg-amber-400 text-black font-body font-semibold px-5 py-3 rounded-xl shadow-lg flex items-center gap-2">
             <span className="text-lg">🎉</span>
             <span>You just got tipped ${(celebration.amountCents / 100).toFixed(2)}!</span>
           </div>
@@ -483,12 +472,6 @@ export default function FeedPage() {
         weights={tuningWeights}
         onWeightsChange={setTuningWeights}
       />
-
-      {!focusMode && (
-        <div className="hidden md:block fixed bottom-4 left-4 z-20 font-mono text-[10px] text-smoke/50 uppercase tracking-widest">
-          J/K scroll · L like · C comment · F focus
-        </div>
-      )}
     </main>
   );
 }
@@ -501,19 +484,13 @@ function FeedSkeletonCard() {
         <div className="h-4 w-1/3 bg-zinc-800 rounded animate-pulse" />
         <div className="h-3 w-2/3 bg-zinc-800 rounded animate-pulse" />
       </div>
-      <div className="absolute right-3 bottom-24 flex flex-col items-center gap-5">
-        {[0, 1, 2].map((i) => (
-          <div key={i} className="w-11 h-11 rounded-full bg-zinc-800 animate-pulse" />
-        ))}
-      </div>
     </div>
   );
 }
 
 function SearchIcon() {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
       <circle cx="11" cy="11" r="7" />
       <path d="m21 21-4.3-4.3" />
     </svg>
