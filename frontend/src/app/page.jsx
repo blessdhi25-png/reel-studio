@@ -2,6 +2,10 @@
 
 export const dynamic = 'force-dynamic';
 
+export default function FeedPage() {
+  const [activeTab, setActiveTab] = useState('All');
+  const [isMuted, setIsMuted] = useState(false);
+
 import { Suspense, useEffect, useRef, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
@@ -13,6 +17,10 @@ import { loadTuningWeights } from '@/components/TuneFeedPanel';
 import FeedFiltersDrawer from '@/components/FeedFiltersDrawer';
 import Logo from '@/components/Logo';
 import StoriesBar from '@/components/StoriesBar';
+//
+import { useState } from 'react';
+import TopHeaderNav from '@/components/TopHeaderNav';
+
 
 // Top feed filter tabs — All / Shorts / Features filter the feed in place.
 // LIVE, Communities, and Collections navigate to their dedicated routes.
@@ -486,6 +494,34 @@ export default function FeedPage() {
     </header>
   );
 
+// src/app/page.jsx
+
+  return (
+    <main className="relative w-full h-screen bg-black overflow-hidden">
+      
+      {/* 📍 EXACT POSITION 1: Top Navigation Header Overlay */}
+      <TopHeaderNav
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        isMuted={isMuted}
+        onMuteToggle={() => setIsMuted((prev) => !prev)}
+        onSearchClick={() => router.push('/search')}
+      />
+
+      {/* 📍 EXACT POSITION 2: Story Avatar Container (Adjust top position to prevent overlap) */}
+      <div className="fixed top-16 left-4 z-40 flex items-center gap-2 pointer-events-auto">
+        {/* Your Story Bubble Component */}
+      </div>
+
+      {/* 📍 Video Feed Reel Stack */}
+      <div className="w-full h-full">
+        {/* Reel Video Feed */}
+      </div>
+
+    </main>
+  );
+}
+  
   return (
     <main className="relative h-dvh w-full overflow-hidden bg-ink flex flex-col">
       {/* Deep-link param read isolated here + Suspense-wrapped: satisfies
