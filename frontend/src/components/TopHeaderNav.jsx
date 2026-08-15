@@ -1,8 +1,10 @@
 'use client';
 
-import { useState } from 'react';
-
-const NAV_TABS = ['All', 'Shorts', 'Community', 'LIVE', 'DMs'];
+// Labels here must match `FILTERS` labels in app/page.jsx exactly
+// (case aside) for entries that should route via handleMobileTabSelect's
+// FILTERS lookup — 'DMs' is the one deliberate exception, handled as an
+// explicit case in that function since it has no FILTERS entry.
+const NAV_TABS = ['All', 'Shorts', 'Communities', 'Collections', 'LIVE', 'DMs'];
 
 export default function TopHeaderNav({ activeTab, setActiveTab, onSearchClick, onMuteToggle, isMuted }) {
   return (
@@ -10,12 +12,14 @@ export default function TopHeaderNav({ activeTab, setActiveTab, onSearchClick, o
       
       {/* 1. Left Action: App Logo or LIVE Button */}
       <div className="flex items-center shrink-0 pointer-events-auto">
-        <button className="flex items-center gap-1.5 text-white/90 hover:text-white font-bold text-xs bg-black/30 backdrop-blur-md px-2.5 py-1.5 rounded-lg border border-white/10 transition-all active:scale-95">
+        <button
+          onClick={() => setActiveTab('LIVE')}
+          className="flex items-center gap-1.5 text-white/90 hover:text-white font-bold text-xs bg-black/30 backdrop-blur-md px-2.5 py-1.5 rounded-lg border border-white/10 transition-all active:scale-95"
+        >
           <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
           <span className="tracking-wide uppercase text-[11px]">LIVE</span>
         </button>
       </div>
-
       {/* 2. Center: TikTok-Style Navigation Tabs */}
       <nav className="flex-1 max-w-[70%] mx-2 overflow-x-auto no-scrollbar pointer-events-auto">
         <div className="flex items-center justify-center gap-5 px-2">
@@ -42,7 +46,6 @@ export default function TopHeaderNav({ activeTab, setActiveTab, onSearchClick, o
           })}
         </div>
       </nav>
-
       {/* 3. Right Actions: Search & Audio Controls */}
       <div className="flex items-center gap-3 shrink-0 pointer-events-auto">
         <button
@@ -54,7 +57,6 @@ export default function TopHeaderNav({ activeTab, setActiveTab, onSearchClick, o
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
         </button>
-
         <button
           onClick={onMuteToggle}
           className="text-white/90 hover:text-white transition-all active:scale-90 p-1 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]"
