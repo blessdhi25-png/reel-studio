@@ -351,17 +351,17 @@ export default function FeedPage() {
       className="fixed top-0 inset-x-0 z-20 px-4 pb-2"
       style={{ paddingTop: 'max(1.25rem, calc(env(safe-area-inset-top) + 0.75rem))' }}
     >
-      <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between gap-4">
         <a href="/" className="shrink-0" aria-label="Reel Studio home">
           <Logo size="sm" showText={false} />
         </a>
-        <div className="flex-1 min-w-0 flex justify-center overflow-x-auto">
-          <div className="flex gap-1 bg-ink2/80 rounded-sprocket p-1 font-mono text-xs uppercase tracking-widest shrink-0">
+        <div className="flex-1 min-w-0 flex overflow-x-auto no-scrollbar scroll-smooth">
+          <div className="flex gap-1 bg-ink2/80 rounded-sprocket p-1 font-mono text-xs uppercase tracking-widest mx-auto">
             {FILTERS.map((opt) => (
               <button
                 key={opt.label}
                 onClick={() => handleFilterClick(opt)}
-                className={`px-3 py-1 rounded-sprocket whitespace-nowrap ${
+                className={`px-3 py-1 rounded-sprocket shrink-0 whitespace-nowrap ${
                   !opt.href && filter === opt.value ? 'bg-reel text-ink' : 'text-smoke'
                 }`}
               >
@@ -371,14 +371,14 @@ export default function FeedPage() {
           </div>
         </div>
 
-        <div className="shrink-0 flex items-center gap-3 font-mono text-[11px] uppercase tracking-widest">
+        <div className="shrink-0 flex items-center gap-3 font-mono text-[11px] uppercase tracking-widest overflow-x-auto no-scrollbar scroll-smooth">
           {user ? (
             <>
               {(user.role === 'admin' || user.role === 'moderator') && (
-                <a href="/admin" className="text-yellow-400">Admin</a>
+                <a href="/admin" className="shrink-0 whitespace-nowrap text-yellow-400">Admin</a>
               )}
-              <a href="/live" className="text-smoke">Live</a>
-              <a href="/messages" className="relative text-smoke">
+              <a href="/live" className="shrink-0 whitespace-nowrap text-smoke">Live</a>
+              <a href="/messages" className="relative shrink-0 whitespace-nowrap text-smoke">
                 DMs
                 {unreadCount > 0 && (
                   <span className="absolute -top-2 -right-3 bg-reel text-ink rounded-full w-4 h-4 flex items-center justify-center text-[9px]">
@@ -388,15 +388,15 @@ export default function FeedPage() {
               </a>
             </>
           ) : (
-            <a href="/login" className="text-smoke">Log in</a>
+            <a href="/login" className="shrink-0 whitespace-nowrap text-smoke">Log in</a>
           )}
-          <a href="/search" aria-label="Search" className="text-bone">
+          <a href="/search" aria-label="Search" className="shrink-0 text-bone">
             <SearchIcon />
           </a>
           <button
             onClick={() => setFiltersOpen(true)}
             aria-label="Filters and feed tuning"
-            className="relative text-bone"
+            className="relative shrink-0 text-bone"
           >
             <DotsIcon />
             {circle !== null && (
