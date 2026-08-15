@@ -182,6 +182,9 @@ model User {
   collectionsOwned         Collection[]              @relation("collectionOwner")
   collectionVideosAdded    CollectionVideo[]
   collectionCollaborations CollectionCollaborator[]
+
+  watchLogs WatchLog[]
+  interests UserInterest[]
 }
 
 model Block {
@@ -225,6 +228,7 @@ model Video {
   transactions Transaction[]
   feedEvents   FeedEvent[]
   collectionEntries CollectionVideo[]
+  watchLogs    WatchLog[]
 
   // Optional — a video can be posted directly to a community's own feed.
   // This is deliberately separate from the pre-existing `circle` field
@@ -394,9 +398,20 @@ model Comment {
   userId           String
   user             User      @relation(fields: [userId], references: [id])
   parentCommentId  String?
+  // Self-relation for nested/threaded replies. parentCommentId already
+  // existed as a plain column (see routes/engagement.js, which has always
+  // accepted it in POST /videos/:id/comments) but had no real FK or Prisma
+  // relation backing it — this wires it up properly rather than
+  // introducing a differently-named field. ON DELETE SET NULL: deleting a
+  // parent comment orphans its replies to top-level rather than cascading
+  // the delete through an entire reply thread.
+  parent           Comment?  @relation("CommentReplies", fields: [parentCommentId], references: [id], onDelete: SetNull)
+  replies          Comment[] @relation("CommentReplies")
   content          String
   likeCount        Int       @default(0)
   createdAt        DateTime  @default(now())
+
+  @@index([parentCommentId])
 }
 
 model Transaction {
@@ -426,6 +441,43 @@ model FeedEvent {
   createdAt       DateTime      @default(now())
 
   @@index([videoId, createdAt])
+}
+
+// Structured, per-user watch record for personalization — distinct from
+// FeedEvent above, which is an anonymous-friendly generic ranking signal
+// (impression/watch_complete/skip/share, userId optional, powers the
+// background ranking worker). WatchLog requires a real userId and exists
+// specifically so a recommendation/personalization layer has clean,
+// per-user watch history to read (e.g. for computing UserInterest weights)
+// without depending on FeedEvent's broader, mixed-purpose event stream.
+model WatchLog {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id])
+  videoId      String
+  video        Video    @relation(fields: [videoId], references: [id])
+  watchSeconds Int
+  completed    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([videoId])
+}
+
+// Per-user weight for a content tag, used by
+// services/recommendation.js to bias a candidate's score toward what a
+// user tends to engage with. `tag` is a free string, but in practice maps
+// to the same fixed circle taxonomy videos already carry (see
+// utils/circles.js's ALLOWED_CIRCLES / Video.circle) rather than
+// introducing a second, unrelated tagging system.
+model UserInterest {
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  tag       String
+  weight    Float    @default(0)
+  updatedAt DateTime @updatedAt
+
+  @@id([userId, tag])
 }
 
 model Message {
@@ -587,39 +639,4 @@ model StoryInteraction {
   createdAt DateTime @default(now())
 
   @@unique([storyId, userId, type])
-}
-
-model UserInterest {
-  id        String   @id @default(uuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tag       String
-  weight    Float    @default(1.0) // Increases on views, likes, shares
-  updatedAt DateTime @updatedAt
-
-  @@unique([userId, tag])
-}
-
-model WatchLog {
-  id           String   @id @default(uuid())
-  userId       String
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  videoId      String
-  video        Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
-  watchSeconds Float
-  completed    Boolean  @default(false)
-  createdAt    DateTime @default(now())
-}
-
-model Comment {
-  id        String    @id @default(uuid())
-  content   String
-  userId    String
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  videoId   String
-  video     Video     @relation(fields: [videoId], references: [id], onDelete: Cascade)
-  parentId  String?
-  parent    Comment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
-  replies   Comment[] @relation("CommentReplies")
-  createdAt DateTime  @default(now())
 }
