@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+// ✅ ALL imports must be at the very top
 import { Suspense, useEffect, useRef, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
@@ -15,7 +16,6 @@ import Logo from '@/components/Logo';
 import StoriesBar from '@/components/StoriesBar';
 import TopHeaderNav from '@/components/TopHeaderNav';
 
-// Top feed filter tabs
 const FILTERS = [
   { label: 'All', value: null },
   { label: 'Shorts', value: 'short' },
@@ -39,7 +39,7 @@ function CircleParamSync({ onCircle }) {
 export default function FeedPage() {
   const router = useRouter();
   
-  // Custom Header & Audio states
+  // ✅ Move state hooks inside the component body
   const [activeTab, setActiveTab] = useState('All');
   const [isMuted, setIsMuted] = useState(false);
 
@@ -48,19 +48,9 @@ export default function FeedPage() {
   const [nextCursor, setNextCursor] = useState(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
-  const [initialLoading, setInitialLoading] = useState(true);
-  const [filter, setFilter] = useState(null); // null = mixed, 'short', 'long'
-  const [circle, setCircle] = useState(null); // null = all circles
-  const [circles, setCircles] = useState([]);
-  const [user, setUser] = useState(null);
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [focusMode, setFocusMode] = useState(false);
-  const [filtersOpen, setFiltersOpen] = useState(false);
-  const [tuningWeights, setTuningWeights] = useState({ nicheWeight: 50, freshWeight: 50, localWeight: 50 });
-  const [activeTime, setActiveTime] = useState(0);
-  const [celebration, setCelebration] = useState(null);
 
-  const [isDesktop, setIsDesktop] = useState(null);
+  // ... rest of your FeedPage component code ...
+}
 
   function handleFilterClick(opt) {
     if (opt.href) {
