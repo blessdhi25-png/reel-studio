@@ -162,6 +162,8 @@ export default function SoundPicker({
   const [trackVideosError, setTrackVideosError] = useState(null);
   const audioRef = useRef(null);
   const searchInputRef = useRef(null);
+  const pendingPlayRef = useRef(null);
+  const mountedRef = useRef(true);
 
   // Browse mode: debounced search — fires once immediately on mount with an
   // empty query to seed the "trending" list.
@@ -250,7 +252,9 @@ export default function SoundPicker({
 
   // Stop preview audio on close/unmount.
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
       audioRef.current?.pause();
       setIsPlaying(false);
     };
@@ -269,30 +273,53 @@ export default function SoundPicker({
     const el = audioRef.current;
     if (!el || !track.audioUrl) return;
 
-    // Already the active track and actually audible — pause and stop.
-    if (playingId === track.id && isPlaying) {
-      el.pause();
+    // This track is already the current preview target — pause/stop it.
+    // Branch on playingId alone, NOT isPlaying: isPlaying only flips true
+    // once the browser has actually started audible playback, which lags
+    // a beat behind the click while it buffers. A second tap landing in
+    // that gap (easy to trigger on mobile) would otherwise fall through
+    // to the "start fresh" branch below and call pause() on a play()
+    // request that's still pending — which throws an AbortError and made
+    // the preview look like it stopped itself right after starting.
+    if (playingId === track.id) {
+      const pending = pendingPlayRef.current;
+      if (pending) {
+        // Let the in-flight play() settle before pausing it, instead of
+        // interrupting it.
+        pending.then(() => el.pause()).catch(() => {});
+      } else {
+        el.pause();
+      }
       setPlayingId(null);
       setIsPlaying(false);
       return;
     }
 
-    // New track, or restarting one that was paused/stopped/errored — force
-    // the element to pick up the new (or same) source before playing.
-    // Some mobile browsers (notably iOS Safari) don't reliably swap audio
-    // sources on a bare `src` assignment without an explicit `load()`.
+    // New track, or restarting one that finished/errored — force the
+    // element to pick up the source before playing. Some mobile browsers
+    // (notably iOS Safari) don't reliably swap audio sources on a bare
+    // `src` assignment without an explicit `load()`.
     el.pause();
     el.src = track.audioUrl;
     el.load();
     el.currentTime = 0;
     setPlayingId(track.id);
-    el.play()
-      .then(() => setIsPlaying(true))
+    const playPromise = el.play();
+    pendingPlayRef.current = playPromise;
+    playPromise
+      .then(() => {
+        if (!mountedRef.current) return;
+        setIsPlaying(true);
+      })
       .catch(() => {
+        if (!mountedRef.current) return;
         // Autoplay was blocked, or the source failed to load — don't leave
         // the UI showing a "playing" state for audio that never started.
         setIsPlaying(false);
         setPlayingId((current) => (current === track.id ? null : current));
+      })
+      .finally(() => {
+        if (pendingPlayRef.current === playPromise) pendingPlayRef.current = null;
       });
   }
 
