@@ -16,6 +16,18 @@ const VISIBILITY_OPTIONS = [
   { value: 'private', label: 'Private (Only Me)' },
 ];
 
+// Live-preview-only — see the CameraRecorder <video> comment further down
+// for why these aren't (and can't cheaply be) baked into the actual
+// recorded file.
+const FILTERS = [
+  { id: 'normal', label: 'Normal', css: '', swatch: 'linear-gradient(135deg,#52525b,#3f3f46)' },
+  { id: 'vintage', label: 'Vintage', css: 'sepia(0.4) contrast(1.1) saturate(1.3) brightness(1.05)', swatch: 'linear-gradient(135deg,#b45309,#78350f)' },
+  { id: 'noir', label: 'B&W · Noir', css: 'grayscale(1) contrast(1.3) brightness(0.95)', swatch: 'linear-gradient(135deg,#e5e5e5,#171717)' },
+  { id: 'warm', label: 'Warm', css: 'sepia(0.2) saturate(1.4) hue-rotate(-8deg) brightness(1.05)', swatch: 'linear-gradient(135deg,#f59e0b,#dc2626)' },
+  { id: 'cyberpunk', label: 'Cyberpunk', css: 'hue-rotate(220deg) saturate(2.2) contrast(1.2)', swatch: 'linear-gradient(135deg,#22d3ee,#a21caf)' },
+  { id: 'glow', label: 'Glow', css: 'brightness(1.25) contrast(0.9) saturate(1.25)', swatch: 'linear-gradient(135deg,#fde68a,#fca5a5)' },
+];
+
 /* ------------------------------------------------------------------ */
 /* Icons                                                                */
 /* ------------------------------------------------------------------ */
@@ -26,15 +38,6 @@ function UploadCloudIcon(props) {
       <path d="M4 14.9A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 .5 8.98" />
       <path d="M12 12v9" />
       <path d="m8 16 4-4 4 4" />
-    </svg>
-  );
-}
-
-function CameraVideoIcon(props) {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <path d="m22 8-6 4 6 4V8Z" />
-      <rect x="2" y="6" width="14" height="12" rx="2" />
     </svg>
   );
 }
@@ -89,6 +92,43 @@ function MusicNoteIcon({ className = '' }) {
   );
 }
 
+function FilterIcon(props) {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3Z" />
+    </svg>
+  );
+}
+
+function TextToolIcon(props) {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <polyline points="4 7 4 4 20 4 20 7" />
+      <line x1="9" y1="20" x2="15" y2="20" />
+      <line x1="12" y1="4" x2="12" y2="20" />
+    </svg>
+  );
+}
+
+function CameraDotIcon(props) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="m23 7-7 5 7 5V7Z" />
+      <rect x="1" y="5" width="15" height="14" rx="2" />
+    </svg>
+  );
+}
+
+function UploadIcon(props) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="17 8 12 3 7 8" />
+      <line x1="12" y1="3" x2="12" y2="15" />
+    </svg>
+  );
+}
+
 const EMOJI_QUICKSET = ['🔥', '😂', '❤️', '🎬', '✨', '🎉', '👀', '🙌'];
 
 /* ------------------------------------------------------------------ */
@@ -113,11 +153,12 @@ function UploadPageInner() {
   const fileInputRef = useRef(null);
   const captionRef = useRef(null);
   const xhrRef = useRef(null);
+  const overlayStageRef = useRef(null);
+  const draggingOverlayRef = useRef(false);
 
   const [file, setFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
   const [dragActive, setDragActive] = useState(false);
-  const [showCamera, setShowCamera] = useState(false);
   const [showEmoji, setShowEmoji] = useState(false);
   const [isAiOpen, setIsAiOpen] = useState(false);
 
@@ -144,6 +185,16 @@ function UploadPageInner() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [status, setStatus] = useState(null); // null | uploading | done | error
   const [errorMsg, setErrorMsg] = useState(null);
+
+  // --- New for the camera-first studio redesign ---
+  const [mode, setMode] = useState('camera'); // 'camera' | 'file' — which capture surface shows before anything's been recorded/picked
+  const [isRecording, setIsRecording] = useState(false);
+  const [activeFilterId, setActiveFilterId] = useState('normal');
+  const [showFilters, setShowFilters] = useState(false);
+  const [textOverlay, setTextOverlay] = useState(null); // { content, x, y (both 0-100, % of stage) } | null
+  const [showTextEditor, setShowTextEditor] = useState(false);
+  const [textDraft, setTextDraft] = useState('');
+  const [showPublishDrawer, setShowPublishDrawer] = useState(false);
 
   useEffect(() => {
     if (!localStorage.getItem('token')) router.push('/login');
@@ -183,6 +234,15 @@ function UploadPageInner() {
 
   function pickFile(selected) {
     if (!selected) return;
+    if (selected.type.startsWith('image/')) {
+      // The bottom mode toggle's drop zone welcomes photos per the studio
+      // redesign brief, but backend/src/utils/upload.js's video upload
+      // pipeline only accepts video files — there's no photo-post model or
+      // route yet. Saying so clearly beats silently accepting the file and
+      // failing later at submit time.
+      setErrorMsg("Photo posts aren't supported yet — please choose a video.");
+      return;
+    }
     if (!selected.type.startsWith('video/')) {
       setErrorMsg('Please choose a video file.');
       return;
@@ -199,7 +259,11 @@ function UploadPageInner() {
 
   function handleCaptured(capturedFile) {
     setFile(capturedFile);
-    setShowCamera(false);
+  }
+
+  function handleRetake() {
+    setFile(null);
+    setShowPublishDrawer(false);
   }
 
   function insertHashtag() {
@@ -251,6 +315,10 @@ function UploadPageInner() {
     setStatus(null);
     setUploadProgress(0);
     setErrorMsg(null);
+    setMode('camera');
+    setActiveFilterId('normal');
+    setTextOverlay(null);
+    setShowPublishDrawer(false);
   }
 
   async function handleSubmit(e) {
@@ -317,291 +385,189 @@ function UploadPageInner() {
     }
   }
 
+  // --- Text overlay drag (percentage-of-stage coordinates so it lines up
+  // identically whether the stage is the live camera view or the captured
+  // preview player, regardless of either one's actual pixel size). ---
+  function beginOverlayDrag() {
+    draggingOverlayRef.current = true;
+  }
+  function handleOverlayDragMove(e) {
+    if (!draggingOverlayRef.current || !textOverlay || !overlayStageRef.current) return;
+    const rect = overlayStageRef.current.getBoundingClientRect();
+    const clientX = e.clientX ?? e.touches?.[0]?.clientX;
+    const clientY = e.clientY ?? e.touches?.[0]?.clientY;
+    if (clientX == null || clientY == null) return;
+    const x = Math.min(96, Math.max(4, ((clientX - rect.left) / rect.width) * 100));
+    const y = Math.min(96, Math.max(4, ((clientY - rect.top) / rect.height) * 100));
+    setTextOverlay((prev) => (prev ? { ...prev, x, y } : prev));
+  }
+  function endOverlayDrag() {
+    draggingOverlayRef.current = false;
+  }
+
+  function openTextEditor() {
+    setTextDraft(textOverlay?.content || '');
+    setShowTextEditor(true);
+  }
+  function submitTextOverlay(e) {
+    e.preventDefault();
+    const trimmed = textDraft.trim();
+    setTextOverlay(trimmed ? { content: trimmed.slice(0, 80), x: textOverlay?.x ?? 50, y: textOverlay?.y ?? 50 } : null);
+    setShowTextEditor(false);
+  }
+
   const captionRemaining = CAPTION_MAX - caption.length;
+  const activeFilter = FILTERS.find((f) => f.id === activeFilterId) || FILTERS[0];
 
   return (
-    <main className="min-h-screen bg-black px-4 pb-32">
-      <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-12 gap-8 max-w-6xl mx-auto p-6 md:p-10">
-        <div className="lg:col-span-12 mb-2">
-          <h1 className="text-2xl md:text-3xl font-bold text-white tracking-tight">Creator Studio</h1>
-          <p className="text-zinc-400 text-sm mt-1">Upload, tag, and publish your next post.</p>
-        </div>
-
-        {/* Left column — media dropzone & preview */}
-        <div className="lg:col-span-5">
-          <Dropzone
-            file={file}
-            previewUrl={previewUrl}
-            dragActive={dragActive}
-            setDragActive={setDragActive}
-            onDrop={handleDrop}
-            onPick={() => fileInputRef.current?.click()}
-            onClear={() => setFile(null)}
-          />
+    <main className="fixed inset-0 bg-black overflow-hidden">
+      {/* ---------------- Step 1: nothing captured/picked yet ---------------- */}
+      {!file && (
+        <div
+          ref={overlayStageRef}
+          className="relative w-full h-full"
+          onPointerMove={handleOverlayDragMove}
+          onPointerUp={endOverlayDrag}
+          onPointerLeave={endOverlayDrag}
+        >
+          {mode === 'camera' ? (
+            <CameraRecorder
+              embedded
+              videoStyle={activeFilter.css ? { filter: activeFilter.css } : undefined}
+              onRecordingChange={setIsRecording}
+              onCaptured={handleCaptured}
+              overlayChildren={
+                textOverlay && (
+                  <DraggableTextOverlay overlay={textOverlay} onPointerDownHandle={beginOverlayDrag} />
+                )
+              }
+            />
+          ) : (
+            <FileDropStage
+              dragActive={dragActive}
+              setDragActive={setDragActive}
+              onDrop={handleDrop}
+              onPick={() => fileInputRef.current?.click()}
+            />
+          )}
           <input
             ref={fileInputRef}
             type="file"
-            accept="video/mp4,video/quicktime,video/webm"
+            accept="video/mp4,video/quicktime,video/webm,image/*"
             className="hidden"
             onChange={(e) => pickFile(e.target.files?.[0])}
           />
 
-          <button
-            type="button"
-            onClick={() => setShowCamera(true)}
-            className="w-full mt-4 flex items-center justify-center gap-2 py-3 rounded-xl border border-amber-500/40 text-amber-400 hover:bg-amber-500/10 font-semibold text-sm transition-all"
-          >
-            <CameraVideoIcon />
-            Record with Camera
-          </button>
-
-          {errorMsg && status !== 'error' && (
-            <p className="text-xs text-red-400 mt-3">{errorMsg}</p>
-          )}
-        </div>
-
-        {/* Right column — metadata & distribution */}
-        <div className="lg:col-span-7 space-y-6">
-          <div className="bg-zinc-900/70 border border-zinc-800 rounded-3xl p-6 shadow-2xl space-y-6">
-            {/* Format selector */}
-            <div>
-              <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">
-                Format
-              </label>
-              <div className="flex gap-2 p-1 bg-zinc-800/60 border border-zinc-800 rounded-2xl w-fit">
-                {[
-                  { id: 'short', label: 'Short Clip (<60s)' },
-                  { id: 'long', label: 'Full Feature (>60s)' },
-                ].map((opt) => (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    onClick={() => setVideoType(opt.id)}
-                    className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${
-                      videoType === opt.id
-                        ? 'bg-amber-500 text-black font-bold shadow-md'
-                        : 'text-zinc-400 hover:text-white'
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Caption */}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider">
-                  Caption
-                </label>
-                <span className={`text-[11px] font-mono ${captionRemaining <= 0 ? 'text-amber-400' : 'text-zinc-500'}`}>
-                  {caption.length} / {CAPTION_MAX} characters
-                </span>
-              </div>
-              <textarea
-                ref={captionRef}
-                value={caption}
-                onChange={(e) => setCaption(e.target.value.slice(0, CAPTION_MAX))}
-                placeholder="Write a caption that pops…"
-                rows={4}
-                maxLength={CAPTION_MAX}
-                className="w-full bg-zinc-800/80 border border-zinc-700 text-white rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500/50 transition-all resize-none placeholder:text-zinc-500"
-              />
-              <div className="flex items-center gap-2 mt-3 flex-wrap relative">
-                <button
-                  type="button"
-                  onClick={insertHashtag}
-                  className="flex items-center gap-1.5 text-xs font-semibold text-zinc-300 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 px-3 py-1.5 rounded-full transition-all"
-                >
-                  <HashIcon /> Hashtag
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowEmoji((v) => !v)}
-                  className="flex items-center gap-1.5 text-xs font-semibold text-zinc-300 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 px-3 py-1.5 rounded-full transition-all"
-                >
-                  <SmileIcon /> Emoji
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsAiOpen(true)}
-                  className="px-3.5 py-1.5 rounded-full bg-gradient-to-r from-purple-600 to-pink-500 text-white text-xs font-semibold shadow-md flex items-center gap-1 hover:opacity-90 transition"
-                >
-                  ✨ Assist with AI
-                </button>
-
-                {showEmoji && (
-                  <div className="absolute top-full left-0 mt-2 z-20 flex flex-wrap gap-1 bg-zinc-800 border border-zinc-700 rounded-2xl p-2 shadow-xl w-48">
-                    {EMOJI_QUICKSET.map((emoji) => (
-                      <button
-                        key={emoji}
-                        type="button"
-                        onClick={() => insertEmoji(emoji)}
-                        className="text-lg hover:bg-zinc-700 rounded-lg w-9 h-9 flex items-center justify-center transition-all"
-                      >
-                        {emoji}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <AICoPilotDrawer
-              open={isAiOpen}
-              onClose={() => setIsAiOpen(false)}
-              onInsert={handleAiInsert}
-              initialTopic={caption}
+          {mode === 'camera' && (
+            <FilterSidebar
+              open={showFilters}
+              setOpen={setShowFilters}
+              activeId={activeFilterId}
+              onSelect={setActiveFilterId}
             />
+          )}
 
-            {/* Topic circles */}
-            <div>
-              <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">
-                Topic Circles <span className="text-zinc-600 normal-case font-normal">(optional)</span>
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {ALLOWED_CIRCLES.map((c) => {
-                  const active = circle === c;
-                  return (
-                    <button
-                      key={c}
-                      type="button"
-                      onClick={() => setCircle((prev) => (prev === c ? null : c))}
-                      className={`text-xs px-3 py-1.5 rounded-full cursor-pointer transition-all border ${
-                        active
-                          ? 'bg-amber-500/20 text-amber-400 border-amber-500 font-semibold'
-                          : 'bg-zinc-800 hover:bg-zinc-700 border-zinc-700 text-zinc-300'
-                      }`}
-                    >
-                      {c}
-                    </button>
-                  );
-                })}
-              </div>
-              <p className="text-[11px] text-zinc-500 mt-2">
-                Pin this post to a community so viewers can filter the feed down to it.
-              </p>
+          <FloatingToolbar onText={openTextEditor} textActive={!!textOverlay} />
+
+          <BottomModeToggle mode={mode} setMode={setMode} disabled={isRecording} />
+
+          {errorMsg && (
+            <div className="absolute bottom-24 inset-x-0 flex justify-center px-6 pointer-events-none">
+              <p className="bg-black/80 text-red-400 text-xs px-4 py-2 rounded-full">{errorMsg}</p>
             </div>
-
-            {/* Sound picker */}
-            <div>
-              <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">
-                Sound <span className="text-zinc-600 normal-case font-normal">(optional)</span>
-              </label>
-
-              {selectedTrack ? (
-                <div className="flex items-center justify-between gap-3 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-2.5">
-                  <p className="text-sm text-white truncate">
-                    🎵 {selectedTrack.title} <span className="text-zinc-400">· {selectedTrack.artistName}</span>
-                  </p>
-                  <div className="flex items-center gap-3 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => setIsSoundPickerOpen(true)}
-                      className="text-xs font-semibold text-amber-400 hover:text-amber-300"
-                    >
-                      Change
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedTrack(null)}
-                      className="text-zinc-400 hover:text-white"
-                      aria-label="Remove sound"
-                    >
-                      <XIcon />
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setIsSoundPickerOpen(true)}
-                  className="w-full flex items-center gap-2 bg-zinc-800/80 border border-zinc-700 text-zinc-300 hover:border-amber-500/50 hover:text-white rounded-xl px-4 py-2.5 text-sm transition-all"
-                >
-                  <MusicNoteIcon className="w-4 h-4 text-amber-400 shrink-0" />
-                  Add Sound / Pick Music
-                </button>
-              )}
-              <p className="text-[11px] text-zinc-500 mt-2">
-                Only tracks distributed by registered artists show up here.{' '}
-                <a href="/artist/register" className="text-amber-400 hover:text-amber-300">
-                  Distribute your own →
-                </a>
-              </p>
-            </div>
-          </div>
-
-          {/* Publishing privileges */}
-          <PublishingPrivileges
-            visibility={visibility}
-            setVisibility={setVisibility}
-            allowComments={allowComments}
-            setAllowComments={setAllowComments}
-            allowDuets={allowDuets}
-            setAllowDuets={setAllowDuets}
-            allowDownloads={allowDownloads}
-            setAllowDownloads={setAllowDownloads}
-          />
+          )}
         </div>
-      </form>
+      )}
 
-      {/* Sticky footer — z-50 so it's guaranteed to sit above BottomNav's z-40
-          even if BottomNav ever briefly renders during a route transition
-          (BottomNav is also hidden outright on /upload — see HIDDEN_ON in
-          components/BottomNav.jsx — this is defense-in-depth for that).
-          The extra bottom padding matches BottomNav's own safe-area handling
-          so Discard/Post don't end up in the iOS home-indicator dead zone. */}
-      <div
-        className="fixed bottom-0 left-0 right-0 z-50 border-t border-zinc-800 bg-black/90 backdrop-blur-md"
-        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
-      >
-        <div className="max-w-6xl mx-auto px-4 md:px-10">
-          {status === 'uploading' && (
-            <div className="pt-3">
-              <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-amber-500 transition-all duration-200"
-                  style={{ width: `${uploadProgress}%` }}
-                />
-              </div>
-              <p className="text-[11px] text-zinc-500 mt-1.5">Uploading… {uploadProgress}%</p>
-            </div>
-          )}
+      {/* ---------------- Step 2: captured/picked — full-screen review ---------------- */}
+      {file && !showPublishDrawer && (
+        <div
+          ref={overlayStageRef}
+          className="relative w-full h-full"
+          onPointerMove={handleOverlayDragMove}
+          onPointerUp={endOverlayDrag}
+          onPointerLeave={endOverlayDrag}
+        >
+          <VideoPreview src={previewUrl} />
+          {textOverlay && <DraggableTextOverlay overlay={textOverlay} onPointerDownHandle={beginOverlayDrag} />}
 
-          {status === 'done' && (
-            <p className="text-xs text-emerald-400 pt-3">
-              Uploaded — it'll appear in the feed once processing finishes.
-            </p>
-          )}
-          {status === 'error' && (
-            <p className="text-xs text-red-400 pt-3">{errorMsg || 'Something went wrong. Try again.'}</p>
-          )}
-
-          <div className="py-4 flex items-center justify-between gap-4">
+          <div className="absolute top-0 inset-x-0 flex items-center justify-between px-5 pt-[max(1.25rem,env(safe-area-inset-top))]">
             <button
-              type="button"
-              onClick={handleCancel}
-              disabled={status === 'uploading'}
-              className="hover:bg-zinc-800 text-zinc-400 font-medium px-5 py-2.5 rounded-xl transition-all text-sm disabled:opacity-40"
+              onClick={handleRetake}
+              className="w-9 h-9 rounded-full bg-black/60 text-white flex items-center justify-center"
+              aria-label="Retake"
             >
-              {status === 'uploading' ? 'Discard' : 'Discard / Cancel'}
+              <XIcon />
             </button>
             <button
-              type="submit"
-              onClick={handleSubmit}
-              disabled={!file || status === 'uploading' || status === 'done'}
-              className="bg-amber-500 hover:bg-amber-400 text-black font-bold px-8 py-3 rounded-xl shadow-lg transition-all text-base flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={openTextEditor}
+              className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors ${
+                textOverlay ? 'bg-amber-500 text-black' : 'bg-black/60 text-white'
+              }`}
+              aria-label="Add text"
             >
-              {status === 'uploading' && <SpinnerIcon />}
-              {status === 'uploading' ? 'Publishing…' : 'Post / Publish Video'}
+              <TextToolIcon />
+            </button>
+          </div>
+
+          <div className="absolute bottom-0 inset-x-0 px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+            <button
+              onClick={() => setShowPublishDrawer(true)}
+              className="w-full bg-amber-500 hover:bg-amber-400 text-black font-bold py-3.5 rounded-2xl text-base shadow-lg transition-colors"
+            >
+              Next
             </button>
           </div>
         </div>
-      </div>
+      )}
 
-      {showCamera && (
-        <CameraRecorder onCaptured={handleCaptured} onCancel={() => setShowCamera(false)} />
+      {/* ---------------- Step 3: slide-up publishing drawer ---------------- */}
+      {file && showPublishDrawer && (
+        <PublishDrawer
+          previewUrl={previewUrl}
+          onBack={() => setShowPublishDrawer(false)}
+          onSubmit={handleSubmit}
+          videoType={videoType}
+          setVideoType={setVideoType}
+          caption={caption}
+          setCaption={setCaption}
+          captionRef={captionRef}
+          captionRemaining={captionRemaining}
+          insertHashtag={insertHashtag}
+          showEmoji={showEmoji}
+          setShowEmoji={setShowEmoji}
+          insertEmoji={insertEmoji}
+          setIsAiOpen={setIsAiOpen}
+          isAiOpen={isAiOpen}
+          handleAiInsert={handleAiInsert}
+          circle={circle}
+          setCircle={setCircle}
+          selectedTrack={selectedTrack}
+          setSelectedTrack={setSelectedTrack}
+          setIsSoundPickerOpen={setIsSoundPickerOpen}
+          visibility={visibility}
+          setVisibility={setVisibility}
+          allowComments={allowComments}
+          setAllowComments={setAllowComments}
+          allowDuets={allowDuets}
+          setAllowDuets={setAllowDuets}
+          allowDownloads={allowDownloads}
+          setAllowDownloads={setAllowDownloads}
+          status={status}
+          uploadProgress={uploadProgress}
+          errorMsg={errorMsg}
+          handleCancel={handleCancel}
+        />
+      )}
+
+      {showTextEditor && (
+        <TextEditorModal
+          value={textDraft}
+          onChange={setTextDraft}
+          onSubmit={submitTextOverlay}
+          onClose={() => setShowTextEditor(false)}
+          hasExisting={!!textOverlay}
+        />
       )}
 
       {isSoundPickerOpen && (
@@ -619,29 +585,132 @@ function UploadPageInner() {
 }
 
 /* ------------------------------------------------------------------ */
-/* Dropzone + preview player                                           */
+/* Camera-first studio chrome — filters, text tool, mode toggle         */
 /* ------------------------------------------------------------------ */
 
-function Dropzone({ file, previewUrl, dragActive, setDragActive, onDrop, onPick, onClear }) {
-  if (previewUrl) {
-    return (
-      <div className="relative aspect-[9/16] min-h-[420px] rounded-3xl overflow-hidden bg-zinc-900 border border-zinc-800">
-        <VideoPreview src={previewUrl} />
-        <button
-          type="button"
-          onClick={onClear}
-          className="absolute top-3 right-3 z-10 w-8 h-8 rounded-full bg-black/70 hover:bg-black/90 text-white flex items-center justify-center transition-all"
-          aria-label="Remove video"
-        >
-          <XIcon />
-        </button>
-        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-4 py-3">
-          <p className="text-white text-xs font-medium truncate">{file?.name}</p>
-        </div>
-      </div>
-    );
-  }
+function FilterSidebar({ open, setOpen, activeId, onSelect }) {
+  return (
+    <div className="absolute right-3 top-1/2 -translate-y-1/2 flex flex-col items-end gap-2">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className={`w-11 h-11 rounded-full flex items-center justify-center transition-colors shrink-0 ${
+          open ? 'bg-amber-500 text-black' : 'bg-black/50 text-white'
+        }`}
+        aria-label={open ? 'Hide filters' : 'Show filters'}
+      >
+        <FilterIcon />
+      </button>
 
+      <div
+        className={`flex flex-col gap-3 bg-black/50 backdrop-blur-md rounded-3xl p-2.5 transition-all origin-right ${
+          open ? 'opacity-100 scale-100' : 'opacity-0 scale-90 pointer-events-none'
+        }`}
+      >
+        {FILTERS.map((f) => (
+          <button key={f.id} onClick={() => onSelect(f.id)} className="flex flex-col items-center gap-1" aria-label={f.label}>
+            <span
+              className={`w-11 h-11 rounded-full border-2 ${activeId === f.id ? 'border-amber-400' : 'border-white/30'}`}
+              style={{ background: f.swatch }}
+            />
+            <span className="text-white text-[9px] font-semibold drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)] max-w-[44px] text-center leading-tight">
+              {f.label}
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function FloatingToolbar({ onText, textActive }) {
+  return (
+    <div className="absolute left-3 top-1/2 -translate-y-1/2 flex flex-col gap-3">
+      <button
+        onClick={onText}
+        className={`w-11 h-11 rounded-full flex items-center justify-center transition-colors ${
+          textActive ? 'bg-amber-500 text-black' : 'bg-black/50 text-white'
+        }`}
+        aria-label="Add text overlay"
+      >
+        <TextToolIcon />
+      </button>
+    </div>
+  );
+}
+
+function DraggableTextOverlay({ overlay, onPointerDownHandle }) {
+  return (
+    <div
+      onPointerDown={onPointerDownHandle}
+      className="absolute -translate-x-1/2 -translate-y-1/2 cursor-grab active:cursor-grabbing touch-none px-3 py-1.5"
+      style={{ left: `${overlay.x}%`, top: `${overlay.y}%` }}
+    >
+      <p className="text-white text-xl font-display text-center whitespace-pre-wrap drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] select-none">
+        {overlay.content}
+      </p>
+    </div>
+  );
+}
+
+function TextEditorModal({ value, onChange, onSubmit, onClose, hasExisting }) {
+  return (
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center" onClick={onClose}>
+      <form
+        onSubmit={onSubmit}
+        onClick={(e) => e.stopPropagation()}
+        className="w-full sm:max-w-sm bg-zinc-900 border border-zinc-800 text-white rounded-t-2xl sm:rounded-2xl p-5 space-y-3"
+      >
+        <p className="font-semibold text-base">Add text</p>
+        <textarea
+          autoFocus
+          value={value}
+          onChange={(e) => onChange(e.target.value.slice(0, 80))}
+          placeholder="Type something…"
+          rows={2}
+          maxLength={80}
+          className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm placeholder-zinc-500 outline-none resize-none focus:ring-2 focus:ring-amber-500/50"
+        />
+        <div className="flex gap-2">
+          <button type="button" onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-zinc-300 border border-zinc-700">
+            Cancel
+          </button>
+          <button type="submit" className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-amber-500 text-black">
+            {hasExisting ? 'Update' : 'Add'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function BottomModeToggle({ mode, setMode, disabled }) {
+  return (
+    <div className="absolute bottom-6 inset-x-0 flex justify-center">
+      <div className="flex gap-1 p-1 bg-black/60 backdrop-blur-md rounded-full border border-white/10">
+        {[
+          { id: 'camera', label: 'Camera', icon: CameraDotIcon },
+          { id: 'file', label: 'Upload File', icon: UploadIcon },
+        ].map((opt) => {
+          const Icon = opt.icon;
+          return (
+            <button
+              key={opt.id}
+              onClick={() => setMode(opt.id)}
+              disabled={disabled}
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold transition-colors disabled:opacity-40 ${
+                mode === opt.id ? 'bg-white text-black' : 'text-white'
+              }`}
+            >
+              <Icon /> {opt.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function FileDropStage({ dragActive, setDragActive, onDrop, onPick }) {
   return (
     <div
       onClick={onPick}
@@ -651,17 +720,310 @@ function Dropzone({ file, previewUrl, dragActive, setDragActive, onDrop, onPick,
       }}
       onDragLeave={() => setDragActive(false)}
       onDrop={onDrop}
-      className={`border-2 border-dashed rounded-3xl p-8 flex flex-col items-center justify-center transition-all cursor-pointer aspect-[9/16] min-h-[420px] bg-zinc-900/50 ${
-        dragActive ? 'border-amber-500/80 bg-zinc-900/80' : 'border-zinc-700 hover:border-amber-500/80'
+      className={`w-full h-full flex flex-col items-center justify-center px-8 cursor-pointer border-2 border-dashed transition-colors ${
+        dragActive ? 'border-amber-500/80 bg-zinc-900/60' : 'border-zinc-800 bg-zinc-950'
       }`}
     >
-      <div className="w-14 h-14 rounded-2xl bg-zinc-800 flex items-center justify-center text-amber-400 mb-4">
+      <div className="w-16 h-16 rounded-2xl bg-zinc-900 flex items-center justify-center text-amber-400 mb-4">
         <UploadCloudIcon />
       </div>
-      <p className="text-white font-semibold text-sm mb-1">Drag & drop your video</p>
-      <p className="text-zinc-500 text-xs text-center max-w-[220px]">
-        or click to browse — MP4, MOV, WEBM
-      </p>
+      <p className="text-white font-semibold text-base mb-1">Drag & drop a video or photo</p>
+      <p className="text-zinc-500 text-sm text-center max-w-[260px]">or tap to browse — MP4, MOV, WEBM</p>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Publishing drawer — the exact metadata form from before, now inside  */
+/* a slide-up sheet instead of always-visible page content.             */
+/* ------------------------------------------------------------------ */
+
+function PublishDrawer({
+  previewUrl,
+  onBack,
+  onSubmit,
+  videoType,
+  setVideoType,
+  caption,
+  setCaption,
+  captionRef,
+  captionRemaining,
+  insertHashtag,
+  showEmoji,
+  setShowEmoji,
+  insertEmoji,
+  setIsAiOpen,
+  isAiOpen,
+  handleAiInsert,
+  circle,
+  setCircle,
+  selectedTrack,
+  setSelectedTrack,
+  setIsSoundPickerOpen,
+  visibility,
+  setVisibility,
+  allowComments,
+  setAllowComments,
+  allowDuets,
+  setAllowDuets,
+  allowDownloads,
+  setAllowDownloads,
+  status,
+  uploadProgress,
+  errorMsg,
+  handleCancel,
+}) {
+  return (
+    <div className="absolute inset-0 z-10 flex flex-col bg-black animate-sheet-up">
+      <div className="flex items-center gap-3 px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-3 border-b border-zinc-800 shrink-0">
+        <button onClick={onBack} className="text-zinc-400 hover:text-white text-sm font-semibold px-1">
+          ← Back
+        </button>
+        <h1 className="text-base font-bold text-white">Post details</h1>
+      </div>
+
+      <form onSubmit={onSubmit} className="flex-1 overflow-y-auto">
+        <div className="max-w-2xl mx-auto p-5 md:p-8 grid grid-cols-1 md:grid-cols-12 gap-6">
+          <div className="md:col-span-4">
+            <div className="relative aspect-[9/16] rounded-2xl overflow-hidden bg-zinc-900 border border-zinc-800 max-h-[280px] mx-auto">
+              <VideoPreview src={previewUrl} />
+            </div>
+          </div>
+
+          <div className="md:col-span-8 space-y-6">
+            <div className="bg-zinc-900/70 border border-zinc-800 rounded-3xl p-6 shadow-2xl space-y-6">
+              {/* Format selector */}
+              <div>
+                <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">
+                  Format
+                </label>
+                <div className="flex gap-2 p-1 bg-zinc-800/60 border border-zinc-800 rounded-2xl w-fit">
+                  {[
+                    { id: 'short', label: 'Short Clip (<60s)' },
+                    { id: 'long', label: 'Full Feature (>60s)' },
+                  ].map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => setVideoType(opt.id)}
+                      className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${
+                        videoType === opt.id
+                          ? 'bg-amber-500 text-black font-bold shadow-md'
+                          : 'text-zinc-400 hover:text-white'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Caption */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider">
+                    Caption
+                  </label>
+                  <span className={`text-[11px] font-mono ${captionRemaining <= 0 ? 'text-amber-400' : 'text-zinc-500'}`}>
+                    {caption.length} / {CAPTION_MAX} characters
+                  </span>
+                </div>
+                <textarea
+                  ref={captionRef}
+                  value={caption}
+                  onChange={(e) => setCaption(e.target.value.slice(0, CAPTION_MAX))}
+                  placeholder="Write a caption that pops…"
+                  rows={4}
+                  maxLength={CAPTION_MAX}
+                  className="w-full bg-zinc-800/80 border border-zinc-700 text-white rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500/50 transition-all resize-none placeholder:text-zinc-500"
+                />
+                <div className="flex items-center gap-2 mt-3 flex-wrap relative">
+                  <button
+                    type="button"
+                    onClick={insertHashtag}
+                    className="flex items-center gap-1.5 text-xs font-semibold text-zinc-300 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 px-3 py-1.5 rounded-full transition-all"
+                  >
+                    <HashIcon /> Hashtag
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowEmoji((v) => !v)}
+                    className="flex items-center gap-1.5 text-xs font-semibold text-zinc-300 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 px-3 py-1.5 rounded-full transition-all"
+                  >
+                    <SmileIcon /> Emoji
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsAiOpen(true)}
+                    className="px-3.5 py-1.5 rounded-full bg-gradient-to-r from-purple-600 to-pink-500 text-white text-xs font-semibold shadow-md flex items-center gap-1 hover:opacity-90 transition"
+                  >
+                    ✨ Assist with AI
+                  </button>
+
+                  {showEmoji && (
+                    <div className="absolute top-full left-0 mt-2 z-20 flex flex-wrap gap-1 bg-zinc-800 border border-zinc-700 rounded-2xl p-2 shadow-xl w-48">
+                      {EMOJI_QUICKSET.map((emoji) => (
+                        <button
+                          key={emoji}
+                          type="button"
+                          onClick={() => insertEmoji(emoji)}
+                          className="text-lg hover:bg-zinc-700 rounded-lg w-9 h-9 flex items-center justify-center transition-all"
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <AICoPilotDrawer
+                open={isAiOpen}
+                onClose={() => setIsAiOpen(false)}
+                onInsert={handleAiInsert}
+                initialTopic={caption}
+              />
+
+              {/* Topic circles */}
+              <div>
+                <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">
+                  Topic Circles <span className="text-zinc-600 normal-case font-normal">(optional)</span>
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {ALLOWED_CIRCLES.map((c) => {
+                    const active = circle === c;
+                    return (
+                      <button
+                        key={c}
+                        type="button"
+                        onClick={() => setCircle((prev) => (prev === c ? null : c))}
+                        className={`text-xs px-3 py-1.5 rounded-full cursor-pointer transition-all border ${
+                          active
+                            ? 'bg-amber-500/20 text-amber-400 border-amber-500 font-semibold'
+                            : 'bg-zinc-800 hover:bg-zinc-700 border-zinc-700 text-zinc-300'
+                        }`}
+                      >
+                        {c}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-[11px] text-zinc-500 mt-2">
+                  Pin this post to a community so viewers can filter the feed down to it.
+                </p>
+              </div>
+
+              {/* Sound picker */}
+              <div>
+                <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">
+                  Sound <span className="text-zinc-600 normal-case font-normal">(optional)</span>
+                </label>
+
+                {selectedTrack ? (
+                  <div className="flex items-center justify-between gap-3 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-2.5">
+                    <p className="text-sm text-white truncate">
+                      🎵 {selectedTrack.title} <span className="text-zinc-400">· {selectedTrack.artistName}</span>
+                    </p>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setIsSoundPickerOpen(true)}
+                        className="text-xs font-semibold text-amber-400 hover:text-amber-300"
+                      >
+                        Change
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedTrack(null)}
+                        className="text-zinc-400 hover:text-white"
+                        aria-label="Remove sound"
+                      >
+                        <XIcon />
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setIsSoundPickerOpen(true)}
+                    className="w-full flex items-center gap-2 bg-zinc-800/80 border border-zinc-700 text-zinc-300 hover:border-amber-500/50 hover:text-white rounded-xl px-4 py-2.5 text-sm transition-all"
+                  >
+                    <MusicNoteIcon className="w-4 h-4 text-amber-400 shrink-0" />
+                    Add Sound / Pick Music
+                  </button>
+                )}
+                <p className="text-[11px] text-zinc-500 mt-2">
+                  Only tracks distributed by registered artists show up here.{' '}
+                  <a href="/artist/register" className="text-amber-400 hover:text-amber-300">
+                    Distribute your own →
+                  </a>
+                </p>
+              </div>
+            </div>
+
+            {/* Publishing privileges */}
+            <PublishingPrivileges
+              visibility={visibility}
+              setVisibility={setVisibility}
+              allowComments={allowComments}
+              setAllowComments={setAllowComments}
+              allowDuets={allowDuets}
+              setAllowDuets={setAllowDuets}
+              allowDownloads={allowDownloads}
+              setAllowDownloads={setAllowDownloads}
+            />
+          </div>
+        </div>
+
+        {/* Sticky footer — matches the previous page-level footer 1:1, just
+            scoped to the drawer instead of the whole page now. */}
+        <div
+          className="sticky bottom-0 border-t border-zinc-800 bg-black/90 backdrop-blur-md"
+          style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+        >
+          <div className="max-w-2xl mx-auto px-5 md:px-8">
+            {status === 'uploading' && (
+              <div className="pt-3">
+                <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-amber-500 transition-all duration-200"
+                    style={{ width: `${uploadProgress}%` }}
+                  />
+                </div>
+                <p className="text-[11px] text-zinc-500 mt-1.5">Uploading… {uploadProgress}%</p>
+              </div>
+            )}
+
+            {status === 'done' && (
+              <p className="text-xs text-emerald-400 pt-3">
+                Uploaded — it'll appear in the feed once processing finishes.
+              </p>
+            )}
+            {status === 'error' && (
+              <p className="text-xs text-red-400 pt-3">{errorMsg || 'Something went wrong. Try again.'}</p>
+            )}
+
+            <div className="py-4 flex items-center justify-between gap-4">
+              <button
+                type="button"
+                onClick={handleCancel}
+                disabled={status === 'uploading'}
+                className="hover:bg-zinc-800 text-zinc-400 font-medium px-5 py-2.5 rounded-xl transition-all text-sm disabled:opacity-40"
+              >
+                {status === 'uploading' ? 'Discard' : 'Discard / Cancel'}
+              </button>
+              <button
+                type="submit"
+                disabled={status === 'uploading' || status === 'done'}
+                className="bg-amber-500 hover:bg-amber-400 text-black font-bold px-8 py-3 rounded-xl shadow-lg transition-all text-base flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {status === 'uploading' && <SpinnerIcon />}
+                {status === 'uploading' ? 'Publishing…' : 'Post / Publish Video'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </form>
     </div>
   );
 }
