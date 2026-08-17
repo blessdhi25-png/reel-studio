@@ -9,7 +9,7 @@ const DURATIONS = [
   { label: '60s', seconds: 60 },
 ];
 
-export default function CameraRecorder({ onCaptured, onCancel }) {
+export default function CameraRecorder({ onCaptured, onCancel, embedded = false, videoStyle, overlayChildren, onRecordingChange }) {
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const recorderRef = useRef(null);
@@ -147,6 +147,7 @@ export default function CameraRecorder({ onCaptured, onCancel }) {
     recorderRef.current = recorder;
     recorder.start();
     setRecording(true);
+    onRecordingChange?.(true);
     setSecondsLeft(duration);
 
     timerRef.current = setInterval(() => {
@@ -163,37 +164,72 @@ export default function CameraRecorder({ onCaptured, onCancel }) {
   function stopRecording() {
     clearInterval(timerRef.current);
     setRecording(false);
+    onRecordingChange?.(false);
     if (recorderRef.current && recorderRef.current.state !== 'inactive') {
       recorderRef.current.stop();
     }
   }
 
-  return (
-    <div className="fixed inset-0 z-50 bg-ink flex flex-col">
-      <div className="flex items-center justify-between px-6 py-4">
-        <button onClick={onCancel} className="text-bone text-2xl leading-none">✕</button>
-        <div className="flex items-center gap-3">
-          {devices.length > 1 && (
-            <CameraDeviceSelect
-              devices={devices}
-              selectedDeviceId={selectedDeviceId}
-              onChange={pickDevice}
-              builtInDeviceId={builtInDeviceId}
-              className="bg-ink2 border border-smoke/30 text-bone text-[11px] rounded-sprocket px-2 py-1.5 outline-none max-w-[160px]"
-            />
-          )}
+  const recordControls = (
+    <>
+      <div className="flex justify-center gap-2 mb-6">
+        {DURATIONS.map((d) => (
           <button
-            onClick={flipCamera}
+            key={d.seconds}
+            onClick={() => setDuration(d.seconds)}
             disabled={recording}
-            className="text-bone text-xl disabled:opacity-30"
-            aria-label="Flip camera"
+            className={`px-4 py-1 font-mono text-xs uppercase tracking-widest rounded-sprocket border disabled:opacity-40 ${
+              duration === d.seconds ? 'border-reel text-reel' : 'border-smoke/40 text-smoke'
+            }`}
           >
-            ⟲
+            {d.label}
           </button>
-        </div>
+        ))}
       </div>
 
-      <div className="relative flex-1 bg-ink2 mx-4 rounded-sprocket overflow-hidden">
+      <div className="flex items-center justify-center">
+        <button
+          onClick={recording ? stopRecording : startRecording}
+          disabled={!!error || !!recordError}
+          className="w-16 h-16 rounded-full border-4 border-bone flex items-center justify-center disabled:opacity-30"
+        >
+          <span className={`bg-red-500 transition-all ${recording ? 'w-6 h-6 rounded-sprocket' : 'w-12 h-12 rounded-full'}`} />
+        </button>
+      </div>
+      <p className="font-body text-smoke text-xs text-center mt-4">
+        {recording ? 'Recording — tap to stop' : 'Tap to start recording'}
+      </p>
+    </>
+  );
+
+  return (
+    <div className={embedded ? 'relative w-full h-full flex flex-col' : 'fixed inset-0 z-50 bg-ink flex flex-col'}>
+      {!embedded && (
+        <div className="flex items-center justify-between px-6 py-4">
+          <button onClick={onCancel} className="text-bone text-2xl leading-none">✕</button>
+          <div className="flex items-center gap-3">
+            {devices.length > 1 && (
+              <CameraDeviceSelect
+                devices={devices}
+                selectedDeviceId={selectedDeviceId}
+                onChange={pickDevice}
+                builtInDeviceId={builtInDeviceId}
+                className="bg-ink2 border border-smoke/30 text-bone text-[11px] rounded-sprocket px-2 py-1.5 outline-none max-w-[160px]"
+              />
+            )}
+            <button
+              onClick={flipCamera}
+              disabled={recording}
+              className="text-bone text-xl disabled:opacity-30"
+              aria-label="Flip camera"
+            >
+              ⟲
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className={embedded ? 'relative flex-1 bg-ink2 overflow-hidden' : 'relative flex-1 bg-ink2 mx-4 rounded-sprocket overflow-hidden'}>
         {error ? (
           <div className="w-full h-full flex items-center justify-center px-8 text-center">
             <p className="font-body text-smoke text-sm">{error}</p>
@@ -204,12 +240,37 @@ export default function CameraRecorder({ onCaptured, onCancel }) {
             autoPlay
             muted
             playsInline
+            style={videoStyle}
             className={`w-full h-full object-cover ${facingMode === 'user' ? 'scale-x-[-1]' : ''}`}
           />
         )}
 
+        {overlayChildren}
+
+        {embedded && devices.length > 1 && (
+          <div className="absolute top-4 right-4">
+            <CameraDeviceSelect
+              devices={devices}
+              selectedDeviceId={selectedDeviceId}
+              onChange={pickDevice}
+              builtInDeviceId={builtInDeviceId}
+              className="bg-ink/70 border border-smoke/30 text-bone text-[11px] rounded-sprocket px-2 py-1.5 outline-none max-w-[160px]"
+            />
+          </div>
+        )}
+        {embedded && (
+          <button
+            onClick={flipCamera}
+            disabled={recording}
+            className="absolute top-4 left-4 w-9 h-9 rounded-full bg-ink/70 text-bone text-lg flex items-center justify-center disabled:opacity-30"
+            aria-label="Flip camera"
+          >
+            ⟲
+          </button>
+        )}
+
         {recording && (
-          <div className="absolute top-4 left-4 flex items-center gap-2 bg-ink/70 px-3 py-1 rounded-sprocket">
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-ink/70 px-3 py-1 rounded-sprocket">
             <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
             <span className="font-mono text-xs text-bone">{secondsLeft}s</span>
           </div>
@@ -220,37 +281,20 @@ export default function CameraRecorder({ onCaptured, onCancel }) {
             <p className="font-body text-smoke text-xs">{recordError}</p>
           </div>
         )}
+
+        {/* In embedded mode these controls float over the preview instead
+            of taking real flex space below it, since the page embedding
+            this (the camera-first studio view) stacks its own bottom
+            mode-toggle bar at the very bottom of the same screen —
+            positioned a bit higher (bottom-28) so the two don't overlap. */}
+        {embedded && (
+          <div className="absolute bottom-28 inset-x-0 px-6">
+            {recordControls}
+          </div>
+        )}
       </div>
 
-      <div className="px-6 py-6">
-        <div className="flex justify-center gap-2 mb-6">
-          {DURATIONS.map((d) => (
-            <button
-              key={d.seconds}
-              onClick={() => setDuration(d.seconds)}
-              disabled={recording}
-              className={`px-4 py-1 font-mono text-xs uppercase tracking-widest rounded-sprocket border disabled:opacity-40 ${
-                duration === d.seconds ? 'border-reel text-reel' : 'border-smoke/40 text-smoke'
-              }`}
-            >
-              {d.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="flex items-center justify-center">
-          <button
-            onClick={recording ? stopRecording : startRecording}
-            disabled={!!error || !!recordError}
-            className="w-16 h-16 rounded-full border-4 border-bone flex items-center justify-center disabled:opacity-30"
-          >
-            <span className={`bg-red-500 transition-all ${recording ? 'w-6 h-6 rounded-sprocket' : 'w-12 h-12 rounded-full'}`} />
-          </button>
-        </div>
-        <p className="font-body text-smoke text-xs text-center mt-4">
-          {recording ? 'Recording — tap to stop' : 'Tap to start recording'}
-        </p>
-      </div>
+      {!embedded && <div className="px-6 py-6">{recordControls}</div>}
     </div>
   );
 }
