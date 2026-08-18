@@ -32,16 +32,6 @@ const FILTERS = [
 /* Icons                                                                */
 /* ------------------------------------------------------------------ */
 
-function UploadCloudIcon(props) {
-  return (
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <path d="M4 14.9A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 .5 8.98" />
-      <path d="M12 12v9" />
-      <path d="m8 16 4-4 4 4" />
-    </svg>
-  );
-}
-
 function HashIcon(props) {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -110,11 +100,46 @@ function TextToolIcon(props) {
   );
 }
 
-function CameraDotIcon(props) {
+function FlipCameraIcon(props) {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <path d="m23 7-7 5 7 5V7Z" />
-      <rect x="1" y="5" width="15" height="14" rx="2" />
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M20 8a8 8 0 0 0-14.3-4.3M4 16a8 8 0 0 0 14.3 4.3" />
+      <path d="M4 3v5h5M20 21v-5h-5" />
+    </svg>
+  );
+}
+
+function FlashIcon(props) {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M13 2 3 14h8l-1 8 10-12h-8l1-8Z" />
+    </svg>
+  );
+}
+
+function TimerIcon(props) {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <circle cx="12" cy="13" r="8" />
+      <path d="M12 9v4l2.5 2.5M9 2h6" />
+    </svg>
+  );
+}
+
+function MicIcon({ crossedOut, ...props }) {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+      <path d="M19 11a7 7 0 0 1-14 0M12 18v4" />
+      {crossedOut && <line x1="3" y1="21" x2="21" y2="3" />}
+    </svg>
+  );
+}
+
+function ExpandIcon(props) {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
     </svg>
   );
 }
@@ -158,7 +183,6 @@ function UploadPageInner() {
 
   const [file, setFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
-  const [dragActive, setDragActive] = useState(false);
   const [showEmoji, setShowEmoji] = useState(false);
   const [isAiOpen, setIsAiOpen] = useState(false);
 
@@ -187,14 +211,42 @@ function UploadPageInner() {
   const [errorMsg, setErrorMsg] = useState(null);
 
   // --- New for the camera-first studio redesign ---
-  const [mode, setMode] = useState('camera'); // 'camera' | 'file' — which capture surface shows before anything's been recorded/picked
+  const cameraRef = useRef(null);
   const [isRecording, setIsRecording] = useState(false);
+  const [recordingSecondsLeft, setRecordingSecondsLeft] = useState(0);
+  const [cameraError, setCameraError] = useState(null);
+  const [cameraRecordError, setCameraRecordError] = useState(null);
   const [activeFilterId, setActiveFilterId] = useState('normal');
-  const [showFilters, setShowFilters] = useState(false);
+  const [showFilterGrid, setShowFilterGrid] = useState(false);
   const [textOverlay, setTextOverlay] = useState(null); // { content, x, y (both 0-100, % of stage) } | null
   const [showTextEditor, setShowTextEditor] = useState(false);
   const [textDraft, setTextDraft] = useState('');
   const [showPublishDrawer, setShowPublishDrawer] = useState(false);
+
+  // Duration selector row: '10m' | '60s' | '15s' | 'photo' | 'text'. Only
+  // the three real durations map to actual recording seconds — photo/text
+  // capture aren't things this page's upload pipeline supports (the Video
+  // model backing POST /videos is video-only; photo/text posts are what
+  // Stories are for), so those two stay visible in the row exactly per
+  // spec, but selecting them just explains that rather than pretending to
+  // work.
+  const [durationMode, setDurationMode] = useState('60s');
+  const DURATION_SECONDS = { '10m': 600, '60s': 60, '15s': 15 };
+
+  const [micOn, setMicOn] = useState(true);
+  const [retouchOn, setRetouchOn] = useState(false);
+  const [timerSeconds, setTimerSeconds] = useState(0); // 0 (off) | 3 | 10
+  const [countdownValue, setCountdownValue] = useState(null);
+  const [expandedAspect, setExpandedAspect] = useState(false);
+  // Browsers have no API to peek at the OS photo library without the
+  // person actively picking a file — there's no way to show a true "latest
+  // gallery item" thumbnail the way the native TikTok app can. This
+  // remembers whatever was last picked *through this button, this
+  // session* as the closest honest approximation, defaulting to a plain
+  // gallery icon until that's happened at least once.
+  const [lastPickedPreviewUrl, setLastPickedPreviewUrl] = useState(null);
+  const [lastPickedFile, setLastPickedFile] = useState(null);
+  const [publishTab, setPublishTab] = useState('post'); // 'post' | 'templates' — Templates has no backing feature, see BottomCaptureControls
 
   useEffect(() => {
     if (!localStorage.getItem('token')) router.push('/login');
@@ -232,10 +284,25 @@ function UploadPageInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Independent object-URL lifecycle from `previewUrl` above (kept for the
+  // bottom-left "gallery" corner button even after a retake clears `file`)
+  // — sharing one URL between both would mean this effect's cleanup and
+  // the other one's race to revoke the same blob URL, leaving whichever
+  // ran second pointing at nothing.
+  useEffect(() => {
+    if (!lastPickedFile) {
+      setLastPickedPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(lastPickedFile);
+    setLastPickedPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [lastPickedFile]);
+
   function pickFile(selected) {
     if (!selected) return;
     if (selected.type.startsWith('image/')) {
-      // The bottom mode toggle's drop zone welcomes photos per the studio
+      // The gallery-thumbnail button welcomes photos per the studio
       // redesign brief, but backend/src/utils/upload.js's video upload
       // pipeline only accepts video files — there's no photo-post model or
       // route yet. Saying so clearly beats silently accepting the file and
@@ -249,6 +316,7 @@ function UploadPageInner() {
     }
     setErrorMsg(null);
     setFile(selected);
+    setLastPickedFile(selected);
   }
 
   function handleDrop(e) {
@@ -259,6 +327,9 @@ function UploadPageInner() {
 
   function handleCaptured(capturedFile) {
     setFile(capturedFile);
+    // A fresh recording becomes "the latest item" too, same as it would on
+    // a real device's camera roll.
+    setLastPickedFile(capturedFile);
   }
 
   function handleRetake() {
@@ -315,7 +386,6 @@ function UploadPageInner() {
     setStatus(null);
     setUploadProgress(0);
     setErrorMsg(null);
-    setMode('camera');
     setActiveFilterId('normal');
     setTextOverlay(null);
     setShowPublishDrawer(false);
@@ -416,8 +486,85 @@ function UploadPageInner() {
     setShowTextEditor(false);
   }
 
+  // --- Camera chrome now lives in this page instead of inside
+  // CameraRecorder (see hideOwnControls) — everything below drives the
+  // camera engine through the imperative ref it exposes. ---
+  function handleExitStudio() {
+    if (isRecording) return;
+    router.push('/');
+  }
+
+  function handleFlipCamera() {
+    cameraRef.current?.flipCamera();
+  }
+
+  function handleToggleMic() {
+    const enabled = cameraRef.current?.toggleMic();
+    if (enabled != null) setMicOn(enabled);
+  }
+
+  function cycleTimer() {
+    setTimerSeconds((s) => (s === 0 ? 3 : s === 3 ? 10 : 0));
+  }
+
+  function handleDurationSelect(id) {
+    setDurationMode(id);
+    if (id === 'photo' || id === 'text') {
+      setErrorMsg(
+        id === 'photo'
+          ? "Photo posts aren't supported here yet — try Stories instead."
+          : "Text posts aren't supported here yet — try Stories instead."
+      );
+      return;
+    }
+    setErrorMsg(null);
+    cameraRef.current?.setDurationSeconds(DURATION_SECONDS[id]);
+  }
+
+  function handleShutterPress() {
+    if (durationMode === 'photo' || durationMode === 'text' || countdownValue !== null) return;
+    if (isRecording) {
+      cameraRef.current?.stopRecording();
+      return;
+    }
+    if (timerSeconds > 0) {
+      setCountdownValue(timerSeconds);
+    } else {
+      cameraRef.current?.startRecording();
+    }
+  }
+
+  // Ticks the pre-record countdown down to 0, then actually starts
+  // recording — an effect (not a manual setTimeout chain in
+  // handleShutterPress) so navigating away or re-tapping mid-countdown
+  // cleans up the pending timer automatically via the cleanup function.
+  useEffect(() => {
+    if (countdownValue === null) return;
+    if (countdownValue === 0) {
+      const t = setTimeout(() => {
+        setCountdownValue(null);
+        cameraRef.current?.startRecording();
+      }, 350);
+      return () => clearTimeout(t);
+    }
+    const t = setTimeout(() => setCountdownValue((v) => (v == null ? null : v - 1)), 1000);
+    return () => clearTimeout(t);
+  }, [countdownValue]);
+
   const captionRemaining = CAPTION_MAX - caption.length;
   const activeFilter = FILTERS.find((f) => f.id === activeFilterId) || FILTERS[0];
+  // Merged into one inline style — object-fit here overrides the
+  // <video>'s own Tailwind object-cover class (inline style specificity
+  // beats a class), so the aspect-ratio toggle doesn't need a new prop on
+  // CameraRecorder at all.
+  const combinedFilterCss = [activeFilter.css, retouchOn ? 'brightness(1.06) contrast(0.95) saturate(1.08)' : '']
+    .filter(Boolean)
+    .join(' ');
+  const cameraVideoStyle = {
+    filter: combinedFilterCss || undefined,
+    objectFit: expandedAspect ? 'contain' : 'cover',
+    backgroundColor: expandedAspect ? '#000' : undefined,
+  };
 
   return (
     <main className="fixed inset-0 bg-black overflow-hidden">
@@ -430,26 +577,20 @@ function UploadPageInner() {
           onPointerUp={endOverlayDrag}
           onPointerLeave={endOverlayDrag}
         >
-          {mode === 'camera' ? (
-            <CameraRecorder
-              embedded
-              videoStyle={activeFilter.css ? { filter: activeFilter.css } : undefined}
-              onRecordingChange={setIsRecording}
-              onCaptured={handleCaptured}
-              overlayChildren={
-                textOverlay && (
-                  <DraggableTextOverlay overlay={textOverlay} onPointerDownHandle={beginOverlayDrag} />
-                )
-              }
-            />
-          ) : (
-            <FileDropStage
-              dragActive={dragActive}
-              setDragActive={setDragActive}
-              onDrop={handleDrop}
-              onPick={() => fileInputRef.current?.click()}
-            />
-          )}
+          <CameraRecorder
+            ref={cameraRef}
+            embedded
+            hideOwnControls
+            videoStyle={cameraVideoStyle}
+            onRecordingChange={setIsRecording}
+            onSecondsLeftChange={setRecordingSecondsLeft}
+            onErrorChange={setCameraError}
+            onRecordErrorChange={setCameraRecordError}
+            onCaptured={handleCaptured}
+            overlayChildren={
+              textOverlay && <DraggableTextOverlay overlay={textOverlay} onPointerDownHandle={beginOverlayDrag} />
+            }
+          />
           <input
             ref={fileInputRef}
             type="file"
@@ -458,23 +599,72 @@ function UploadPageInner() {
             onChange={(e) => pickFile(e.target.files?.[0])}
           />
 
-          {mode === 'camera' && (
-            <FilterSidebar
-              open={showFilters}
-              setOpen={setShowFilters}
-              activeId={activeFilterId}
-              onSelect={setActiveFilterId}
-            />
+          <TopCameraBar
+            onExit={handleExitStudio}
+            onFlip={handleFlipCamera}
+            soundLabel={selectedTrack ? `🎵 ${selectedTrack.title}` : null}
+            onOpenSound={() => setIsSoundPickerOpen(true)}
+            disabled={isRecording}
+          />
+
+          <RightToolColumn
+            onFlip={handleFlipCamera}
+            retouchOn={retouchOn}
+            onToggleRetouch={() => setRetouchOn((v) => !v)}
+            timerSeconds={timerSeconds}
+            onCycleTimer={cycleTimer}
+            onOpenFilters={() => setShowFilterGrid(true)}
+            micOn={micOn}
+            onToggleMic={handleToggleMic}
+            expandedAspect={expandedAspect}
+            onToggleAspect={() => setExpandedAspect((v) => !v)}
+            disabled={isRecording}
+          />
+
+          <button
+            onClick={openTextEditor}
+            className={`absolute top-20 left-3 w-9 h-9 rounded-full flex items-center justify-center transition-colors ${
+              textOverlay ? 'bg-amber-500 text-black' : 'bg-black/50 text-white'
+            }`}
+            aria-label={textOverlay ? 'Edit text overlay' : 'Add text overlay'}
+          >
+            <TextToolIcon />
+          </button>
+
+          {countdownValue !== null && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <span className="text-white text-8xl font-display drop-shadow-[0_4px_12px_rgba(0,0,0,0.8)]">
+                {countdownValue || ''}
+              </span>
+            </div>
           )}
 
-          <FloatingToolbar onText={openTextEditor} textActive={!!textOverlay} />
+          <BottomCaptureControls
+            durationMode={durationMode}
+            onSelectDuration={handleDurationSelect}
+            isRecording={isRecording}
+            recordingSecondsLeft={recordingSecondsLeft}
+            disabled={!!cameraError || !!cameraRecordError}
+            onShutterPress={handleShutterPress}
+            activeFilterId={activeFilterId}
+            onSelectFilter={setActiveFilterId}
+            galleryPreviewUrl={lastPickedPreviewUrl}
+            onOpenGallery={() => fileInputRef.current?.click()}
+            onGalleryDrop={handleDrop}
+            publishTab={publishTab}
+            setPublishTab={setPublishTab}
+          />
 
-          <BottomModeToggle mode={mode} setMode={setMode} disabled={isRecording} />
-
-          {errorMsg && (
-            <div className="absolute bottom-24 inset-x-0 flex justify-center px-6 pointer-events-none">
-              <p className="bg-black/80 text-red-400 text-xs px-4 py-2 rounded-full">{errorMsg}</p>
+          {(errorMsg || cameraError || cameraRecordError) && (
+            <div className="absolute bottom-52 inset-x-0 flex justify-center px-6 pointer-events-none">
+              <p className="bg-black/80 text-red-400 text-xs px-4 py-2 rounded-full text-center">
+                {errorMsg || cameraError || cameraRecordError}
+              </p>
             </div>
+          )}
+
+          {showFilterGrid && (
+            <FilterGridModal activeId={activeFilterId} onSelect={setActiveFilterId} onClose={() => setShowFilterGrid(false)} />
           )}
         </div>
       )}
@@ -585,55 +775,129 @@ function UploadPageInner() {
 }
 
 /* ------------------------------------------------------------------ */
-/* Camera-first studio chrome — filters, text tool, mode toggle         */
+/* Camera-first studio chrome — top bar, right tool column, text tool   */
 /* ------------------------------------------------------------------ */
 
-function FilterSidebar({ open, setOpen, activeId, onSelect }) {
+function TopCameraBar({ onExit, onFlip, soundLabel, onOpenSound, disabled }) {
   return (
-    <div className="absolute right-3 top-1/2 -translate-y-1/2 flex flex-col items-end gap-2">
+    <div className="absolute top-0 inset-x-0 flex items-center justify-between px-4 pt-[max(0.75rem,env(safe-area-inset-top))]">
       <button
-        onClick={() => setOpen((v) => !v)}
-        className={`w-11 h-11 rounded-full flex items-center justify-center transition-colors shrink-0 ${
-          open ? 'bg-amber-500 text-black' : 'bg-black/50 text-white'
-        }`}
-        aria-label={open ? 'Hide filters' : 'Show filters'}
+        onClick={onExit}
+        disabled={disabled}
+        aria-label="Close studio"
+        className="w-9 h-9 rounded-full bg-black/40 text-white flex items-center justify-center disabled:opacity-30"
       >
-        <FilterIcon />
+        <XIcon />
       </button>
 
-      <div
-        className={`flex flex-col gap-3 bg-black/50 backdrop-blur-md rounded-3xl p-2.5 transition-all origin-right ${
-          open ? 'opacity-100 scale-100' : 'opacity-0 scale-90 pointer-events-none'
-        }`}
+      <button
+        onClick={onOpenSound}
+        className="max-w-[55%] flex items-center gap-1.5 bg-black/50 backdrop-blur-sm rounded-full px-4 py-2 text-white text-xs font-semibold"
       >
-        {FILTERS.map((f) => (
-          <button key={f.id} onClick={() => onSelect(f.id)} className="flex flex-col items-center gap-1" aria-label={f.label}>
-            <span
-              className={`w-11 h-11 rounded-full border-2 ${activeId === f.id ? 'border-amber-400' : 'border-white/30'}`}
-              style={{ background: f.swatch }}
-            />
-            <span className="text-white text-[9px] font-semibold drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)] max-w-[44px] text-center leading-tight">
-              {f.label}
-            </span>
-          </button>
-        ))}
-      </div>
+        <MusicNoteIcon className="w-3.5 h-3.5 shrink-0" />
+        <span className="truncate">{soundLabel || 'Add sound'}</span>
+      </button>
+
+      <button
+        onClick={onFlip}
+        disabled={disabled}
+        aria-label="Flip camera"
+        className="w-9 h-9 rounded-full bg-black/40 text-white flex items-center justify-center disabled:opacity-30"
+      >
+        <FlipCameraIcon />
+      </button>
     </div>
   );
 }
 
-function FloatingToolbar({ onText, textActive }) {
+function RightToolColumn({
+  onFlip,
+  retouchOn,
+  onToggleRetouch,
+  timerSeconds,
+  onCycleTimer,
+  onOpenFilters,
+  micOn,
+  onToggleMic,
+  expandedAspect,
+  onToggleAspect,
+  disabled,
+}) {
+  const items = [
+    { key: 'flip', icon: FlipCameraIcon, label: 'Flip', onClick: onFlip, active: false },
+    // getUserMedia has no reliable cross-browser flash/torch control, and a
+    // real beauty/retouch filter would need face landmark detection this
+    // app doesn't have — this toggles a light brightness/contrast/saturation
+    // smoothing pass on the preview instead of pretending to do either.
+    { key: 'retouch', icon: FlashIcon, label: 'Retouch', onClick: onToggleRetouch, active: retouchOn },
+    {
+      key: 'timer',
+      icon: TimerIcon,
+      label: timerSeconds ? `${timerSeconds}s` : 'Timer',
+      onClick: onCycleTimer,
+      active: timerSeconds > 0,
+    },
+    { key: 'filters', icon: FilterIcon, label: 'Filters', onClick: onOpenFilters, active: false },
+    { key: 'mic', icon: MicIcon, label: micOn ? 'Mic' : 'Muted', onClick: onToggleMic, active: !micOn, muted: !micOn },
+    { key: 'aspect', icon: ExpandIcon, label: 'Expand', onClick: onToggleAspect, active: expandedAspect },
+  ];
+
   return (
-    <div className="absolute left-3 top-1/2 -translate-y-1/2 flex flex-col gap-3">
-      <button
-        onClick={onText}
-        className={`w-11 h-11 rounded-full flex items-center justify-center transition-colors ${
-          textActive ? 'bg-amber-500 text-black' : 'bg-black/50 text-white'
-        }`}
-        aria-label="Add text overlay"
+    <div className="absolute right-3 top-24 flex flex-col gap-5 items-center">
+      {items.map(({ key, icon: Icon, label, onClick, active, muted }) => (
+        <button
+          key={key}
+          onClick={onClick}
+          disabled={disabled && key !== 'aspect'}
+          className="flex flex-col items-center gap-1 disabled:opacity-30"
+          aria-label={label}
+        >
+          <span
+            className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors ${
+              active ? 'bg-amber-500 text-black' : 'bg-black/40 text-white'
+            }`}
+          >
+            {key === 'mic' ? <Icon crossedOut={muted} /> : <Icon />}
+          </span>
+          <span className="text-white text-[9px] font-semibold drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">{label}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function FilterGridModal({ activeId, onSelect, onClose }) {
+  return (
+    <div className="absolute inset-0 z-30 bg-black/70 backdrop-blur-sm flex items-end" onClick={onClose}>
+      <div
+        className="w-full bg-zinc-900 border-t border-zinc-800 rounded-t-2xl p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]"
+        onClick={(e) => e.stopPropagation()}
       >
-        <TextToolIcon />
-      </button>
+        <div className="flex items-center justify-between mb-4">
+          <p className="text-white font-semibold text-sm">Filters</p>
+          <button onClick={onClose} className="text-zinc-400 hover:text-white text-lg leading-none">
+            ✕
+          </button>
+        </div>
+        <div className="grid grid-cols-3 gap-4">
+          {FILTERS.map((f) => (
+            <button
+              key={f.id}
+              onClick={() => {
+                onSelect(f.id);
+                onClose();
+              }}
+              className="flex flex-col items-center gap-1.5"
+            >
+              <span
+                className={`w-14 h-14 rounded-full border-2 ${activeId === f.id ? 'border-amber-400' : 'border-white/20'}`}
+                style={{ background: f.swatch }}
+              />
+              <span className="text-white text-[11px] font-medium">{f.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -683,53 +947,153 @@ function TextEditorModal({ value, onChange, onSubmit, onClose, hasExisting }) {
   );
 }
 
-function BottomModeToggle({ mode, setMode, disabled }) {
+function BottomCaptureControls({
+  durationMode,
+  onSelectDuration,
+  isRecording,
+  recordingSecondsLeft,
+  disabled,
+  onShutterPress,
+  activeFilterId,
+  onSelectFilter,
+  galleryPreviewUrl,
+  onOpenGallery,
+  onGalleryDrop,
+  publishTab,
+  setPublishTab,
+}) {
+  const DURATION_TABS = [
+    { id: '10m', label: '10m' },
+    { id: '60s', label: '60s' },
+    { id: '15s', label: '15s' },
+    { id: 'photo', label: 'PHOTO' },
+    { id: 'text', label: 'TEXT' },
+  ];
+  // The two flanking each side of the shutter — a quick-access subset, not
+  // the full set (that's what the Filters icon in the right column opens
+  // via FilterGridModal).
+  const leftFilters = FILTERS.slice(1, 3);
+  const rightFilters = FILTERS.slice(3, 5);
+
   return (
-    <div className="absolute bottom-6 inset-x-0 flex justify-center">
-      <div className="flex gap-1 p-1 bg-black/60 backdrop-blur-md rounded-full border border-white/10">
-        {[
-          { id: 'camera', label: 'Camera', icon: CameraDotIcon },
-          { id: 'file', label: 'Upload File', icon: UploadIcon },
-        ].map((opt) => {
-          const Icon = opt.icon;
-          return (
+    <div className="absolute bottom-0 inset-x-0 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+      <div className="flex justify-center gap-2 overflow-x-auto no-scrollbar px-6 mb-4">
+        {DURATION_TABS.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => onSelectDuration(t.id)}
+            disabled={isRecording}
+            className={`shrink-0 px-3 py-1 font-mono text-[11px] uppercase tracking-widest rounded-full transition-colors disabled:opacity-40 ${
+              durationMode === t.id ? 'text-amber-400 font-bold' : 'text-white/70'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex items-center justify-center gap-5 px-6">
+        {leftFilters.map((f) => (
+          <FilterThumb key={f.id} filter={f} active={activeFilterId === f.id} onClick={() => onSelectFilter(f.id)} />
+        ))}
+
+        <ShutterButton
+          recording={isRecording}
+          secondsLeft={recordingSecondsLeft}
+          disabled={disabled}
+          onPress={onShutterPress}
+        />
+
+        {rightFilters.map((f) => (
+          <FilterThumb key={f.id} filter={f} active={activeFilterId === f.id} onClick={() => onSelectFilter(f.id)} />
+        ))}
+      </div>
+
+      <div className="flex items-center justify-between px-6 mt-4">
+        <GalleryThumbButton previewUrl={galleryPreviewUrl} onClick={onOpenGallery} onDrop={onGalleryDrop} disabled={isRecording} />
+
+        <div className="flex gap-1 p-1 bg-black/40 rounded-full">
+          {[
+            { id: 'post', label: 'POST' },
+            { id: 'templates', label: 'TEMPLATES' },
+          ].map((t) => (
             <button
-              key={opt.id}
-              onClick={() => setMode(opt.id)}
-              disabled={disabled}
-              className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold transition-colors disabled:opacity-40 ${
-                mode === opt.id ? 'bg-white text-black' : 'text-white'
+              key={t.id}
+              onClick={() => setPublishTab(t.id)}
+              className={`px-3.5 py-1.5 rounded-full text-[11px] font-bold tracking-wide transition-colors ${
+                publishTab === t.id ? 'bg-white text-black' : 'text-white/70'
               }`}
             >
-              <Icon /> {opt.label}
+              {t.label}
             </button>
-          );
-        })}
+          ))}
+        </div>
+
+        {/* Balances the gallery thumbnail on the left so the POST/TEMPLATES
+            switcher stays visually centered. */}
+        <span className="w-10" aria-hidden="true" />
       </div>
     </div>
   );
 }
 
-function FileDropStage({ dragActive, setDragActive, onDrop, onPick }) {
+function FilterThumb({ filter, active, onClick }) {
   return (
-    <div
-      onClick={onPick}
+    <button onClick={onClick} className="flex flex-col items-center gap-1" aria-label={filter.label}>
+      <span
+        className={`w-10 h-10 rounded-full border-2 ${active ? 'border-amber-400' : 'border-white/40'}`}
+        style={{ background: filter.swatch }}
+      />
+    </button>
+  );
+}
+
+function ShutterButton({ recording, secondsLeft, disabled, onPress }) {
+  return (
+    <button
+      onClick={onPress}
+      disabled={disabled}
+      aria-label={recording ? 'Stop recording' : 'Start recording'}
+      className="relative w-[72px] h-[72px] rounded-full border-[4px] border-white flex items-center justify-center disabled:opacity-30 shrink-0"
+    >
+      <span className={`bg-red-500 transition-all ${recording ? 'w-7 h-7 rounded-xl' : 'w-[58px] h-[58px] rounded-full'}`} />
+      {recording && (
+        <span className="absolute -bottom-6 font-mono text-[11px] text-white bg-black/50 px-2 py-0.5 rounded-full whitespace-nowrap">
+          {secondsLeft}s
+        </span>
+      )}
+    </button>
+  );
+}
+
+function GalleryThumbButton({ previewUrl, onClick, onDrop, disabled }) {
+  const [dragOver, setDragOver] = useState(false);
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
       onDragOver={(e) => {
         e.preventDefault();
-        setDragActive(true);
+        setDragOver(true);
       }}
-      onDragLeave={() => setDragActive(false)}
-      onDrop={onDrop}
-      className={`w-full h-full flex flex-col items-center justify-center px-8 cursor-pointer border-2 border-dashed transition-colors ${
-        dragActive ? 'border-amber-500/80 bg-zinc-900/60' : 'border-zinc-800 bg-zinc-950'
+      onDragLeave={() => setDragOver(false)}
+      onDrop={(e) => {
+        setDragOver(false);
+        onDrop?.(e);
+      }}
+      aria-label="Choose from gallery"
+      className={`w-10 h-10 rounded-lg overflow-hidden border-2 shrink-0 disabled:opacity-30 ${
+        dragOver ? 'border-amber-400' : 'border-white/50'
       }`}
     >
-      <div className="w-16 h-16 rounded-2xl bg-zinc-900 flex items-center justify-center text-amber-400 mb-4">
-        <UploadCloudIcon />
-      </div>
-      <p className="text-white font-semibold text-base mb-1">Drag & drop a video or photo</p>
-      <p className="text-zinc-500 text-sm text-center max-w-[260px]">or tap to browse — MP4, MOV, WEBM</p>
-    </div>
+      {previewUrl ? (
+        <img src={previewUrl} alt="" className="w-full h-full object-cover" />
+      ) : (
+        <span className="w-full h-full bg-zinc-800 flex items-center justify-center text-zinc-400">
+          <UploadIcon />
+        </span>
+      )}
+    </button>
   );
 }
 
