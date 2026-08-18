@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { useCameraDevices } from '../lib/useCameraDevices';
 import CameraDeviceSelect from './CameraDeviceSelect';
 
@@ -9,7 +9,26 @@ const DURATIONS = [
   { label: '60s', seconds: 60 },
 ];
 
-export default function CameraRecorder({ onCaptured, onCancel, embedded = false, videoStyle, overlayChildren, onRecordingChange }) {
+const CameraRecorder = forwardRef(function CameraRecorder(
+  {
+    onCaptured,
+    onCancel,
+    embedded = false,
+    videoStyle,
+    overlayChildren,
+    onRecordingChange,
+    onSecondsLeftChange,
+    onErrorChange,
+    onRecordErrorChange,
+    // When embedded AND this is true, none of CameraRecorder's own chrome
+    // renders (flip button, device picker, duration pills, shutter) — the
+    // parent owns 100% of the visual controls and drives everything through
+    // the imperative handle below instead. Defaults false so every existing
+    // embedded call site keeps working unchanged.
+    hideOwnControls = false,
+  },
+  ref
+) {
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const recorderRef = useRef(null);
@@ -33,6 +52,15 @@ export default function CameraRecorder({ onCaptured, onCancel, embedded = false,
   // affordance, since desktops don't have a front/back camera pair.
   const [manualFacingFlip, setManualFacingFlip] = useState(false);
   const { devices, selectedDeviceId, setSelectedDeviceId, builtInDeviceId, ready } = useCameraDevices();
+
+  useEffect(() => {
+    onErrorChange?.(error);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [error]);
+  useEffect(() => {
+    onRecordErrorChange?.(recordError);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recordError]);
 
   useEffect(() => {
     if (!ready) return; // wait for device enumeration before opening the real preview stream
@@ -149,14 +177,16 @@ export default function CameraRecorder({ onCaptured, onCancel, embedded = false,
     setRecording(true);
     onRecordingChange?.(true);
     setSecondsLeft(duration);
+    onSecondsLeftChange?.(duration);
 
     timerRef.current = setInterval(() => {
       setSecondsLeft((s) => {
+        const next = s <= 1 ? 0 : s - 1;
+        onSecondsLeftChange?.(next);
         if (s <= 1) {
           stopRecording();
-          return 0;
         }
-        return s - 1;
+        return next;
       });
     }, 1000);
   }
@@ -169,6 +199,24 @@ export default function CameraRecorder({ onCaptured, onCancel, embedded = false,
       recorderRef.current.stop();
     }
   }
+
+  // Mic mute is a direct MediaStreamTrack toggle rather than a MediaRecorder
+  // option — disabling the track sends silence without ending the track, so
+  // recording (if already in progress) keeps running uninterrupted.
+  function toggleMic() {
+    const track = streamRef.current?.getAudioTracks?.()[0];
+    if (!track) return null;
+    track.enabled = !track.enabled;
+    return track.enabled;
+  }
+
+  useImperativeHandle(ref, () => ({
+    flipCamera,
+    startRecording,
+    stopRecording,
+    toggleMic,
+    setDurationSeconds: (seconds) => setDuration(seconds),
+  }));
 
   const recordControls = (
     <>
@@ -247,7 +295,7 @@ export default function CameraRecorder({ onCaptured, onCancel, embedded = false,
 
         {overlayChildren}
 
-        {embedded && devices.length > 1 && (
+        {embedded && !hideOwnControls && devices.length > 1 && (
           <div className="absolute top-4 right-4">
             <CameraDeviceSelect
               devices={devices}
@@ -258,7 +306,7 @@ export default function CameraRecorder({ onCaptured, onCancel, embedded = false,
             />
           </div>
         )}
-        {embedded && (
+        {embedded && !hideOwnControls && (
           <button
             onClick={flipCamera}
             disabled={recording}
@@ -269,7 +317,7 @@ export default function CameraRecorder({ onCaptured, onCancel, embedded = false,
           </button>
         )}
 
-        {recording && (
+        {recording && !hideOwnControls && (
           <div className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-ink/70 px-3 py-1 rounded-sprocket">
             <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
             <span className="font-mono text-xs text-bone">{secondsLeft}s</span>
@@ -286,8 +334,11 @@ export default function CameraRecorder({ onCaptured, onCancel, embedded = false,
             of taking real flex space below it, since the page embedding
             this (the camera-first studio view) stacks its own bottom
             mode-toggle bar at the very bottom of the same screen —
-            positioned a bit higher (bottom-28) so the two don't overlap. */}
-        {embedded && (
+            positioned a bit higher (bottom-28) so the two don't overlap.
+            Suppressed entirely when hideOwnControls is set — the parent is
+            rendering its own shutter/duration UI and drives this component
+            purely through the imperative ref instead. */}
+        {embedded && !hideOwnControls && (
           <div className="absolute bottom-28 inset-x-0 px-6">
             {recordControls}
           </div>
@@ -297,4 +348,6 @@ export default function CameraRecorder({ onCaptured, onCancel, embedded = false,
       {!embedded && <div className="px-6 py-6">{recordControls}</div>}
     </div>
   );
-}
+});
+
+export default CameraRecorder;
