@@ -28,6 +28,41 @@ const FILTERS = [
   { id: 'glow', label: 'Glow', css: 'brightness(1.25) contrast(0.9) saturate(1.25)', swatch: 'linear-gradient(135deg,#fde68a,#fca5a5)' },
 ];
 
+// Animated overlays, distinct from FILTERS above — those are static CSS
+// color grading on the <video> itself; these render on their own <canvas>
+// layer on top of it (see <EffectCanvas>), the same way a face-filter
+// sticker layer works in a real camera app. 'none' is the default —
+// canvas stays cleared/blank.
+const EFFECTS = [
+  { id: 'none', label: 'No Effect', kind: 'none', swatch: 'linear-gradient(135deg,#3f3f46,#27272a)' },
+  { id: 'hearts', label: 'Floating Hearts', kind: 'hearts', swatch: 'linear-gradient(135deg,#f472b6,#dc2626)' },
+  { id: 'mesh', label: 'Mesh Grid', kind: 'mesh', swatch: 'linear-gradient(135deg,#22d3ee,#4f46e5)' },
+  { id: 'glowframe', label: 'Glow Frame', kind: 'glow', swatch: 'linear-gradient(135deg,#fde68a,#f59e0b)' },
+  { id: 'sparkle', label: 'Sparkles', kind: 'sparkle', swatch: 'linear-gradient(135deg,#e9d5ff,#a855f7)' },
+  { id: 'snow', label: 'Snowfall', kind: 'snow', swatch: 'linear-gradient(135deg,#e0f2fe,#7dd3fc)' },
+];
+
+const TEMPLATE_CATEGORIES = ['For You', 'Viral Song', 'Trendy', 'AI', 'Monthly Recap', 'Daily life', 'Aesthetic', 'One Clip'];
+
+// No backend Template model exists (this is a from-scratch UI feature, not
+// wired to real data) — a fixed local catalog, gradient placeholders
+// standing in for real preview thumbnails/video loops the same way
+// FILTERS/EFFECTS above use swatches instead of real imagery.
+const TEMPLATES = [
+  { id: 'tp1', title: 'July is calling', category: 'Monthly Recap', clipCount: 6, uses: '185.2K videos', tag: 'Trending', swatch: 'linear-gradient(160deg,#f59e0b,#ec4899)' },
+  { id: 'tp2', title: 'Then vs Now', category: 'Trendy', clipCount: 2, uses: '92.4K videos', tag: 'Viral', swatch: 'linear-gradient(160deg,#4f46e5,#0ea5e9)' },
+  { id: 'tp3', title: 'AI Fridge Magnet Football', category: 'AI', clipCount: 1, uses: '340.7K videos', tag: 'AI', swatch: 'linear-gradient(160deg,#16a34a,#facc15)' },
+  { id: 'tp4', title: 'World Cup Player Avatar', category: 'AI', clipCount: 1, uses: '210.9K videos', tag: 'AI', swatch: 'linear-gradient(160deg,#059669,#eab308)' },
+  { id: 'tp5', title: 'Crochet Yourself', category: 'AI', clipCount: 1, uses: '128.3K videos', tag: 'AI', swatch: 'linear-gradient(160deg,#db2777,#f97316)' },
+  { id: 'tp6', title: 'A Day in My Life', category: 'Daily life', clipCount: 8, uses: '76.1K videos', tag: 'New', swatch: 'linear-gradient(160deg,#0f766e,#14b8a6)' },
+  { id: 'tp7', title: 'Golden Hour Moodboard', category: 'Aesthetic', clipCount: 5, uses: '54.8K videos', tag: 'Aesthetic', swatch: 'linear-gradient(160deg,#f59e0b,#f97316)' },
+  { id: 'tp8', title: 'One Take Glow Up', category: 'One Clip', clipCount: 1, uses: '301.5K videos', tag: 'Viral', swatch: 'linear-gradient(160deg,#a21caf,#ec4899)' },
+  { id: 'tp9', title: 'Beat Drop Sync', category: 'Viral Song', clipCount: 4, uses: '412.0K videos', tag: 'Trending', swatch: 'linear-gradient(160deg,#dc2626,#7c2d12)' },
+  { id: 'tp10', title: 'Slow Motion Reveal', category: 'Trendy', clipCount: 3, uses: '67.2K videos', tag: 'New', swatch: 'linear-gradient(160deg,#1d4ed8,#4f46e5)' },
+  { id: 'tp11', title: 'This Month in Review', category: 'Monthly Recap', clipCount: 10, uses: '145.6K videos', tag: 'Trending', swatch: 'linear-gradient(160deg,#be185d,#f43f5e)' },
+  { id: 'tp12', title: 'Minimal Morning', category: 'Aesthetic', clipCount: 6, uses: '38.9K videos', tag: 'Aesthetic', swatch: 'linear-gradient(160deg,#78716c,#a8a29e)' },
+];
+
 /* ------------------------------------------------------------------ */
 /* Icons                                                                */
 /* ------------------------------------------------------------------ */
@@ -68,6 +103,23 @@ function XIcon(props) {
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
       <path d="M18 6 6 18" />
       <path d="m6 6 12 12" />
+    </svg>
+  );
+}
+
+function SearchIcon(props) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <circle cx="11" cy="11" r="7" />
+      <line x1="21" y1="21" x2="16.65" y2="16.65" />
+    </svg>
+  );
+}
+
+function BookmarkIcon({ filled, ...props }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill={filled ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M19 21 12 16 5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2Z" />
     </svg>
   );
 }
@@ -246,7 +298,92 @@ function UploadPageInner() {
   // gallery icon until that's happened at least once.
   const [lastPickedPreviewUrl, setLastPickedPreviewUrl] = useState(null);
   const [lastPickedFile, setLastPickedFile] = useState(null);
-  const [publishTab, setPublishTab] = useState('post'); // 'post' | 'templates' — Templates has no backing feature, see BottomCaptureControls
+  const [publishTab, setPublishTab] = useState('post'); // 'post' | 'templates'
+
+  // --- Effects (animated canvas overlays) + favourites ---
+  const [activeEffectId, setActiveEffectId] = useState('none');
+  const [favoriteEffectIds, setFavoriteEffectIds] = useState([]);
+  const [showFavoritesDrawer, setShowFavoritesDrawer] = useState(false);
+
+  // No backend model backs "favourite effects" (this is a from-scratch UI
+  // feature, same as the template catalog below) — persisted to
+  // localStorage instead of just component state so it actually survives
+  // a page reload rather than silently resetting, without inventing a
+  // backend endpoint nothing asked for.
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('studio:favoriteEffects');
+      if (stored) setFavoriteEffectIds(JSON.parse(stored));
+    } catch {
+      /* ignore malformed/unavailable storage */
+    }
+  }, []);
+  useEffect(() => {
+    try {
+      localStorage.setItem('studio:favoriteEffects', JSON.stringify(favoriteEffectIds));
+    } catch {
+      /* storage full/unavailable — favouriting still works for this session */
+    }
+  }, [favoriteEffectIds]);
+
+  function toggleFavoriteEffect(id) {
+    setFavoriteEffectIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }
+
+  // --- Templates hub ---
+  const templateFileInputRef = useRef(null);
+  const [templateCategory, setTemplateCategory] = useState('For You');
+  const [showTemplateSearch, setShowTemplateSearch] = useState(false);
+  const [templateSearchQuery, setTemplateSearchQuery] = useState('');
+  const [selectedTemplate, setSelectedTemplate] = useState(null);
+  const [templateClipError, setTemplateClipError] = useState(null);
+
+  function handleTemplateClipsPicked(e) {
+    const files = Array.from(e.target.files || []);
+    e.target.value = ''; // allow re-picking the same file(s) next time
+    if (!files.length || !selectedTemplate) return;
+
+    if (files.length !== selectedTemplate.clipCount) {
+      setTemplateClipError({
+        message: `Select exactly ${selectedTemplate.clipCount} clip${selectedTemplate.clipCount === 1 ? '' : 's'} — you picked ${files.length}.`,
+      });
+      return;
+    }
+    const first = files[0];
+    if (!first.type.startsWith('video/')) {
+      setTemplateClipError({ message: 'Please choose video files.' });
+      return;
+    }
+
+    if (selectedTemplate.clipCount > 1) {
+      // Stitching multiple clips together (with the template's own timing/
+      // transitions) needs a real video-composition pipeline this app
+      // doesn't have — there's no ffmpeg/concat step behind POST /videos
+      // (see backend/src/routes/videos.js, single-file upload only).
+      // Rather than silently proceed with only the first clip, this stops
+      // and asks explicitly, so nobody thinks their other N-1 clips got
+      // used when they didn't.
+      setTemplateClipError({
+        message: `Multi-clip templates aren't stitched together automatically yet. Continue with just your first clip? The other ${
+          files.length - 1
+        } won't be included.`,
+        pendingFile: first,
+      });
+      return;
+    }
+
+    setTemplateClipError(null);
+    proceedWithTemplateClip(first);
+  }
+
+  function proceedWithTemplateClip(clipFile) {
+    setFile(clipFile);
+    setLastPickedFile(clipFile);
+    setCaption((prev) => (prev.trim() ? prev : selectedTemplate?.title || ''));
+    setSelectedTemplate(null);
+    setTemplateClipError(null);
+    setPublishTab('post');
+  }
 
   useEffect(() => {
     if (!localStorage.getItem('token')) router.push('/login');
@@ -569,7 +706,7 @@ function UploadPageInner() {
   return (
     <main className="fixed inset-0 bg-black overflow-hidden">
       {/* ---------------- Step 1: nothing captured/picked yet ---------------- */}
-      {!file && (
+      {!file && publishTab === 'post' && (
         <div
           ref={overlayStageRef}
           className="relative w-full h-full"
@@ -588,7 +725,10 @@ function UploadPageInner() {
             onRecordErrorChange={setCameraRecordError}
             onCaptured={handleCaptured}
             overlayChildren={
-              textOverlay && <DraggableTextOverlay overlay={textOverlay} onPointerDownHandle={beginOverlayDrag} />
+              <>
+                <EffectCanvas effectId={activeEffectId} />
+                {textOverlay && <DraggableTextOverlay overlay={textOverlay} onPointerDownHandle={beginOverlayDrag} />}
+              </>
             }
           />
           <input
@@ -604,6 +744,7 @@ function UploadPageInner() {
             onFlip={handleFlipCamera}
             soundLabel={selectedTrack ? `🎵 ${selectedTrack.title}` : null}
             onOpenSound={() => setIsSoundPickerOpen(true)}
+            onClearSound={() => setSelectedTrack(null)}
             disabled={isRecording}
           />
 
@@ -653,10 +794,15 @@ function UploadPageInner() {
             onGalleryDrop={handleDrop}
             publishTab={publishTab}
             setPublishTab={setPublishTab}
+            activeEffectId={activeEffectId}
+            onSelectEffect={setActiveEffectId}
+            favoriteEffectIds={favoriteEffectIds}
+            onToggleFavoriteEffect={toggleFavoriteEffect}
+            onOpenFavorites={() => setShowFavoritesDrawer(true)}
           />
 
           {(errorMsg || cameraError || cameraRecordError) && (
-            <div className="absolute bottom-52 inset-x-0 flex justify-center px-6 pointer-events-none">
+            <div className="absolute bottom-64 inset-x-0 flex justify-center px-6 pointer-events-none">
               <p className="bg-black/80 text-red-400 text-xs px-4 py-2 rounded-full text-center">
                 {errorMsg || cameraError || cameraRecordError}
               </p>
@@ -666,7 +812,55 @@ function UploadPageInner() {
           {showFilterGrid && (
             <FilterGridModal activeId={activeFilterId} onSelect={setActiveFilterId} onClose={() => setShowFilterGrid(false)} />
           )}
+
+          {showFavoritesDrawer && (
+            <FavoritesDrawer
+              favoriteIds={favoriteEffectIds}
+              activeEffectId={activeEffectId}
+              onSelect={setActiveEffectId}
+              onClose={() => setShowFavoritesDrawer(false)}
+            />
+          )}
         </div>
+      )}
+
+      {/* ---------------- Step 1b: Templates hub (bottom-tab alternative to the camera) ---------------- */}
+      {!file && publishTab === 'templates' && (
+        <>
+          <TemplatesHub
+            onClose={() => setPublishTab('post')}
+            category={templateCategory}
+            setCategory={setTemplateCategory}
+            showSearch={showTemplateSearch}
+            setShowSearch={setShowTemplateSearch}
+            query={templateSearchQuery}
+            setQuery={setTemplateSearchQuery}
+            onSelectTemplate={(t) => {
+              setSelectedTemplate(t);
+              setTemplateClipError(null);
+            }}
+          />
+          <input
+            ref={templateFileInputRef}
+            type="file"
+            accept="video/mp4,video/quicktime,video/webm"
+            multiple
+            className="hidden"
+            onChange={handleTemplateClipsPicked}
+          />
+          {selectedTemplate && (
+            <TemplateClipPicker
+              template={selectedTemplate}
+              error={templateClipError}
+              onPickClips={() => templateFileInputRef.current?.click()}
+              onConfirmSingleFallback={proceedWithTemplateClip}
+              onClose={() => {
+                setSelectedTemplate(null);
+                setTemplateClipError(null);
+              }}
+            />
+          )}
+        </>
       )}
 
       {/* ---------------- Step 2: captured/picked — full-screen review ---------------- */}
@@ -778,7 +972,7 @@ function UploadPageInner() {
 /* Camera-first studio chrome — top bar, right tool column, text tool   */
 /* ------------------------------------------------------------------ */
 
-function TopCameraBar({ onExit, onFlip, soundLabel, onOpenSound, disabled }) {
+function TopCameraBar({ onExit, onFlip, soundLabel, onOpenSound, onClearSound, disabled }) {
   return (
     <div className="absolute top-0 inset-x-0 flex items-center justify-between px-4 pt-[max(0.75rem,env(safe-area-inset-top))]">
       <button
@@ -790,13 +984,21 @@ function TopCameraBar({ onExit, onFlip, soundLabel, onOpenSound, disabled }) {
         <XIcon />
       </button>
 
-      <button
-        onClick={onOpenSound}
-        className="max-w-[55%] flex items-center gap-1.5 bg-black/50 backdrop-blur-sm rounded-full px-4 py-2 text-white text-xs font-semibold"
-      >
-        <MusicNoteIcon className="w-3.5 h-3.5 shrink-0" />
-        <span className="truncate">{soundLabel || 'Add sound'}</span>
-      </button>
+      <div className="max-w-[60%] flex items-center gap-1 bg-black/50 backdrop-blur-sm rounded-full pl-4 pr-1.5 py-1.5">
+        <button onClick={onOpenSound} className="flex items-center gap-1.5 text-white text-xs font-semibold min-w-0">
+          <MusicNoteIcon className="w-3.5 h-3.5 shrink-0" />
+          <span className="truncate">{soundLabel || 'Add sound'}</span>
+        </button>
+        {soundLabel && (
+          <button
+            onClick={onClearSound}
+            aria-label="Remove sound"
+            className="w-5 h-5 rounded-full bg-white/15 text-white flex items-center justify-center shrink-0"
+          >
+            <XIcon width="10" height="10" />
+          </button>
+        )}
+      </div>
 
       <button
         onClick={onFlip}
@@ -902,6 +1104,364 @@ function FilterGridModal({ activeId, onSelect, onClose }) {
   );
 }
 
+/* ------------------------------------------------------------------ */
+/* Effect canvas — animated overlay layer on top of the live preview,   */
+/* distinct from FILTERS (static CSS color grading on the <video>       */
+/* itself). Real canvas 2D animation, not a static image.               */
+/* ------------------------------------------------------------------ */
+
+function EffectCanvas({ effectId }) {
+  const canvasRef = useRef(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !canvas.parentElement) return;
+    const ctx = canvas.getContext('2d');
+    let width = 0;
+    let height = 0;
+    let particles = [];
+    let frame = 0;
+    let glowPhase = 0;
+    let rafId = null;
+
+    function resize() {
+      const rect = canvas.parentElement.getBoundingClientRect();
+      width = canvas.width = rect.width;
+      height = canvas.height = rect.height;
+    }
+    resize();
+    window.addEventListener('resize', resize);
+
+    function spawn() {
+      if (effectId === 'hearts') {
+        particles.push({
+          x: Math.random() * width,
+          y: height + 20,
+          size: 14 + Math.random() * 14,
+          speed: 0.6 + Math.random() * 1.2,
+          drift: (Math.random() - 0.5) * 0.6,
+          opacity: 1,
+          rotation: (Math.random() - 0.5) * 0.6,
+        });
+      } else if (effectId === 'sparkle') {
+        particles.push({ x: Math.random() * width, y: Math.random() * height, size: 2 + Math.random() * 3, life: 0, maxLife: 40 + Math.random() * 40 });
+      } else if (effectId === 'snow') {
+        particles.push({ x: Math.random() * width, y: -10, size: 2 + Math.random() * 4, speed: 0.5 + Math.random() * 1, drift: (Math.random() - 0.5) * 0.5 });
+      }
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, width, height);
+
+      if (effectId === 'hearts') {
+        if (frame % 12 === 0) spawn();
+        particles = particles.filter((p) => p.opacity > 0);
+        particles.forEach((p) => {
+          p.y -= p.speed;
+          p.x += p.drift;
+          p.opacity -= 0.006;
+          ctx.save();
+          ctx.globalAlpha = Math.max(0, p.opacity);
+          ctx.translate(p.x, p.y);
+          ctx.rotate(p.rotation);
+          ctx.font = `${p.size}px sans-serif`;
+          ctx.fillText('❤️', -p.size / 2, 0);
+          ctx.restore();
+        });
+      } else if (effectId === 'mesh') {
+        const spacing = 32;
+        const t = frame * 0.02;
+        ctx.strokeStyle = 'rgba(34,211,238,0.35)';
+        ctx.lineWidth = 1;
+        for (let x = 0; x <= width; x += spacing) {
+          ctx.beginPath();
+          for (let y = 0; y <= height; y += 8) {
+            const offset = Math.sin(y * 0.02 + t) * 6;
+            y === 0 ? ctx.moveTo(x + offset, y) : ctx.lineTo(x + offset, y);
+          }
+          ctx.stroke();
+        }
+        for (let y = 0; y <= height; y += spacing) {
+          ctx.beginPath();
+          for (let x = 0; x <= width; x += 8) {
+            const offset = Math.sin(x * 0.02 + t) * 6;
+            x === 0 ? ctx.moveTo(x, y + offset) : ctx.lineTo(x, y + offset);
+          }
+          ctx.stroke();
+        }
+      } else if (effectId === 'glow') {
+        glowPhase += 0.02;
+        const pulse = (Math.sin(glowPhase) + 1) / 2;
+        const grad = ctx.createRadialGradient(width / 2, height / 2, 0, width / 2, height / 2, Math.max(width, height) * 0.6);
+        grad.addColorStop(0, 'rgba(253,230,138,0)');
+        grad.addColorStop(0.7, `rgba(253,230,138,${0.05 + pulse * 0.08})`);
+        grad.addColorStop(1, `rgba(253,230,138,${0.15 + pulse * 0.15})`);
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, width, height);
+        ctx.strokeStyle = `rgba(253,230,138,${0.3 + pulse * 0.3})`;
+        ctx.lineWidth = 8;
+        ctx.strokeRect(4, 4, width - 8, height - 8);
+      } else if (effectId === 'sparkle') {
+        if (frame % 3 === 0) spawn();
+        particles = particles.filter((p) => p.life < p.maxLife);
+        particles.forEach((p) => {
+          p.life += 1;
+          const t = p.life / p.maxLife;
+          const alpha = t < 0.5 ? t * 2 : (1 - t) * 2;
+          ctx.save();
+          ctx.globalAlpha = Math.max(0, alpha);
+          ctx.fillStyle = '#fff';
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        });
+      } else if (effectId === 'snow') {
+        if (frame % 4 === 0) spawn();
+        particles = particles.filter((p) => p.y < height + 20);
+        particles.forEach((p) => {
+          p.y += p.speed;
+          p.x += p.drift;
+          ctx.save();
+          ctx.globalAlpha = 0.85;
+          ctx.fillStyle = '#fff';
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        });
+      }
+
+      frame += 1;
+      rafId = requestAnimationFrame(draw);
+    }
+
+    if (effectId !== 'none') draw();
+    else ctx.clearRect(0, 0, width, height);
+
+    return () => {
+      window.removeEventListener('resize', resize);
+      if (rafId) cancelAnimationFrame(rafId);
+    };
+  }, [effectId]);
+
+  return <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />;
+}
+
+function EffectsTray({ activeEffectId, onSelect, favoriteIds, onToggleFavorite, onOpenFavorites }) {
+  return (
+    <div className="flex items-center gap-3 px-4 overflow-x-auto no-scrollbar pb-2">
+      <button
+        onClick={onOpenFavorites}
+        className="shrink-0 flex items-center gap-1.5 bg-black/40 text-white text-[11px] font-semibold px-3 py-1.5 rounded-full"
+      >
+        <BookmarkIcon filled={false} /> Favourite effects
+      </button>
+      {EFFECTS.map((fx) => {
+        const active = activeEffectId === fx.id;
+        const favorited = favoriteIds.includes(fx.id);
+        return (
+          <div key={fx.id} className="relative shrink-0">
+            <button onClick={() => onSelect(fx.id)} className="flex flex-col items-center gap-1" aria-label={fx.label}>
+              <span
+                className={`w-12 h-12 rounded-full border-2 ${active ? 'border-amber-400' : 'border-white/30'}`}
+                style={{ background: fx.swatch }}
+              />
+            </button>
+            {fx.id !== 'none' && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleFavorite(fx.id);
+                }}
+                aria-label={favorited ? 'Remove from favourites' : 'Add to favourites'}
+                className={`absolute -top-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center border border-black/40 ${
+                  favorited ? 'bg-amber-500 text-black' : 'bg-black/60 text-white'
+                }`}
+              >
+                <BookmarkIcon filled={favorited} />
+              </button>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function FavoritesDrawer({ favoriteIds, activeEffectId, onSelect, onClose }) {
+  const favorited = EFFECTS.filter((fx) => favoriteIds.includes(fx.id));
+  return (
+    <div className="absolute inset-0 z-30 bg-black/70 backdrop-blur-sm flex items-end" onClick={onClose}>
+      <div
+        className="w-full bg-zinc-900 border-t border-zinc-800 rounded-t-2xl p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <p className="text-white font-semibold text-sm">Favourite effects</p>
+          <button onClick={onClose} className="text-zinc-400 hover:text-white text-lg leading-none">
+            ✕
+          </button>
+        </div>
+        {favorited.length === 0 ? (
+          <p className="text-zinc-500 text-sm text-center py-6">
+            Tap the bookmark on any effect thumbnail to save it here.
+          </p>
+        ) : (
+          <div className="grid grid-cols-4 gap-4">
+            {favorited.map((fx) => (
+              <button
+                key={fx.id}
+                onClick={() => {
+                  onSelect(fx.id);
+                  onClose();
+                }}
+                className="flex flex-col items-center gap-1.5"
+              >
+                <span
+                  className={`w-14 h-14 rounded-full border-2 ${activeEffectId === fx.id ? 'border-amber-400' : 'border-white/20'}`}
+                  style={{ background: fx.swatch }}
+                />
+                <span className="text-white text-[10px] font-medium text-center leading-tight">{fx.label}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Templates hub                                                        */
+/* ------------------------------------------------------------------ */
+
+function TemplatesHub({ onClose, category, setCategory, showSearch, setShowSearch, query, setQuery, onSelectTemplate }) {
+  const filtered = TEMPLATES.filter((t) => {
+    const matchesCategory = category === 'For You' || t.category === category;
+    const matchesQuery = !query.trim() || t.title.toLowerCase().includes(query.trim().toLowerCase());
+    return matchesCategory && matchesQuery;
+  });
+
+  return (
+    <div className="absolute inset-0 bg-zinc-950 flex flex-col">
+      <div className="flex items-center justify-between px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 shrink-0">
+        <button onClick={onClose} aria-label="Close templates" className="w-9 h-9 flex items-center justify-center text-white">
+          <XIcon />
+        </button>
+        <p className="text-white font-bold text-base">Templates</p>
+        <button
+          onClick={() => setShowSearch((v) => !v)}
+          aria-label="Search templates"
+          className="w-9 h-9 flex items-center justify-center text-white"
+        >
+          <SearchIcon />
+        </button>
+      </div>
+
+      {showSearch && (
+        <div className="px-4 pb-3 shrink-0">
+          <input
+            autoFocus
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search templates"
+            className="w-full bg-zinc-900 border border-zinc-800 rounded-full px-4 py-2 text-sm text-white placeholder-zinc-500 outline-none focus:ring-2 focus:ring-amber-500/50"
+          />
+        </div>
+      )}
+
+      <div className="flex gap-2 overflow-x-auto no-scrollbar px-4 pb-3 shrink-0">
+        {TEMPLATE_CATEGORIES.map((c) => (
+          <button
+            key={c}
+            onClick={() => setCategory(c)}
+            className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+              category === c ? 'bg-white text-black' : 'bg-zinc-900 text-zinc-400'
+            }`}
+          >
+            {c}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-3 pb-6">
+        {filtered.length === 0 ? (
+          <p className="text-zinc-500 text-sm text-center py-12">No templates match &quot;{query}&quot;.</p>
+        ) : (
+          <div className="grid grid-cols-2 gap-3">
+            {filtered.map((t) => (
+              <TemplateCard key={t.id} template={t} onClick={() => onSelectTemplate(t)} />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TemplateCard({ template, onClick }) {
+  return (
+    <button onClick={onClick} className="text-left rounded-2xl overflow-hidden bg-zinc-900 border border-zinc-800">
+      <div className="relative aspect-[9/16]" style={{ background: template.swatch }}>
+        <span className="absolute top-2 left-2 bg-black/50 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+          {template.tag}
+        </span>
+        <span className="absolute bottom-2 right-2 w-6 h-6 rounded-full bg-black/50 flex items-center justify-center text-white">
+          <MusicNoteIcon className="w-3 h-3" />
+        </span>
+      </div>
+      <div className="p-2.5">
+        <p className="text-white text-xs font-semibold truncate">{template.title}</p>
+        <p className="text-zinc-500 text-[10px] mt-0.5">
+          {template.uses} • {template.clipCount} clip{template.clipCount === 1 ? '' : 's'}
+        </p>
+      </div>
+    </button>
+  );
+}
+
+function TemplateClipPicker({ template, error, onPickClips, onConfirmSingleFallback, onClose }) {
+  return (
+    <div className="absolute inset-0 z-40 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center" onClick={onClose}>
+      <div
+        className="w-full sm:max-w-sm bg-zinc-900 border border-zinc-800 rounded-t-2xl sm:rounded-2xl p-5"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <p className="text-white font-semibold text-base mb-1">Use &quot;{template.title}&quot;</p>
+        <p className="text-zinc-400 text-sm mb-4">
+          Select {template.clipCount} clip{template.clipCount === 1 ? '' : 's'} to fill this template.
+        </p>
+
+        {error && (
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 mb-4">
+            <p className="text-amber-400 text-xs">{error.message}</p>
+            {error.pendingFile && (
+              <div className="flex gap-2 mt-3">
+                <button onClick={onClose} className="flex-1 py-2 rounded-lg text-xs font-semibold text-zinc-300 border border-zinc-700">
+                  Cancel
+                </button>
+                <button
+                  onClick={() => onConfirmSingleFallback(error.pendingFile)}
+                  className="flex-1 py-2 rounded-lg text-xs font-semibold bg-amber-500 text-black"
+                >
+                  Continue with 1 clip
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {!error?.pendingFile && (
+          <button onClick={onPickClips} className="w-full bg-amber-500 hover:bg-amber-400 text-black font-bold py-3 rounded-xl text-sm">
+            Select {template.clipCount} clip{template.clipCount === 1 ? '' : 's'}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function DraggableTextOverlay({ overlay, onPointerDownHandle }) {
   return (
     <div
@@ -961,6 +1521,11 @@ function BottomCaptureControls({
   onGalleryDrop,
   publishTab,
   setPublishTab,
+  activeEffectId,
+  onSelectEffect,
+  favoriteEffectIds,
+  onToggleFavoriteEffect,
+  onOpenFavorites,
 }) {
   const DURATION_TABS = [
     { id: '10m', label: '10m' },
@@ -977,6 +1542,16 @@ function BottomCaptureControls({
 
   return (
     <div className="absolute bottom-0 inset-x-0 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+      <div className="mb-2">
+        <EffectsTray
+          activeEffectId={activeEffectId}
+          onSelect={onSelectEffect}
+          favoriteIds={favoriteEffectIds}
+          onToggleFavorite={onToggleFavoriteEffect}
+          onOpenFavorites={onOpenFavorites}
+        />
+      </div>
+
       <div className="flex justify-center gap-2 overflow-x-auto no-scrollbar px-6 mb-4">
         {DURATION_TABS.map((t) => (
           <button
