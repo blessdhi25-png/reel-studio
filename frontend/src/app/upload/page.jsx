@@ -29,10 +29,13 @@ const FILTERS = [
 ];
 
 // Animated overlays, distinct from FILTERS above — those are static CSS
-// color grading on the <video> itself; these render on their own <canvas>
-// layer on top of it (see <EffectCanvas>), the same way a face-filter
-// sticker layer works in a real camera app. 'none' is the default —
-// canvas stays cleared/blank.
+// color grading; these are drawn frame-by-frame onto CameraRecorder's own
+// compositor canvas (see drawEffectFrame in components/CameraRecorder.jsx),
+// the same way a face-filter sticker layer works in a real camera app.
+// `kind` (not `id`) is what the drawing code switches on — several ids can
+// map to conceptually distinct effects that happen to share a kind, and
+// `id` alone doubling as the draw-mode key was the source of a real bug
+// (see below). 'none' is the default — nothing drawn.
 const EFFECTS = [
   { id: 'none', label: 'No Effect', kind: 'none', swatch: 'linear-gradient(135deg,#3f3f46,#27272a)' },
   { id: 'hearts', label: 'Floating Hearts', kind: 'hearts', swatch: 'linear-gradient(135deg,#f472b6,#dc2626)' },
@@ -234,6 +237,12 @@ function UploadPageInner() {
   const draggingOverlayRef = useRef(false);
 
   const [file, setFile] = useState(null);
+  // Distinguishes an actual camera recording (filter/effects/text already
+  // baked into the pixels by CameraRecorder's canvas compositor) from a
+  // gallery/template-picked file (never went through that pipeline —
+  // Step 2's text-overlay tool still applies there, preview-only, same as
+  // before). Gates whether Step 2 shows the text tool at all.
+  const [capturedFromCamera, setCapturedFromCamera] = useState(false);
   const [previewUrl, setPreviewUrl] = useState(null);
   const [showEmoji, setShowEmoji] = useState(false);
   const [isAiOpen, setIsAiOpen] = useState(false);
@@ -379,6 +388,7 @@ function UploadPageInner() {
   function proceedWithTemplateClip(clipFile) {
     setFile(clipFile);
     setLastPickedFile(clipFile);
+    setCapturedFromCamera(false);
     setCaption((prev) => (prev.trim() ? prev : selectedTemplate?.title || ''));
     setSelectedTemplate(null);
     setTemplateClipError(null);
@@ -453,17 +463,23 @@ function UploadPageInner() {
     }
     setErrorMsg(null);
     setFile(selected);
+    setCapturedFromCamera(false);
     setLastPickedFile(selected);
   }
 
   function handleDrop(e) {
     e.preventDefault();
-    setDragActive(false);
     pickFile(e.dataTransfer.files?.[0]);
   }
 
   function handleCaptured(capturedFile) {
     setFile(capturedFile);
+    setCapturedFromCamera(true);
+    // Already baked into the recorded pixels by CameraRecorder's canvas
+    // compositor at this point — clearing it here so Step 2 doesn't show a
+    // stale "edit text" affordance that can no longer actually change
+    // anything about this specific file.
+    setTextOverlay(null);
     // A fresh recording becomes "the latest item" too, same as it would on
     // a real device's camera roll.
     setLastPickedFile(capturedFile);
@@ -525,6 +541,7 @@ function UploadPageInner() {
     setErrorMsg(null);
     setActiveFilterId('normal');
     setTextOverlay(null);
+    setCapturedFromCamera(false);
     setShowPublishDrawer(false);
   }
 
@@ -690,18 +707,15 @@ function UploadPageInner() {
 
   const captionRemaining = CAPTION_MAX - caption.length;
   const activeFilter = FILTERS.find((f) => f.id === activeFilterId) || FILTERS[0];
-  // Merged into one inline style — object-fit here overrides the
-  // <video>'s own Tailwind object-cover class (inline style specificity
-  // beats a class), so the aspect-ratio toggle doesn't need a new prop on
-  // CameraRecorder at all.
+  const activeEffect = EFFECTS.find((f) => f.id === activeEffectId) || EFFECTS[0];
+  // Baked directly into the recording now (see CameraRecorder's canvas
+  // compositor) rather than only ever being a CSS/DOM display effect —
+  // this string is the same one previously applied to the <video>'s CSS
+  // `filter`, now applied to the canvas context instead so it actually
+  // ends up in the recorded pixels.
   const combinedFilterCss = [activeFilter.css, retouchOn ? 'brightness(1.06) contrast(0.95) saturate(1.08)' : '']
     .filter(Boolean)
     .join(' ');
-  const cameraVideoStyle = {
-    filter: combinedFilterCss || undefined,
-    objectFit: expandedAspect ? 'contain' : 'cover',
-    backgroundColor: expandedAspect ? '#000' : undefined,
-  };
 
   return (
     <main className="fixed inset-0 bg-black overflow-hidden">
@@ -718,18 +732,16 @@ function UploadPageInner() {
             ref={cameraRef}
             embedded
             hideOwnControls
-            videoStyle={cameraVideoStyle}
+            filterCss={combinedFilterCss}
+            aspectFit={expandedAspect ? 'contain' : 'cover'}
+            effectKind={activeEffect.kind}
+            textOverlay={textOverlay}
+            onTextOverlayPointerDown={beginOverlayDrag}
             onRecordingChange={setIsRecording}
             onSecondsLeftChange={setRecordingSecondsLeft}
             onErrorChange={setCameraError}
             onRecordErrorChange={setCameraRecordError}
             onCaptured={handleCaptured}
-            overlayChildren={
-              <>
-                <EffectCanvas effectId={activeEffectId} />
-                {textOverlay && <DraggableTextOverlay overlay={textOverlay} onPointerDownHandle={beginOverlayDrag} />}
-              </>
-            }
           />
           <input
             ref={fileInputRef}
@@ -873,7 +885,9 @@ function UploadPageInner() {
           onPointerLeave={endOverlayDrag}
         >
           <VideoPreview src={previewUrl} />
-          {textOverlay && <DraggableTextOverlay overlay={textOverlay} onPointerDownHandle={beginOverlayDrag} />}
+          {!capturedFromCamera && textOverlay && (
+            <DraggableTextOverlay overlay={textOverlay} onPointerDownHandle={beginOverlayDrag} />
+          )}
 
           <div className="absolute top-0 inset-x-0 flex items-center justify-between px-5 pt-[max(1.25rem,env(safe-area-inset-top))]">
             <button
@@ -883,15 +897,22 @@ function UploadPageInner() {
             >
               <XIcon />
             </button>
-            <button
-              onClick={openTextEditor}
-              className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors ${
-                textOverlay ? 'bg-amber-500 text-black' : 'bg-black/60 text-white'
-              }`}
-              aria-label="Add text"
-            >
-              <TextToolIcon />
-            </button>
+            {/* Camera recordings already have any text overlay baked into
+                the pixels (see handleCaptured) — there's nothing left here
+                to edit without re-recording, so this only shows for
+                gallery/template-picked clips, where it's still the
+                preview-only tool it always was. */}
+            {!capturedFromCamera && (
+              <button
+                onClick={openTextEditor}
+                className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors ${
+                  textOverlay ? 'bg-amber-500 text-black' : 'bg-black/60 text-white'
+                }`}
+                aria-label="Add text"
+              >
+                <TextToolIcon />
+              </button>
+            )}
           </div>
 
           <div className="absolute bottom-0 inset-x-0 px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
@@ -1105,148 +1126,10 @@ function FilterGridModal({ activeId, onSelect, onClose }) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Effect canvas — animated overlay layer on top of the live preview,   */
-/* distinct from FILTERS (static CSS color grading on the <video>       */
-/* itself). Real canvas 2D animation, not a static image.               */
+/* Effects tray + favourites — the animated overlay drawing itself now  */
+/* lives in components/CameraRecorder.jsx (drawEffectFrame), since it    */
+/* has to run inside the same canvas loop that gets recorded.           */
 /* ------------------------------------------------------------------ */
-
-function EffectCanvas({ effectId }) {
-  const canvasRef = useRef(null);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || !canvas.parentElement) return;
-    const ctx = canvas.getContext('2d');
-    let width = 0;
-    let height = 0;
-    let particles = [];
-    let frame = 0;
-    let glowPhase = 0;
-    let rafId = null;
-
-    function resize() {
-      const rect = canvas.parentElement.getBoundingClientRect();
-      width = canvas.width = rect.width;
-      height = canvas.height = rect.height;
-    }
-    resize();
-    window.addEventListener('resize', resize);
-
-    function spawn() {
-      if (effectId === 'hearts') {
-        particles.push({
-          x: Math.random() * width,
-          y: height + 20,
-          size: 14 + Math.random() * 14,
-          speed: 0.6 + Math.random() * 1.2,
-          drift: (Math.random() - 0.5) * 0.6,
-          opacity: 1,
-          rotation: (Math.random() - 0.5) * 0.6,
-        });
-      } else if (effectId === 'sparkle') {
-        particles.push({ x: Math.random() * width, y: Math.random() * height, size: 2 + Math.random() * 3, life: 0, maxLife: 40 + Math.random() * 40 });
-      } else if (effectId === 'snow') {
-        particles.push({ x: Math.random() * width, y: -10, size: 2 + Math.random() * 4, speed: 0.5 + Math.random() * 1, drift: (Math.random() - 0.5) * 0.5 });
-      }
-    }
-
-    function draw() {
-      ctx.clearRect(0, 0, width, height);
-
-      if (effectId === 'hearts') {
-        if (frame % 12 === 0) spawn();
-        particles = particles.filter((p) => p.opacity > 0);
-        particles.forEach((p) => {
-          p.y -= p.speed;
-          p.x += p.drift;
-          p.opacity -= 0.006;
-          ctx.save();
-          ctx.globalAlpha = Math.max(0, p.opacity);
-          ctx.translate(p.x, p.y);
-          ctx.rotate(p.rotation);
-          ctx.font = `${p.size}px sans-serif`;
-          ctx.fillText('❤️', -p.size / 2, 0);
-          ctx.restore();
-        });
-      } else if (effectId === 'mesh') {
-        const spacing = 32;
-        const t = frame * 0.02;
-        ctx.strokeStyle = 'rgba(34,211,238,0.35)';
-        ctx.lineWidth = 1;
-        for (let x = 0; x <= width; x += spacing) {
-          ctx.beginPath();
-          for (let y = 0; y <= height; y += 8) {
-            const offset = Math.sin(y * 0.02 + t) * 6;
-            y === 0 ? ctx.moveTo(x + offset, y) : ctx.lineTo(x + offset, y);
-          }
-          ctx.stroke();
-        }
-        for (let y = 0; y <= height; y += spacing) {
-          ctx.beginPath();
-          for (let x = 0; x <= width; x += 8) {
-            const offset = Math.sin(x * 0.02 + t) * 6;
-            x === 0 ? ctx.moveTo(x, y + offset) : ctx.lineTo(x, y + offset);
-          }
-          ctx.stroke();
-        }
-      } else if (effectId === 'glow') {
-        glowPhase += 0.02;
-        const pulse = (Math.sin(glowPhase) + 1) / 2;
-        const grad = ctx.createRadialGradient(width / 2, height / 2, 0, width / 2, height / 2, Math.max(width, height) * 0.6);
-        grad.addColorStop(0, 'rgba(253,230,138,0)');
-        grad.addColorStop(0.7, `rgba(253,230,138,${0.05 + pulse * 0.08})`);
-        grad.addColorStop(1, `rgba(253,230,138,${0.15 + pulse * 0.15})`);
-        ctx.fillStyle = grad;
-        ctx.fillRect(0, 0, width, height);
-        ctx.strokeStyle = `rgba(253,230,138,${0.3 + pulse * 0.3})`;
-        ctx.lineWidth = 8;
-        ctx.strokeRect(4, 4, width - 8, height - 8);
-      } else if (effectId === 'sparkle') {
-        if (frame % 3 === 0) spawn();
-        particles = particles.filter((p) => p.life < p.maxLife);
-        particles.forEach((p) => {
-          p.life += 1;
-          const t = p.life / p.maxLife;
-          const alpha = t < 0.5 ? t * 2 : (1 - t) * 2;
-          ctx.save();
-          ctx.globalAlpha = Math.max(0, alpha);
-          ctx.fillStyle = '#fff';
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.restore();
-        });
-      } else if (effectId === 'snow') {
-        if (frame % 4 === 0) spawn();
-        particles = particles.filter((p) => p.y < height + 20);
-        particles.forEach((p) => {
-          p.y += p.speed;
-          p.x += p.drift;
-          ctx.save();
-          ctx.globalAlpha = 0.85;
-          ctx.fillStyle = '#fff';
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.restore();
-        });
-      }
-
-      frame += 1;
-      rafId = requestAnimationFrame(draw);
-    }
-
-    if (effectId !== 'none') draw();
-    else ctx.clearRect(0, 0, width, height);
-
-    return () => {
-      window.removeEventListener('resize', resize);
-      if (rafId) cancelAnimationFrame(rafId);
-    };
-  }, [effectId]);
-
-  return <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />;
-}
 
 function EffectsTray({ activeEffectId, onSelect, favoriteIds, onToggleFavorite, onOpenFavorites }) {
   return (
