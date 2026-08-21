@@ -9,13 +9,177 @@ const DURATIONS = [
   { label: '60s', seconds: 60 },
 ];
 
+// Draws one frame of an animated overlay effect directly onto the
+// compositor canvas (see the rAF loop below) — this is what makes an
+// effect actually end up baked into the recorded pixels, as opposed to a
+// separate DOM/canvas layer that only ever existed for on-screen display.
+// Mutates and returns `particles` (the running particle-system state for
+// whichever effect is active) rather than owning its own state, since it's
+// called once per frame from inside the loop's closure.
+function drawEffectFrame(ctx, kind, width, height, particles, frame) {
+  if (!kind || kind === 'none') return particles;
+
+  function spawn() {
+    if (kind === 'hearts') {
+      particles.push({
+        x: Math.random() * width,
+        y: height + 20,
+        size: 14 + Math.random() * 14,
+        speed: 0.6 + Math.random() * 1.2,
+        drift: (Math.random() - 0.5) * 0.6,
+        opacity: 1,
+        rotation: (Math.random() - 0.5) * 0.6,
+      });
+    } else if (kind === 'sparkle') {
+      particles.push({ x: Math.random() * width, y: Math.random() * height, size: 2 + Math.random() * 3, life: 0, maxLife: 40 + Math.random() * 40 });
+    } else if (kind === 'snow') {
+      particles.push({ x: Math.random() * width, y: -10, size: 2 + Math.random() * 4, speed: 0.5 + Math.random() * 1, drift: (Math.random() - 0.5) * 0.5 });
+    }
+  }
+
+  if (kind === 'hearts') {
+    if (frame % 12 === 0) spawn();
+    particles = particles.filter((p) => p.opacity > 0);
+    particles.forEach((p) => {
+      p.y -= p.speed;
+      p.x += p.drift;
+      p.opacity -= 0.006;
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, p.opacity);
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rotation);
+      ctx.font = `${p.size}px sans-serif`;
+      ctx.fillText('❤️', -p.size / 2, 0);
+      ctx.restore();
+    });
+  } else if (kind === 'mesh') {
+    const spacing = 32;
+    const t = frame * 0.02;
+    ctx.strokeStyle = 'rgba(34,211,238,0.35)';
+    ctx.lineWidth = 1;
+    for (let x = 0; x <= width; x += spacing) {
+      ctx.beginPath();
+      for (let y = 0; y <= height; y += 8) {
+        const offset = Math.sin(y * 0.02 + t) * 6;
+        y === 0 ? ctx.moveTo(x + offset, y) : ctx.lineTo(x + offset, y);
+      }
+      ctx.stroke();
+    }
+    for (let y = 0; y <= height; y += spacing) {
+      ctx.beginPath();
+      for (let x = 0; x <= width; x += 8) {
+        const offset = Math.sin(x * 0.02 + t) * 6;
+        x === 0 ? ctx.moveTo(x, y + offset) : ctx.lineTo(x, y + offset);
+      }
+      ctx.stroke();
+    }
+  } else if (kind === 'glow') {
+    const pulse = (Math.sin(frame * 0.02) + 1) / 2;
+    const grad = ctx.createRadialGradient(width / 2, height / 2, 0, width / 2, height / 2, Math.max(width, height) * 0.6);
+    grad.addColorStop(0, 'rgba(253,230,138,0)');
+    grad.addColorStop(0.7, `rgba(253,230,138,${0.05 + pulse * 0.08})`);
+    grad.addColorStop(1, `rgba(253,230,138,${0.15 + pulse * 0.15})`);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, width, height);
+    ctx.strokeStyle = `rgba(253,230,138,${0.3 + pulse * 0.3})`;
+    ctx.lineWidth = 8;
+    ctx.strokeRect(4, 4, width - 8, height - 8);
+  } else if (kind === 'sparkle') {
+    if (frame % 3 === 0) spawn();
+    particles = particles.filter((p) => p.life < p.maxLife);
+    particles.forEach((p) => {
+      p.life += 1;
+      const t = p.life / p.maxLife;
+      const alpha = t < 0.5 ? t * 2 : (1 - t) * 2;
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, alpha);
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    });
+  } else if (kind === 'snow') {
+    if (frame % 4 === 0) spawn();
+    particles = particles.filter((p) => p.y < height + 20);
+    particles.forEach((p) => {
+      p.y += p.speed;
+      p.x += p.drift;
+      ctx.save();
+      ctx.globalAlpha = 0.85;
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    });
+  }
+  return particles;
+}
+
+function drawTextOverlay(ctx, overlay, width, height) {
+  if (!overlay?.content) return;
+  const x = (overlay.x / 100) * width;
+  const y = (overlay.y / 100) * height;
+  ctx.save();
+  ctx.filter = 'none'; // never tint overlay text with the base video's color-grading filter
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const fontSize = Math.max(16, Math.round(width * 0.055));
+  ctx.font = `700 ${fontSize}px "Bebas Neue", sans-serif`;
+  ctx.shadowColor = 'rgba(0,0,0,0.8)';
+  ctx.shadowBlur = 4;
+  ctx.shadowOffsetY = 2;
+  ctx.fillStyle = '#fff';
+  const lines = overlay.content.split('\n');
+  const lineHeight = fontSize * 1.15;
+  const startY = y - ((lines.length - 1) * lineHeight) / 2;
+  lines.forEach((line, i) => ctx.fillText(line, x, startY + i * lineHeight));
+  ctx.restore();
+}
+
+// cover: crop the source to fill the destination with no letterboxing.
+// contain: letterbox/pillarbox to show the whole source.
+function computeDrawRect(srcW, srcH, dstW, dstH, fit) {
+  if (!srcW || !srcH) return { sx: 0, sy: 0, sw: dstW, sh: dstH, dx: 0, dy: 0, dw: dstW, dh: dstH };
+  const srcRatio = srcW / srcH;
+  const dstRatio = dstW / dstH;
+  if (fit === 'contain') {
+    let w = dstW;
+    let h = dstW / srcRatio;
+    if (h > dstH) {
+      h = dstH;
+      w = dstH * srcRatio;
+    }
+    return { sx: 0, sy: 0, sw: srcW, sh: srcH, dx: (dstW - w) / 2, dy: (dstH - h) / 2, dw: w, dh: h };
+  }
+  let sw = srcW;
+  let sh = srcH;
+  let sx = 0;
+  let sy = 0;
+  if (srcRatio > dstRatio) {
+    sw = srcH * dstRatio;
+    sx = (srcW - sw) / 2;
+  } else {
+    sh = srcW / dstRatio;
+    sy = (srcH - sh) / 2;
+  }
+  return { sx, sy, sw, sh, dx: 0, dy: 0, dw: dstW, dh: dstH };
+}
+
 const CameraRecorder = forwardRef(function CameraRecorder(
   {
     onCaptured,
     onCancel,
     embedded = false,
-    videoStyle,
-    overlayChildren,
+    // Baked into every recorded frame via the canvas compositor below —
+    // NOT applied as CSS to a <video> element, which would only affect
+    // on-screen display and never end up in the actual recorded pixels.
+    filterCss,
+    aspectFit = 'cover',
+    effectKind = 'none',
+    textOverlay,
+    onTextOverlayPointerDown,
     onRecordingChange,
     onSecondsLeftChange,
     onErrorChange,
@@ -30,6 +194,7 @@ const CameraRecorder = forwardRef(function CameraRecorder(
   ref
 ) {
   const videoRef = useRef(null);
+  const canvasRef = useRef(null);
   const streamRef = useRef(null);
   const recorderRef = useRef(null);
   const chunksRef = useRef([]);
@@ -103,6 +268,85 @@ const CameraRecorder = forwardRef(function CameraRecorder(
     };
   }, [facingMode, manualFacingFlip, selectedDeviceId, ready]);
 
+  // --- Canvas compositor: the single source of truth for both what's
+  // displayed AND what gets recorded (see startRecording below, which
+  // captures a stream directly off this canvas). Frequently-changing
+  // cosmetic props (filter/effect/text) are read from refs each frame
+  // instead of being effect dependencies — putting them in the dependency
+  // array would tear down and restart the whole loop (resetting particle
+  // animation state) on every keystroke of a text overlay or every drag
+  // move, instead of just picking up the new value on the next frame. ---
+  const filterCssRef = useRef(filterCss);
+  const effectKindRef = useRef(effectKind);
+  const textOverlayRef = useRef(textOverlay);
+  const aspectFitRef = useRef(aspectFit);
+  useEffect(() => {
+    filterCssRef.current = filterCss;
+  }, [filterCss]);
+  useEffect(() => {
+    effectKindRef.current = effectKind;
+  }, [effectKind]);
+  useEffect(() => {
+    textOverlayRef.current = textOverlay;
+  }, [textOverlay]);
+  useEffect(() => {
+    aspectFitRef.current = aspectFit;
+  }, [aspectFit]);
+
+  useEffect(() => {
+    if (!ready || error) return;
+    let rafId;
+    let particles = [];
+    let lastEffectKind = null;
+    let frame = 0;
+
+    function tick() {
+      const canvas = canvasRef.current;
+      const video = videoRef.current;
+      if (canvas && video && video.readyState >= 2 && canvas.parentElement) {
+        const rect = canvas.parentElement.getBoundingClientRect();
+        if (canvas.width !== rect.width || canvas.height !== rect.height) {
+          canvas.width = rect.width;
+          canvas.height = rect.height;
+        }
+        const ctx = canvas.getContext('2d');
+        const w = canvas.width;
+        const h = canvas.height;
+        ctx.clearRect(0, 0, w, h);
+
+        // 1. Base camera frame — mirrored (selfie view) and filtered.
+        ctx.save();
+        if (facingMode === 'user') {
+          ctx.translate(w, 0);
+          ctx.scale(-1, 1);
+        }
+        ctx.filter = filterCssRef.current || 'none';
+        const r = computeDrawRect(video.videoWidth, video.videoHeight, w, h, aspectFitRef.current);
+        ctx.drawImage(video, r.sx, r.sy, r.sw, r.sh, r.dx, r.dy, r.dw, r.dh);
+        ctx.restore();
+
+        // 2. Animated effect layer — never mirrored/filtered, drawn in
+        // normal screen space on top of the (already mirrored) frame.
+        const currentKind = effectKindRef.current;
+        if (currentKind !== lastEffectKind) {
+          particles = []; // switching effects shouldn't carry over stale particles from the last one
+          lastEffectKind = currentKind;
+        }
+        ctx.filter = 'none';
+        particles = drawEffectFrame(ctx, currentKind, w, h, particles, frame);
+
+        // 3. Text overlay, topmost.
+        drawTextOverlay(ctx, textOverlayRef.current, w, h);
+
+        frame += 1;
+      }
+      rafId = requestAnimationFrame(tick);
+    }
+
+    tick();
+    return () => cancelAnimationFrame(rafId);
+  }, [ready, error, facingMode]);
+
   function flipCamera() {
     setManualFacingFlip(true); // hand control to the mobile front/back flip
     setFacingMode((m) => (m === 'user' ? 'environment' : 'user'));
@@ -135,7 +379,7 @@ const CameraRecorder = forwardRef(function CameraRecorder(
   }
 
   function startRecording() {
-    if (!streamRef.current) return;
+    if (!streamRef.current || !canvasRef.current) return;
     chunksRef.current = [];
 
     const mimeType = pickSupportedMimeType();
@@ -144,9 +388,21 @@ const CameraRecorder = forwardRef(function CameraRecorder(
       return;
     }
 
+    // The actual fix: record a stream captured off the *canvas* (which has
+    // the filter/effect/text already composited into every frame it
+    // draws) instead of the raw camera MediaStream. Audio still comes
+    // straight from the mic track — canvas.captureStream() only produces
+    // video.
+    const canvasStream = canvasRef.current.captureStream(30);
+    const audioTrack = streamRef.current.getAudioTracks()[0];
+    const combinedStream = new MediaStream([
+      ...canvasStream.getVideoTracks(),
+      ...(audioTrack ? [audioTrack] : []),
+    ]);
+
     let recorder;
     try {
-      recorder = new MediaRecorder(streamRef.current, { mimeType });
+      recorder = new MediaRecorder(combinedStream, { mimeType });
     } catch {
       setRecordError('Recording isn\u2019t supported in this browser. Please upload a video file instead.');
       return;
@@ -170,6 +426,7 @@ const CameraRecorder = forwardRef(function CameraRecorder(
       const blob = new Blob(chunksRef.current, { type: baseType });
       const file = new File([blob], `recording-${Date.now()}.${extension}`, { type: baseType });
       streamRef.current?.getTracks().forEach((t) => t.stop());
+      canvasStream.getTracks().forEach((t) => t.stop());
       onCaptured(file);
     };
     recorderRef.current = recorder;
@@ -283,17 +540,29 @@ const CameraRecorder = forwardRef(function CameraRecorder(
             <p className="font-body text-smoke text-sm">{error}</p>
           </div>
         ) : (
-          <video
-            ref={videoRef}
-            autoPlay
-            muted
-            playsInline
-            style={videoStyle}
-            className={`w-full h-full object-cover ${facingMode === 'user' ? 'scale-x-[-1]' : ''}`}
-          />
+          <>
+            {/* Real source of truth for pixels, kept truly visible (not
+                display:none) rather than just invisible — some engines
+                throttle frame decoding on fully display:none video, which
+                would starve the canvas compositor of fresh frames. 1x1 and
+                clipped is enough to avoid any layout footprint. */}
+            <div className="absolute w-px h-px overflow-hidden opacity-0 pointer-events-none">
+              <video ref={videoRef} autoPlay muted playsInline />
+            </div>
+            <canvas ref={canvasRef} className="block w-full h-full pointer-events-none" />
+            {/* Invisible hit-target for dragging the text overlay — the
+                overlay's actual pixels are drawn onto the canvas above (and
+                therefore end up in the recording), this just captures the
+                drag gesture at the same on-screen position. */}
+            {textOverlay?.content && onTextOverlayPointerDown && (
+              <div
+                onPointerDown={onTextOverlayPointerDown}
+                className="absolute -translate-x-1/2 -translate-y-1/2 w-32 h-10 cursor-grab active:cursor-grabbing touch-none"
+                style={{ left: `${textOverlay.x}%`, top: `${textOverlay.y}%` }}
+              />
+            )}
+          </>
         )}
-
-        {overlayChildren}
 
         {embedded && !hideOwnControls && devices.length > 1 && (
           <div className="absolute top-4 right-4">
