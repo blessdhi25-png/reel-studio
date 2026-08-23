@@ -681,6 +681,12 @@ function UploadPageInner() {
       cameraRef.current?.stopRecording();
       return;
     }
+    // Synchronous, before the countdown branch below — so AudioContext
+    // creation/resume (for mixing the selected sound into the recording)
+    // still traces back to this actual tap even when the real
+    // startRecording() call is delayed by a few seconds. See primeAudio's
+    // own comment in CameraRecorder.jsx for why that ordering matters.
+    cameraRef.current?.primeAudio();
     if (timerSeconds > 0) {
       setCountdownValue(timerSeconds);
     } else {
@@ -737,6 +743,7 @@ function UploadPageInner() {
             effectKind={activeEffect.kind}
             textOverlay={textOverlay}
             onTextOverlayPointerDown={beginOverlayDrag}
+            backgroundAudioUrl={selectedTrack?.audioUrl || null}
             onRecordingChange={setIsRecording}
             onSecondsLeftChange={setRecordingSecondsLeft}
             onErrorChange={setCameraError}
