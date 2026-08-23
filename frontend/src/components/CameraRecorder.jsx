@@ -184,6 +184,10 @@ const CameraRecorder = forwardRef(function CameraRecorder(
     onSecondsLeftChange,
     onErrorChange,
     onRecordErrorChange,
+    // Selected background track's audioUrl, or null. Played in sync with
+    // recording start/stop and mixed into the recorded audio track via Web
+    // Audio API — see startRecording below.
+    backgroundAudioUrl = null,
     // When embedded AND this is true, none of CameraRecorder's own chrome
     // renders (flip button, device picker, duration pills, shutter) — the
     // parent owns 100% of the visual controls and drives everything through
@@ -199,6 +203,16 @@ const CameraRecorder = forwardRef(function CameraRecorder(
   const recorderRef = useRef(null);
   const chunksRef = useRef([]);
   const timerRef = useRef(null);
+  const bgAudioRef = useRef(null);
+  // Lazily created once and reused across multiple record/discard/re-record
+  // cycles within the same mount — createMediaElementSource can only ever
+  // be called once per <audio> element for its whole lifetime (a Web Audio
+  // API constraint, not a bug), so this must not be recreated on every
+  // startRecording() call.
+  const audioCtxRef = useRef(null);
+  const micSourceNodeRef = useRef(null);
+  const musicSourceNodeRef = useRef(null);
+  const destinationNodeRef = useRef(null);
 
   const [facingMode, setFacingMode] = useState('user');
   const [duration, setDuration] = useState(60);
@@ -226,6 +240,30 @@ const CameraRecorder = forwardRef(function CameraRecorder(
     onRecordErrorChange?.(recordError);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recordError]);
+
+  useEffect(() => {
+    const el = bgAudioRef.current;
+    if (!el) return;
+    if (!backgroundAudioUrl) {
+      el.pause();
+      el.removeAttribute('src');
+      return;
+    }
+    if (el.src !== backgroundAudioUrl) {
+      el.src = backgroundAudioUrl;
+    }
+  }, [backgroundAudioUrl]);
+
+  // AudioContext instances are a limited, non-trivially-garbage-collected
+  // browser resource — closing it on unmount (not just on stopRecording)
+  // avoids leaking one every time this component mounts/unmounts, e.g. the
+  // Templates hub round-trip or navigating away mid-session.
+  useEffect(() => {
+    return () => {
+      bgAudioRef.current?.pause();
+      audioCtxRef.current?.close().catch(() => {});
+    };
+  }, []);
 
   useEffect(() => {
     if (!ready) return; // wait for device enumeration before opening the real preview stream
@@ -378,6 +416,22 @@ const CameraRecorder = forwardRef(function CameraRecorder(
     return candidates.find((t) => MediaRecorder.isTypeSupported?.(t));
   }
 
+  function ensureAudioContext() {
+    const AC = typeof window !== 'undefined' && (window.AudioContext || window.webkitAudioContext);
+    if (!AC) return null;
+    if (!audioCtxRef.current) {
+      audioCtxRef.current = new AC();
+    }
+    if (audioCtxRef.current.state === 'suspended') {
+      // Fire-and-forget — browsers require resume() to trace back to a
+      // user gesture, which primeAudio() (exposed below) guarantees by
+      // being called synchronously from the shutter tap itself, even when
+      // a pre-record countdown delays the actual startRecording() call.
+      audioCtxRef.current.resume().catch(() => {});
+    }
+    return audioCtxRef.current;
+  }
+
   function startRecording() {
     if (!streamRef.current || !canvasRef.current) return;
     chunksRef.current = [];
@@ -395,9 +449,51 @@ const CameraRecorder = forwardRef(function CameraRecorder(
     // video.
     const canvasStream = canvasRef.current.captureStream(30);
     const audioTrack = streamRef.current.getAudioTracks()[0];
+    let audioTracksForRecording = audioTrack ? [audioTrack] : [];
+
+    if (backgroundAudioUrl && bgAudioRef.current) {
+      // Mixes mic + the selected background track into one recorded audio
+      // track via a small Web Audio graph, instead of just recording
+      // whichever one happens to be louder in the room. Wrapped in a
+      // try/catch that degrades to mic-only audio (never fails the whole
+      // recording) — Web Audio can be blocked entirely in some embedded/
+      // locked-down browser contexts.
+      try {
+        const audioCtx = ensureAudioContext();
+        if (audioCtx) {
+          if (!destinationNodeRef.current) {
+            destinationNodeRef.current = audioCtx.createMediaStreamDestination();
+          }
+          // Mic → recording only, never audioCtx.destination — routing the
+          // user's own mic to their speakers would cause live feedback/echo.
+          if (!micSourceNodeRef.current && audioTrack) {
+            micSourceNodeRef.current = audioCtx.createMediaStreamSource(new MediaStream([audioTrack]));
+            micSourceNodeRef.current.connect(destinationNodeRef.current);
+          }
+          // Background track → both the recording AND real speaker output,
+          // so it's audible live (matches requirement #2) as well as
+          // captured (#3). createMediaElementSource permanently reroutes
+          // this element's output through the graph from here on — see the
+          // audioCtxRef comment above on why it's created/connected once
+          // and reused, not recreated per recording.
+          if (!musicSourceNodeRef.current) {
+            musicSourceNodeRef.current = audioCtx.createMediaElementSource(bgAudioRef.current);
+            musicSourceNodeRef.current.connect(destinationNodeRef.current);
+            musicSourceNodeRef.current.connect(audioCtx.destination);
+          }
+          audioTracksForRecording = destinationNodeRef.current.stream.getAudioTracks();
+        }
+      } catch (err) {
+        console.error('[CameraRecorder] background audio mixing failed, recording mic-only:', err);
+      }
+
+      bgAudioRef.current.currentTime = 0;
+      bgAudioRef.current.play().catch(() => {});
+    }
+
     const combinedStream = new MediaStream([
       ...canvasStream.getVideoTracks(),
-      ...(audioTrack ? [audioTrack] : []),
+      ...audioTracksForRecording,
     ]);
 
     let recorder;
@@ -452,6 +548,7 @@ const CameraRecorder = forwardRef(function CameraRecorder(
     clearInterval(timerRef.current);
     setRecording(false);
     onRecordingChange?.(false);
+    bgAudioRef.current?.pause();
     if (recorderRef.current && recorderRef.current.state !== 'inactive') {
       recorderRef.current.stop();
     }
@@ -473,6 +570,16 @@ const CameraRecorder = forwardRef(function CameraRecorder(
     stopRecording,
     toggleMic,
     setDurationSeconds: (seconds) => setDuration(seconds),
+    // Called synchronously from the shutter tap itself (before any
+    // pre-record countdown delay) so AudioContext creation/resume traces
+    // back to a real user gesture — autoplay policies in some browsers
+    // (Safari in particular) can otherwise block resume() if it only ever
+    // happens inside a later setTimeout callback. No-op when there's no
+    // background track selected, so tapping the shutter stays just as fast
+    // as before when there's nothing to mix.
+    primeAudio: () => {
+      if (backgroundAudioUrl) ensureAudioContext();
+    },
   }));
 
   const recordControls = (
@@ -548,6 +655,11 @@ const CameraRecorder = forwardRef(function CameraRecorder(
                 clipped is enough to avoid any layout footprint. */}
             <div className="absolute w-px h-px overflow-hidden opacity-0 pointer-events-none">
               <video ref={videoRef} autoPlay muted playsInline />
+              {/* Selected background track — not display:none for the same
+                  frame-throttling reason as the video above, though audio
+                  playback is far less sensitive to it than video decode is.
+                  loop covers a short track under a longer recording. */}
+              <audio ref={bgAudioRef} loop />
             </div>
             <canvas ref={canvasRef} className="block w-full h-full pointer-events-none" />
             {/* Invisible hit-target for dragging the text overlay — the
