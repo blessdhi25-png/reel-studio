@@ -11,7 +11,14 @@ const HIDDEN_ON = ['/login', '/signup', '/verify-email', '/upload'];
 // user-facing bottom nav has no business appearing underneath it. Root
 // layout.jsx always renders <BottomNav /> via AppShell regardless of
 // route, so this is the one place that actually can hide it per-path.
-const HIDDEN_PREFIXES = ['/admin'];
+//
+// '/messages/' (with the trailing slash) matches an open DM thread
+// (/messages/abc123) but deliberately not the bare /messages list — the
+// redesigned thread view (components/ChatThreadView.jsx) is a full
+// h-screen takeover with its own input dock pinned to the true bottom of
+// the viewport, which the nav bar would sit on top of / get covered by;
+// the conversation list page has room for both and keeps the nav.
+const HIDDEN_PREFIXES = ['/admin', '/messages/'];
 
 function HomeIcon({ active }) {
   return (
