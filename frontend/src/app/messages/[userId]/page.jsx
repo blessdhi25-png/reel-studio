@@ -1,7 +1,7 @@
 'use client';
 
-import MessagesPage from '../../../components/MessagesPage';
+import ChatThreadView from '../../../components/ChatThreadView';
 
 export default function ThreadPage({ params }) {
-  return <MessagesPage initialUserId={params.userId} />;
+  return <ChatThreadView otherUserId={params.userId} />;
 }
