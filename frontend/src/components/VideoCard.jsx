@@ -90,12 +90,6 @@ function getStoredAudioEnabled() {
   return window.localStorage.getItem('feedAudioEnabled') === 'true';
 }
 
-function formatTimecode(seconds = 0) {
-  const m = Math.floor(seconds / 60).toString().padStart(2, '0');
-  const s = Math.floor(seconds % 60).toString().padStart(2, '0');
-  return `${m}:${s}`;
-}
-
 const VideoCard = forwardRef(function VideoCard(
   {
     video,
@@ -526,14 +520,6 @@ const VideoCard = forwardRef(function VideoCard(
           focusMode ? 'opacity-0 pointer-events-none' : 'opacity-100'
         }`}
       >
-        {/* Type badge — reads like a film-can label */}
-        <div
-          className="absolute left-10 font-mono text-xs tracking-widest text-reel border border-reel/50 px-2 py-1 rounded-sprocket uppercase"
-          style={{ top: 'calc(env(safe-area-inset-top) + 5rem)' }}
-        >
-          {video.videoType === 'long' ? 'Feature' : 'Short'} · {formatTimecode(video.durationSeconds || liveDuration)}
-        </div>
-
         {/* Caption + creator — bottom-24 clears the fixed bottom nav on mobile */}
         <div className="absolute bottom-24 left-10 right-24 text-bone">
           <a href={`/profile/${video.user?.id}`} className="font-display text-2xl tracking-wide">
