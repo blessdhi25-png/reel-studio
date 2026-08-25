@@ -29,6 +29,8 @@ export default function ProfilePage({ params }) {
   const [showMenu, setShowMenu] = useState(false);
   const [showReport, setShowReport] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null); // video object pending delete confirmation, or null
+  const [deleting, setDeleting] = useState(false);
   const menuRef = useRef(null);
 
   // Close the ⋯ dropdown on an outside click, not just its own options.
@@ -94,6 +96,26 @@ export default function ProfilePage({ params }) {
     logout();
     toast.success('Logged out');
     router.push('/login');
+  }
+
+  // The main feed (app/page.jsx) already has a complete delete flow via
+  // VideoCard's own DeleteConfirmModal — this profile grid was a plain
+  // thumbnail link with no delete affordance of its own at all, which was
+  // the actual gap: deleting only worked if you happened to open the video
+  // from the main feed first.
+  async function confirmDeleteVideo() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await api.deleteVideo(deleteTarget.id);
+      setVideos((prev) => prev.filter((v) => v.id !== deleteTarget.id));
+      setDeleteTarget(null);
+      toast.success('Post deleted');
+    } catch (err) {
+      toast.error(err.message || "Couldn't delete this post — try again.");
+    } finally {
+      setDeleting(false);
+    }
   }
 
   const activeVideos = activeTab === 'videos' ? videos : activeTab === 'saved' ? savedVideos : likedVideos;
@@ -344,25 +366,48 @@ export default function ProfilePage({ params }) {
             ) : (
               <div className="grid grid-cols-3 gap-1">
                 {activeVideos.map((v) => (
-                  <a
-                    key={v.id}
-                    href={`/?video=${v.id}`}
-                    className="aspect-[9/16] bg-zinc-900 rounded-lg overflow-hidden relative"
-                  >
-                    {v.thumbnailUrl ? (
-                      <img src={v.thumbnailUrl} alt="" className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-[10px] text-zinc-600 font-mono">
-                        {v.status === 'processing' ? 'Processing…' : 'No thumbnail'}
-                      </div>
+                  <div key={v.id} className="relative aspect-[9/16] bg-zinc-900 rounded-lg overflow-hidden group">
+                    <a href={`/?video=${v.id}`} className="block w-full h-full">
+                      {v.thumbnailUrl ? (
+                        <img src={v.thumbnailUrl} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-[10px] text-zinc-600 font-mono">
+                          {v.status === 'processing' ? 'Processing…' : 'No thumbnail'}
+                        </div>
+                      )}
+                    </a>
+                    {/* Own posts only — this profile's "saved"/"liked" tabs
+                        show other people's videos, where deleting isn't a
+                        meaningful action for this account to take. */}
+                    {isSelf && activeTab === 'videos' && (
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setDeleteTarget(v);
+                        }}
+                        aria-label="Delete post"
+                        className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/70 text-white text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        ✕
+                      </button>
                     )}
-                  </a>
+                  </div>
                 ))}
               </div>
             )}
           </>
         )}
       </div>
+
+      {deleteTarget && (
+        <ConfirmModal
+          title="Delete this post?"
+          message="This can't be undone."
+          confirmLabel={deleting ? 'Deleting…' : 'Delete'}
+          onConfirm={confirmDeleteVideo}
+          onCancel={() => (deleting ? null : setDeleteTarget(null))}
+        />
+      )}
 
       {showReport && (
         <ReportModal targetType="user" targetId={user.id} onClose={() => setShowReport(false)} />
