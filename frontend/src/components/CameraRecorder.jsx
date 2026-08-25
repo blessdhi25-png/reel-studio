@@ -659,7 +659,16 @@ const CameraRecorder = forwardRef(function CameraRecorder(
                   frame-throttling reason as the video above, though audio
                   playback is far less sensitive to it than video decode is.
                   loop covers a short track under a longer recording. */}
-              <audio ref={bgAudioRef} loop />
+              {/* crossOrigin is required for createMediaElementSource() to
+                  read actual audio samples from a cross-origin URL
+                  (Cloudinary). Without it, the browser doesn't throw or
+                  error — the resulting audio graph node just silently
+                  produces zeros, so the mixing code above runs successfully
+                  and the recording completes, but the background track
+                  never actually makes it into the recorded audio. Cloudinary
+                  serves delivered assets with Access-Control-Allow-Origin: *
+                  by default, so this is safe to request. */}
+              <audio ref={bgAudioRef} loop crossOrigin="anonymous" />
             </div>
             <canvas ref={canvasRef} className="block w-full h-full pointer-events-none" />
             {/* Invisible hit-target for dragging the text overlay — the
