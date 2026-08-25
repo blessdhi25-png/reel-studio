@@ -212,6 +212,20 @@ export default function CollectionDetailPage({ params }) {
     }
   }
 
+  // Distinct from handleRemoveVideo above: that one un-saves a video from
+  // just this collection (the video itself still exists elsewhere).
+  // VideoCard's own delete flow (inside the Play All player below) deletes
+  // the underlying post entirely — same state update either way, since a
+  // deleted video obviously shouldn't stay in the collection either, but
+  // the trigger and backend call are different operations.
+  function handleVideoDeleted(videoId) {
+    setCollection((prev) => ({
+      ...prev,
+      videos: prev.videos.filter((v) => v.id !== videoId),
+      videoCount: prev.videoCount - 1,
+    }));
+  }
+
   async function handleDeleteCollection() {
     try {
       await api.deleteCollection(id);
@@ -261,7 +275,7 @@ export default function CollectionDetailPage({ params }) {
           <div className="divide-y divide-zinc-900">
             {collection.videos.map((video) => (
               <div key={video.id} className="relative h-[100dvh] bg-black">
-                <VideoCard video={video} />
+                <VideoCard video={video} onDeleted={handleVideoDeleted} />
               </div>
             ))}
           </div>
