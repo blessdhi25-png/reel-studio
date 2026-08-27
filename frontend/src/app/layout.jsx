@@ -5,7 +5,7 @@ import { SocketProvider } from '@/context/SocketContext';
 import AppShell from '@/components/AppShell';
 
 export const metadata = {
-  title: 'Reel — short and long video, one feed',
+  title: 'ClipPulse — Create & Share Short Videos',
   description: 'Watch, post, and get tipped — short clips and long videos in one place.',
   icons: {
     icon: '/logo.svg',
