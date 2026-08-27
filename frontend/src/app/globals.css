@@ -59,6 +59,22 @@ body {
   animation: mark-pulse 1.5s ease-in-out infinite;
 }
 
+/* Indeterminate loading bar for LoadingScreen — there's no real
+   percent-complete value to drive, so this sweeps a filled segment across
+   the track continuously rather than faking a specific progress amount.
+   Grows from the left edge to full width, then the *same* bar shrinks back
+   from the right edge, giving a continuous traveling-segment look instead
+   of a jarring reset snap. */
+@keyframes loading-bar {
+  0% { transform: scaleX(0); transform-origin: left; }
+  50% { transform: scaleX(1); transform-origin: left; }
+  50.001% { transform-origin: right; }
+  100% { transform: scaleX(0); transform-origin: right; }
+}
+.animate-loading-bar {
+  animation: loading-bar 1.4s ease-in-out infinite;
+}
+
 /* Double-tap-to-like heart — pops up and slightly out, then fades, matching
    the Instagram/TikTok double-tap gesture viewers already expect. */
 @keyframes heart-pop {
