@@ -62,7 +62,7 @@ export function getStoredUser() {
   }
 }
 
-async function request(path, { method = 'GET', body, isForm = false, timeoutMs = 15000 } = {}) {
+async function request(path, { method = 'GET', body, isForm = false, timeoutMs = 15000, _isRetry = false } = {}) {
   const headers = {};
   const token = getToken();
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -90,6 +90,20 @@ async function request(path, { method = 'GET', body, isForm = false, timeoutMs =
       signal: controller.signal,
     });
   } catch (networkErr) {
+    // pingServer() below covers the common case (cold start finishes
+    // during the time someone spends filling out the form), but on a
+    // slow spin-up — or one where the database add-on is also asleep —
+    // even the lead time from a page-load ping plus a 45s AUTH_TIMEOUT_MS
+    // can still not be enough. Rather than making someone notice the
+    // error and manually resubmit, retry once automatically on a genuine
+    // timeout before giving up — a real network failure (wrong host, no
+    // connection at all) still fails immediately, since retrying that
+    // wouldn't help.
+    if (networkErr.name === 'AbortError' && !_isRetry) {
+      console.warn(`[api] Timed out requesting ${url} — retrying once (likely a cold start)`);
+      return request(path, { method, body, isForm, timeoutMs, _isRetry: true });
+    }
+
     // fetch() throws a bare TypeError ("Failed to fetch") for anything from
     // a wrong host/port to no network at all, and an AbortError when our
     // own timeout above fires — neither is self-explanatory to someone
