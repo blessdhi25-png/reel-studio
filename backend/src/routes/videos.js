@@ -2,7 +2,7 @@ import { Router } from 'express';
 import prisma from '../config/db.js';
 import cloudinary from '../config/cloudinary.js';
 import { requireAuth, optionalAuth } from '../middleware/auth.js';
-import { upload } from '../utils/upload.js';
+import { uploadVideoWithThumbnail } from '../utils/upload.js';
 import { deleteVideoCascade } from '../utils/deleteVideoCascade.js';
 import { applyFeedTuning } from '../utils/feedTuning.js';
 import { ALLOWED_CIRCLES, normalizeCircle } from '../utils/circles.js';
@@ -12,55 +12,74 @@ const router = Router();
 
 // Step 1: client uploads the raw file directly to this endpoint (self-hosted MVP).
 // Later, swap this for a pre-signed S3/MediaConvert URL without changing the contract below.
-router.post('/', requireAuth, upload.single('video'), async (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'video file is required' });
+router.post(
+  '/',
+  requireAuth,
+  uploadVideoWithThumbnail.fields([
+    { name: 'video', maxCount: 1 },
+    { name: 'thumbnail', maxCount: 1 },
+  ]),
+  asyncHandler(async (req, res) => {
+    const videoFile = req.files?.video?.[0];
+    if (!videoFile) return res.status(400).json({ error: 'video file is required' });
+    const thumbnailFile = req.files?.thumbnail?.[0];
 
-  const { caption, videoType, circle, trackId } = req.body;
+    const { caption, videoType, circle, trackId } = req.body;
 
-  // Silently drop anything that isn't one of the curated circles rather than
-  // erroring — an unset/unrecognized circle just means "uncategorized."
-  const normalizedCircle = normalizeCircle(circle);
+    // Silently drop anything that isn't one of the curated circles rather than
+    // erroring — an unset/unrecognized circle just means "uncategorized."
+    const normalizedCircle = normalizeCircle(circle);
 
-  // A trackId that doesn't resolve to a real distributed track is dropped
-  // rather than erroring the whole upload over it.
-  let validTrackId = null;
-  if (trackId) {
-    const track = await prisma.track.findUnique({ where: { id: trackId }, select: { id: true } });
-    if (track) validTrackId = track.id;
-  }
+    // A trackId that doesn't resolve to a real distributed track is dropped
+    // rather than erroring the whole upload over it.
+    let validTrackId = null;
+    if (trackId) {
+      const track = await prisma.track.findUnique({ where: { id: trackId }, select: { id: true } });
+      if (track) validTrackId = track.id;
+    }
 
-  // req.file.path is Cloudinary's permanent secure CDN URL (see
-  // utils/upload.js) — the raw file was never written to this server's own
-  // disk, so this no longer needs building from APP_URL/req.host. It's
-  // immediately watchable this way even before the transcode worker
-  // finishes and calls POST /:id/complete with the real HLS videoUrl, and
-  // it's what the worker reads from (rawPath, below) as ffmpeg's input —
-  // ffmpeg accepts an https:// URL directly, so nothing in
-  // workers/transcode.js needed to change for this.
-  const rawUrl = req.file.path;
+    // req.file.path is Cloudinary's permanent secure CDN URL (see
+    // utils/upload.js) — the raw file was never written to this server's own
+    // disk, so this no longer needs building from APP_URL/req.host. It's
+    // immediately watchable this way even before the transcode worker
+    // finishes and calls POST /:id/complete with the real HLS videoUrl, and
+    // it's what the worker reads from (rawPath, below) as ffmpeg's input —
+    // ffmpeg accepts an https:// URL directly, so nothing in
+    // workers/transcode.js needed to change for this.
+    const rawUrl = videoFile.path;
 
-  // This app has no transcode worker running in local dev (nothing ever
-  // calls POST /:id/complete), so leaving status as 'processing' meant
-  // every upload sat invisible in the feed forever. Publishing immediately
-  // with the raw file as videoUrl makes uploads viewable right away.
-  // If/when a real transcode worker exists, it can still call
-  // POST /:id/complete later to swap videoUrl for the real HLS rendition —
-  // that update is harmless to apply on top of an already-published video.
-  const video = await prisma.video.create({
-    data: {
-      userId: req.userId,
-      videoType: videoType === 'long' ? 'long' : 'short',
-      caption: caption || '',
-      circle: normalizedCircle,
-      trackId: validTrackId,
-      rawPath: req.file.path,
-      videoUrl: rawUrl,
-      status: 'published',
-    },
-  });
+    // This app has no transcode worker running in local dev (nothing ever
+    // calls POST /:id/complete), so leaving status as 'processing' meant
+    // every upload sat invisible in the feed forever. Publishing immediately
+    // with the raw file as videoUrl makes uploads viewable right away.
+    // If/when a real transcode worker exists, it can still call
+    // POST /:id/complete later to swap videoUrl for the real HLS rendition —
+    // that update is harmless to apply on top of an already-published video.
+    //
+    // thumbnailUrl: same "no worker actually runs" reasoning applies here —
+    // it used to only ever get set by that same never-called /:id/complete
+    // step, so it stayed null forever. A poster frame generated client-side
+    // (see app/upload/page.jsx's generateThumbnail) arrives here as the
+    // optional `thumbnail` field instead; falling back to null when it's
+    // missing (an old client build, or generation failed) rather than
+    // erroring the whole upload over a missing thumbnail.
+    const video = await prisma.video.create({
+      data: {
+        userId: req.userId,
+        videoType: videoType === 'long' ? 'long' : 'short',
+        caption: caption || '',
+        circle: normalizedCircle,
+        trackId: validTrackId,
+        rawPath: videoFile.path,
+        videoUrl: rawUrl,
+        thumbnailUrl: thumbnailFile?.path || null,
+        status: 'published',
+      },
+    });
 
-  res.status(201).json({ id: video.id, status: video.status, circle: video.circle, rawUrl });
-});
+    res.status(201).json({ id: video.id, status: video.status, circle: video.circle, rawUrl });
+  })
+);
 
 // The fixed list of circles plus a live published-video count for each, so
 // the feed filter only ever shows communities that actually have content.
