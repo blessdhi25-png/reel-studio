@@ -92,6 +92,45 @@ export const upload = multer({
   limits: { fileSize: 2 * 1024 * 1024 * 1024 }, // 2GB cap
 });
 
+// Video + an optional client-generated poster frame in one request. Added
+// because POST /videos never set thumbnailUrl at all — it was only ever
+// meant to be filled in later by POST /:id/complete once a transcode
+// worker ran, but no such worker actually runs in this deployment, so
+// every video's thumbnail stayed empty forever. Generating a poster frame
+// client-side (see app/upload/page.jsx's generateThumbnail) and sending it
+// alongside the video here fixes that without needing a real transcode
+// pipeline. Both fields share one multer() config since Cloudinary options
+// differ per field (video vs image) but the underlying storage engine
+// already receives `file` — including file.fieldname — so one combined
+// optionsFn below can branch on it.
+const videoWithThumbnailStorage = cloudinaryStorage(async (req, file) => {
+  if (file.fieldname === 'thumbnail') {
+    return {
+      folder: 'reel/thumbnails',
+      resource_type: 'image',
+      public_id: `${req.userId}-${Date.now()}-thumb`,
+      transformation: [{ width: 720, height: 1280, crop: 'limit' }],
+    };
+  }
+  return {
+    folder: 'reel/videos',
+    resource_type: 'video',
+    public_id: `${req.userId}-${Date.now()}`,
+    chunk_size: 6 * 1024 * 1024,
+  };
+});
+
+function videoOrThumbnailFileFilter(req, file, cb) {
+  if (file.fieldname === 'thumbnail') return imageFileFilter(req, file, cb);
+  return videoFileFilter(req, file, cb);
+}
+
+export const uploadVideoWithThumbnail = multer({
+  storage: videoWithThumbnailStorage,
+  fileFilter: videoOrThumbnailFileFilter,
+  limits: { fileSize: 2 * 1024 * 1024 * 1024 }, // 2GB cap — applies per file, thumbnail is only ever a few hundred KB
+});
+
 // Profile photos. The frontend now compresses/resizes these client-side
 // before they're ever sent (see lib/imageCompression.js) — the
 // transformation below is a server-side backstop for anyone hitting this
