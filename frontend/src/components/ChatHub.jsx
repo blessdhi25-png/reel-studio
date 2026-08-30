@@ -295,7 +295,15 @@ export default function ChatHub() {
       <button
         onClick={() => setOpen((v) => !v)}
         aria-label={open ? 'Close chat and notifications' : 'Open chat and notifications'}
-        className="fixed bottom-20 left-4 z-40 p-3 rounded-full bg-zinc-900/90 border border-zinc-700 text-yellow-400 shadow-xl hover:scale-105 transition"
+        // Was a flat bottom-20 (80px) with no safe-area awareness — close
+        // enough to BottomNav's own real height (which grows with
+        // env(safe-area-inset-bottom) on notched phones) that on those
+        // devices this button sat over the nav's icon row instead of above
+        // it. z-50 also fixes a separate issue: this and BottomNav
+        // (z-40) were tied, so which one visually won any overlap came
+        // down to DOM paint order rather than anything intentional.
+        className="fixed left-4 z-50 p-3 rounded-full bg-zinc-900/90 border border-zinc-700 text-yellow-400 shadow-xl hover:scale-105 transition"
+        style={{ bottom: 'calc(6rem + env(safe-area-inset-bottom))' }}
       >
         <ChatBubbleIcon />
         {!open && totalBadge > 0 && (
@@ -306,9 +314,10 @@ export default function ChatHub() {
       </button>
 
       <div
-        className={`fixed z-40 left-4 bottom-36 w-[92vw] max-w-sm h-[70vh] max-h-[560px] bg-zinc-900/95 backdrop-blur-xl border border-zinc-800 text-white rounded-3xl shadow-2xl flex flex-col overflow-hidden origin-bottom-left transition-all duration-250 ease-out ${
+        className={`fixed z-50 left-4 w-[92vw] max-w-sm h-[70vh] max-h-[560px] bg-zinc-900/95 backdrop-blur-xl border border-zinc-800 text-white rounded-3xl shadow-2xl flex flex-col overflow-hidden origin-bottom-left transition-all duration-250 ease-out ${
           open ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-95 translate-y-4 pointer-events-none'
         }`}
+        style={{ bottom: 'calc(9rem + env(safe-area-inset-bottom))' }}
       >
         <div className="flex items-center justify-between px-3 pt-3 pb-2 border-b border-zinc-800/80 shrink-0">
           <div className="flex items-center gap-1 bg-zinc-800/60 rounded-xl p-1">
