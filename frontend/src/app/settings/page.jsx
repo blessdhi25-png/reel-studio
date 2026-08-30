@@ -43,7 +43,10 @@ export default function SettingsPage() {
         </a>
         <div className="w-full flex items-center gap-4 py-4 border-b border-smoke/10 text-left">
           <span className="text-xl w-6 text-center">✉</span>
-          <span className="flex-1 font-body text-bone">{user.email}</span>
+          <span className="flex-1 flex flex-col">
+            <span className="font-body text-bone">Account &amp; Email</span>
+            <span className="font-mono text-xs text-smoke mt-0.5">{user.email}</span>
+          </span>
         </div>
         <a
           href="/settings/change-password"
