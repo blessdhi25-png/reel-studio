@@ -555,6 +555,8 @@ function UploadPageInner() {
 
     const formData = new FormData();
     formData.append('video', file);
+    const thumbnailBlob = await generateThumbnail(file);
+    if (thumbnailBlob) formData.append('thumbnail', thumbnailBlob, 'thumbnail.jpg');
     formData.append('caption', caption);
     formData.append('videoType', videoType);
     if (circle) formData.append('circle', circle);
@@ -2042,6 +2044,61 @@ function Switch({ checked, onChange }) {
 /* API, so this bypasses lib/api.js's fetch-based request() just for    */
 /* this one call).                                                      */
 /* ------------------------------------------------------------------ */
+
+// Generates a JPEG poster frame from a recorded/picked video file — see
+// the comment on POST /videos in backend/src/routes/videos.js for why this
+// is necessary at all: thumbnailUrl was only ever meant to be set later by
+// a transcode worker that doesn't actually run in this deployment, so
+// every video's thumbnail stayed permanently empty ("No thumbnail" in
+// profile grids) without this. Best-effort by design — if anything here
+// fails (an unsupported codec, a seek that never resolves), publishing
+// still proceeds without a thumbnail rather than getting stuck.
+function generateThumbnail(videoFile) {
+  return new Promise((resolve) => {
+    const video = document.createElement('video');
+    video.preload = 'metadata';
+    video.muted = true;
+    video.playsInline = true;
+    const objectUrl = URL.createObjectURL(videoFile);
+    video.src = objectUrl;
+
+    const cleanup = () => URL.revokeObjectURL(objectUrl);
+    const fail = () => {
+      cleanup();
+      resolve(null);
+    };
+    // Covers a video that never fires loadedmetadata/seeked at all (some
+    // codecs Safari partially supports do this) rather than hanging the
+    // publish step forever.
+    const giveUp = setTimeout(fail, 4000);
+
+    video.onerror = () => {
+      clearTimeout(giveUp);
+      fail();
+    };
+    video.onloadedmetadata = () => {
+      // Clamp to the clip's own midpoint for anything shorter than 1s,
+      // rather than seeking past the end of a very short recording.
+      video.currentTime = Math.min(0.5, (video.duration || 1) / 2);
+    };
+    video.onseeked = () => {
+      clearTimeout(giveUp);
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth || 360;
+      canvas.height = video.videoHeight || 640;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob(
+        (blob) => {
+          cleanup();
+          resolve(blob);
+        },
+        'image/jpeg',
+        0.8
+      );
+    };
+  });
+}
 
 function uploadWithProgress(formData, onProgress, xhrRef) {
   return new Promise((resolve, reject) => {
