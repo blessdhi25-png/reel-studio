@@ -1,371 +1,526 @@
+//app/page.jsx
+
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { api, googleAuthUrl, pingServer } from '../../lib/api';
-import AuthHero from '../../components/AuthHero';
+export const dynamic = 'force-dynamic';
 
-function GoogleIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 18 18">
-      <path
-        fill="#4285F4"
-        d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84c-.21 1.13-.84 2.09-1.8 2.73v2.27h2.9c1.7-1.57 2.7-3.88 2.7-6.64z"
-      />
-      <path
-        fill="#34A853"
-        d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.9-2.27c-.8.54-1.84.86-3.06.86-2.35 0-4.34-1.59-5.05-3.72H.96v2.34C2.44 15.98 5.48 18 9 18z"
-      />
-      <path
-        fill="#FBBC05"
-        d="M3.95 10.69A5.41 5.41 0 0 1 3.68 9c0-.59.1-1.16.27-1.69V4.97H.96A9 9 0 0 0 0 9c0 1.45.35 2.83.96 4.03l2.99-2.34z"
-      />
-      <path
-        fill="#EA4335"
-        d="M9 3.58c1.32 0 2.51.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0 5.48 0 2.44 2.02.96 4.97l2.99 2.34C4.66 5.17 6.65 3.58 9 3.58z"
-      />
-    </svg>
-  );
-}
+import { Suspense, useEffect, useRef, useState } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
+import { api } from '../lib/api';
+import { getSocket } from '../lib/socket';
+import VideoCard from '../components/VideoCard';
+import DesktopRail from '../components/DesktopRail';
+import SprocketRail from '../components/SprocketRail';
+import { loadTuningWeights } from '../components/TuneFeedPanel';
+import FeedFiltersDrawer from '../components/FeedFiltersDrawer';
+import Logo from '../components/Logo';
+import StoriesBar from '../components/StoriesBar';
+import TopHeaderNav from '../components/TopHeaderNav';
 
-function EyeIcon({ open }) {
-  return open ? (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" />
-      <circle cx="12" cy="12" r="3" />
-    </svg>
-  ) : (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M17.94 17.94A10.94 10.94 0 0 1 12 19c-7 0-11-7-11-7a18.6 18.6 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 7 11 7a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
-      <line x1="1" y1="1" x2="23" y2="23" />
-    </svg>
-  );
-}
-
-const PASSWORD_RULES = [
-  { key: 'length', label: 'At least 8 characters', test: (v) => v.length >= 8 },
-  { key: 'upper', label: 'One uppercase letter', test: (v) => /[A-Z]/.test(v) },
-  { key: 'number', label: 'One number', test: (v) => /[0-9]/.test(v) },
-  { key: 'special', label: 'One special character', test: (v) => /[^A-Za-z0-9]/.test(v) },
+const FILTERS = [
+  { label: 'All', value: null },
+  { label: 'Shorts', value: 'short' },
+  { label: 'Features', value: 'long' },
+  { label: 'LIVE', href: '/live' },
+  { label: 'Communities', href: '/communities' },
+  { label: 'Collections', href: '/collections' },
 ];
 
-const STRENGTH_LABELS = ['Weak', 'Fair', 'Strong', 'Excellent'];
-const STRENGTH_COLORS = ['bg-red-500', 'bg-orange-500', 'bg-amber-500', 'bg-green-500'];
+function CircleParamSync({ onCircle }) {
+  const searchParams = useSearchParams();
 
-function calculateAge(dob) {
-  if (!dob) return null;
-  const birth = new Date(dob);
-  if (Number.isNaN(birth.getTime())) return null;
-  const today = new Date();
-  let age = today.getFullYear() - birth.getFullYear();
-  const m = today.getMonth() - birth.getMonth();
-  if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
-  return age;
+  useEffect(() => {
+    const c = searchParams.get('circle');
+    if (c) onCircle(c);
+  }, [searchParams, onCircle]);
+
+  return null;
 }
 
-export default function SignupPage() {
+export default function FeedPage() {
   const router = useRouter();
-  const [step, setStep] = useState(1);
-  const [form, setForm] = useState({
-    username: '',
-    displayName: '',
-    email: '',
-    dob: '',
-    password: '',
-  });
-  const [showPassword, setShowPassword] = useState(false);
-  const [agreed, setAgreed] = useState(false);
-  const [error, setError] = useState(null);
-  const [ageError, setAgeError] = useState(null);
-  const [loading, setLoading] = useState(false);
 
-  // Same reasoning as the login page: start waking a cold Render instance
-  // as soon as this page loads rather than only once the form is submitted.
+  // Audio & Header state
+  const [activeTab, setActiveTab] = useState('All');
+  const [isMuted, setIsMuted] = useState(true);
+
+  // Core Feed States
+  const [videos, setVideos] = useState([]);
+  const [nextCursor, setNextCursor] = useState(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [filter, setFilter] = useState(null); // null = mixed, 'short', 'long'
+  const [circle, setCircle] = useState(null);
+  const [circles, setCircles] = useState([]);
+  const [user, setUser] = useState(null);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [focusMode, setFocusMode] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [tuningWeights, setTuningWeights] = useState({ nicheWeight: 50, freshWeight: 50, localWeight: 50 });
+  const [activeTime, setActiveTime] = useState(0);
+  const [celebration, setCelebration] = useState(null);
+
+  const [isDesktop, setIsDesktop] = useState(null);
+
+  // Unified click handler for filter tabs
+  function handleFilterClick(opt) {
+    if (opt.href) {
+      router.push(opt.href);
+      return;
+    }
+    setActiveTab(opt.label);
+    setFilter(opt.value);
+  }
+
+  // Mobile TopHeaderNav Tab Handler
+  function handleMobileTabSelect(tabLabel) {
+    setActiveTab(tabLabel);
+    // Case-insensitive match against FILTERS by label — this is how tabs
+    // shared with the desktop nav (All, Shorts, LIVE, Communities,
+    // Collections) get routed/filtered. Keep TopHeaderNav's NAV_TABS
+    // labels in sync with FILTERS' labels or this silently no-ops.
+    const match = FILTERS.find((f) => f.label.toLowerCase() === tabLabel.toLowerCase());
+    if (match) {
+      handleFilterClick(match);
+    } else if (tabLabel === 'Shorts') {
+      setFilter('short');
+    } else if (tabLabel === 'Following') {
+      setFilter('following');
+    } else if (tabLabel === 'DMs') {
+      // DMs has no FILTERS entry (it's a standalone header link on
+      // desktop, not part of the tab/filter row), so it needs its own
+      // explicit route here.
+      router.push('/messages');
+    } else {
+      setFilter(null);
+    }
+  }
+
   useEffect(() => {
-    pingServer();
+    const mq = window.matchMedia('(min-width: 768px)');
+    setIsDesktop(mq.matches);
+    const onChange = (e) => setIsDesktop(e.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
   }, []);
 
-  function update(field) {
-    return (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
-  }
+  useEffect(() => {
+    setTuningWeights(loadTuningWeights());
+  }, []);
 
-  const passedRules = useMemo(
-    () => PASSWORD_RULES.map((rule) => ({ ...rule, passed: rule.test(form.password) })),
-    [form.password]
-  );
-  const strengthScore = passedRules.filter((r) => r.passed).length;
-  const strengthLabel = form.password ? STRENGTH_LABELS[Math.max(strengthScore - 1, 0)] : '';
-  const strengthColor = STRENGTH_COLORS[Math.max(strengthScore - 1, 0)];
+  const mobileContainerRef = useRef(null);
+  const desktopContainerRef = useRef(null);
+  const videoCardRefs = useRef({});
+  const desktopRailRef = useRef(null);
 
-  function goToStep2(e) {
-    e.preventDefault();
-    setError(null);
-    if (!form.username.trim() || !form.email.trim()) {
-      setError('Username and email are required.');
+  useEffect(() => {
+    const stored = localStorage.getItem('user');
+    if (stored) setUser(JSON.parse(stored));
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    api.getUnreadCount().then((d) => setUnreadCount(d.count)).catch(() => {});
+
+    const socket = getSocket();
+    if (!socket) return;
+    const onNew = () => setUnreadCount((c) => c + 1);
+    socket.on('notification:new', onNew);
+
+    const onTip = (payload) => {
+      setCelebration(payload);
+      setTimeout(() => setCelebration((c) => (c === payload ? null : c)), 4000);
+    };
+    socket.on('tip:received', onTip);
+
+    return () => {
+      socket.off('notification:new', onNew);
+      socket.off('tip:received', onTip);
+    };
+  }, [user]);
+
+  useEffect(() => {
+    api.getCircles().then(setCircles).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    setInitialLoading(true);
+    api
+      .getFeed(filter, undefined, tuningWeights, circle)
+      .then((data) => {
+        let videos = data.videos || [];
+        const PENDING_TTL_MS = 5 * 60 * 1000;
+        const pendingRaw = typeof window !== 'undefined' ? sessionStorage.getItem('pendingUpload') : null;
+        if (pendingRaw) {
+          try {
+            const pending = JSON.parse(pendingRaw);
+            const alreadyInResults = videos.some((v) => v.id === pending.id);
+            const expired = !pending.postedAt || Date.now() - pending.postedAt > PENDING_TTL_MS;
+            if (alreadyInResults || expired) {
+              sessionStorage.removeItem('pendingUpload');
+            } else if (filter === null || filter === pending.videoType) {
+              videos = [pending, ...videos];
+            }
+          } catch {
+            sessionStorage.removeItem('pendingUpload');
+          }
+        }
+        setVideos(videos);
+        setNextCursor(data.nextCursor || null);
+      })
+      .catch(() => {})
+      .finally(() => setInitialLoading(false));
+  }, [filter, tuningWeights, circle]);
+
+  useEffect(() => {
+    if (!nextCursor || loadingMore) return;
+    if (activeIndex < videos.length - 3) return;
+
+    setLoadingMore(true);
+    api
+      .getFeed(filter, nextCursor, tuningWeights, circle)
+      .then((data) => {
+        setVideos((prev) => {
+          const seen = new Set(prev.map((v) => v.id));
+          const fresh = (data.videos || []).filter((v) => !seen.has(v.id));
+          return [...prev, ...fresh];
+        });
+        setNextCursor(data.nextCursor || null);
+      })
+      .catch(() => {})
+      .finally(() => setLoadingMore(false));
+  }, [activeIndex, nextCursor, loadingMore, videos.length, filter, tuningWeights, circle]);
+
+  async function handleToggleFollow(userId) {
+    if (!localStorage.getItem('token')) {
+      window.location.href = '/login';
       return;
     }
-    const email = form.email.trim();
-    if (!email.includes('@') || !email.includes('.')) {
-      setError('Please enter a valid email address.');
-      return;
-    }
-    setStep(2);
-  }
+    const wasFollowing = videos.find((v) => v.user?.id === userId)?.user?.isFollowing;
+    const next = !wasFollowing;
 
-  function handleGoogleClick() {
-    window.location.href = googleAuthUrl();
-  }
-
-  async function handleSubmit(e) {
-    e.preventDefault();
-    setError(null);
-    setAgeError(null);
-
-    const age = calculateAge(form.dob);
-    if (!form.dob || age === null) {
-      setAgeError('Please enter your date of birth.');
-      return;
-    }
-    if (age < 13) {
-      setAgeError('You must be at least 13 years old to create an account.');
-      return;
-    }
-    if (strengthScore < PASSWORD_RULES.length) {
-      setError('Your password needs to meet all the criteria below.');
-      return;
-    }
-    if (!agreed) {
-      setError('Please agree to the Terms of Service and Privacy Policy.');
-      return;
-    }
-
-    setLoading(true);
+    setVideos((prev) =>
+      prev.map((v) => (v.user?.id === userId ? { ...v, user: { ...v.user, isFollowing: next } } : v))
+    );
     try {
-      const result = await api.register({
-        username: form.username,
-        displayName: form.displayName,
-        email: form.email,
-        password: form.password,
-        dob: form.dob,
-      });
-      const emailFlag = result?.emailSendFailed ? '&emailSendFailed=1' : '';
-      router.push(`/verify-email?email=${encodeURIComponent(form.email)}${emailFlag}`);
-    } catch (err) {
-      // api.js already turns a raw fetch failure (wrong host, backend down,
-      // CORS block, etc.) into this exact message and logs the attempted
-      // URL to the console — so on mobile/ngrok testing, opening devtools
-      // shows precisely which URL failed instead of just "Failed to fetch".
-      setError(err.message || 'Something went wrong. Please try again.');
-    } finally {
-      setLoading(false);
+      next ? await api.followUser(userId) : await api.unfollowUser(userId);
+    } catch {
+      setVideos((prev) =>
+        prev.map((v) => (v.user?.id === userId ? { ...v, user: { ...v.user, isFollowing: wasFollowing } } : v))
+      );
     }
   }
 
-  return (
-    <main className="min-h-screen grid grid-cols-1 lg:grid-cols-12 bg-zinc-950 text-white overflow-hidden">
-      <AuthHero />
+  function handleVideoDeleted(videoId) {
+    setVideos((prev) => prev.filter((v) => v.id !== videoId));
+  }
 
-      <div className="lg:col-span-5 w-full max-w-md mx-auto p-6 sm:p-8 flex flex-col justify-center min-h-screen lg:min-h-0">
-        <div className="mb-6">
-          <h2 className="text-2xl font-extrabold">Create your account</h2>
-          <p className="text-zinc-400 text-sm mt-1">Join Reel and start building your audience.</p>
-        </div>
+  useEffect(() => {
+    const mobileEl = mobileContainerRef.current;
+    const desktopEl = desktopContainerRef.current;
 
-        {/* Progress indicator */}
-        <div className="mb-6">
-          <div className="flex items-center gap-2 text-xs font-semibold text-zinc-400 mb-2">
-            <span className={step === 1 ? 'text-amber-400' : 'text-zinc-500'}>
-              Step 1: Account Details
+    function makeScrollHandler(el) {
+      return () => setActiveIndex(Math.round(el.scrollTop / el.clientHeight));
+    }
+
+    const onMobileScroll = mobileEl && makeScrollHandler(mobileEl);
+    const onDesktopScroll = desktopEl && makeScrollHandler(desktopEl);
+
+    mobileEl?.addEventListener('scroll', onMobileScroll);
+    desktopEl?.addEventListener('scroll', onDesktopScroll);
+    return () => {
+      mobileEl?.removeEventListener('scroll', onMobileScroll);
+      desktopEl?.removeEventListener('scroll', onDesktopScroll);
+    };
+  }, [videos, isDesktop]);
+
+  function scrollToIndex(i) {
+    const clamped = Math.max(0, Math.min(videos.length - 1, i));
+    const el = isDesktop ? desktopContainerRef.current : mobileContainerRef.current;
+    if (!el) return;
+    el.scrollTo({ top: clamped * el.clientHeight, behavior: 'smooth' });
+  }
+
+  // Video currently centered in the feed — feeds the desktop side rail
+  // (comments/details) and its seek callback below. This was previously
+  // referenced in the JSX without ever being declared, which threw a
+  // ReferenceError on every render and crashed the whole page (not just
+  // the desktop rail) — including the nav.
+  const activeVideo = videos[activeIndex] || null;
+
+  // Desktop Header
+  const desktopHeader = (
+    <header className="hidden md:flex h-16 items-center justify-between gap-6 px-6 border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-md shrink-0 z-30 relative">
+      <div className="flex items-center gap-4 min-w-0 flex-1">
+        <a href="/" className="shrink-0" aria-label="Reel Studio home">
+          <Logo size="sm" showText />
+        </a>
+        <div className="w-px h-6 bg-zinc-800 shrink-0" />
+        {user ? (
+          <a href={`/profile/${user.id}`} className="flex items-center gap-2 min-w-0 group">
+            <span className="w-8 h-8 rounded-full overflow-hidden bg-zinc-800 border border-zinc-700 shrink-0 flex items-center justify-center font-display text-amber-400 text-sm">
+              {user.avatarUrl ? (
+                <img src={user.avatarUrl} alt="" className="w-full h-full object-cover" />
+              ) : (
+                user.username?.[0]?.toUpperCase()
+              )}
             </span>
-            <span className="text-zinc-700">→</span>
-            <span className={step === 2 ? 'text-amber-400' : 'text-zinc-500'}>
-              Step 2: Security &amp; Age
+            <span className="font-body text-sm font-semibold text-white truncate group-hover:text-amber-400 transition-colors">
+              @{user.username}
             </span>
-          </div>
-          <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-amber-500 transition-all duration-300"
-              style={{ width: step === 1 ? '50%' : '100%' }}
-            />
-          </div>
-        </div>
+          </a>
+        ) : (
+          <a href="/login" className="font-body text-sm font-semibold text-zinc-400 hover:text-white">
+            Log in
+          </a>
+        )}
+      </div>
 
-        {step === 1 && (
+      <div className="flex gap-1 bg-zinc-900/80 border border-zinc-800 rounded-xl p-1 font-mono text-xs uppercase tracking-widest shrink-0 z-10">
+        {FILTERS.map((opt) => (
+          <button
+            key={opt.label}
+            type="button"
+            onClick={() => handleFilterClick(opt)}
+            className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer ${
+              (opt.value === filter && !opt.href) || activeTab === opt.label
+                ? 'bg-amber-500 text-black font-bold'
+                : 'text-zinc-400 hover:text-white'
+            }`}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex items-center justify-end gap-5 font-mono text-xs uppercase tracking-widest flex-1">
+        {user && (
           <>
-            <button
-              type="button"
-              onClick={handleGoogleClick}
-              className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-white font-medium py-3 px-4 rounded-xl transition-all flex items-center justify-center gap-3 w-full shadow-sm"
-            >
-              <GoogleIcon /> Continue with Google
-            </button>
-
-            <div className="flex items-center gap-3 my-6">
-              <div className="h-px flex-1 bg-zinc-800" />
-              <span className="text-xs text-zinc-500 uppercase tracking-wide">or continue with email</span>
-              <div className="h-px flex-1 bg-zinc-800" />
-            </div>
-
-            <form onSubmit={goToStep2} className="space-y-3">
-              <input
-                value={form.username}
-                onChange={update('username')}
-                placeholder="Username"
-                required
-                className="w-full bg-zinc-900 border border-zinc-800 text-white text-sm rounded-xl px-4 py-3 outline-none focus:border-amber-500 placeholder-zinc-600"
-              />
-              <input
-                value={form.displayName}
-                onChange={update('displayName')}
-                placeholder="Display name (optional)"
-                className="w-full bg-zinc-900 border border-zinc-800 text-white text-sm rounded-xl px-4 py-3 outline-none focus:border-amber-500 placeholder-zinc-600"
-              />
-              <input
-                type="email"
-                value={form.email}
-                onChange={update('email')}
-                placeholder="Email"
-                required
-                className="w-full bg-zinc-900 border border-zinc-800 text-white text-sm rounded-xl px-4 py-3 outline-none focus:border-amber-500 placeholder-zinc-600"
-              />
-
-              {error && <p className="text-sm text-red-400">{error}</p>}
-
-              <button
-                type="submit"
-                className="w-full bg-amber-500 hover:bg-amber-400 text-black font-bold py-3.5 rounded-xl transition-all shadow-lg"
-              >
-                Continue
-              </button>
-            </form>
+            {(user.role === 'admin' || user.role === 'moderator') && (
+              <a href="/admin" className="text-yellow-400 hover:text-yellow-300">Admin</a>
+            )}
+            <a href="/live" className="text-zinc-400 hover:text-white">Live</a>
+            <a href="/messages" className="relative text-zinc-400 hover:text-white">
+              DMs
+              {unreadCount > 0 && (
+                <span className="absolute -top-2 -right-3 bg-amber-500 text-black rounded-full w-4 h-4 flex items-center justify-center text-[9px] font-bold">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
+            </a>
           </>
         )}
+        <button
+          type="button"
+          onClick={() => setIsMuted((prev) => !prev)}
+          className="text-zinc-300 hover:text-white px-2 py-1 rounded bg-zinc-800/50"
+        >
+          {isMuted ? '🔇 Mute' : '🔊 Sound'}
+        </button>
+        <button
+          type="button"
+          onClick={() => router.push('/search')}
+          aria-label="Search"
+          className="text-zinc-300 hover:text-white cursor-pointer"
+        >
+          <SearchIcon />
+        </button>
+        <button
+          type="button"
+          onClick={() => setFiltersOpen(true)}
+          aria-label="Filters and feed tuning"
+          className="relative text-zinc-300 hover:text-white cursor-pointer"
+        >
+          <DotsIcon />
+          {circle !== null && (
+            <span className="absolute -top-1.5 -right-1.5 w-2 h-2 rounded-full bg-amber-500" />
+          )}
+        </button>
+      </div>
+    </header>
+  );
 
-        {step === 2 && (
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">
-                Date of Birth
-              </label>
-              <input
-                type="date"
-                value={form.dob}
-                onChange={update('dob')}
-                required
-                className="mt-1.5 w-full bg-zinc-900 border border-zinc-800 text-white text-sm rounded-xl px-4 py-3 outline-none focus:border-amber-500 [color-scheme:dark]"
-              />
-            </div>
+  return (
+    <main className="relative h-dvh w-full overflow-hidden bg-ink flex flex-col">
+      <Suspense fallback={null}>
+        <CircleParamSync onCircle={setCircle} />
+      </Suspense>
 
-            {ageError && (
-              <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm rounded-xl px-4 py-3">
-                {ageError}
+      {/* Desktop Header */}
+      {!focusMode && isDesktop && (
+        <>
+          {desktopHeader}
+          <StoriesBar className="border-b border-zinc-800 bg-zinc-950/80" />
+        </>
+      )}
+
+      {/* Mobile Header Overlay */}
+      {!focusMode && isDesktop === false && (
+        <div className="fixed top-0 inset-x-0 z-40 pointer-events-auto">
+          <TopHeaderNav
+            activeTab={activeTab}
+            setActiveTab={handleMobileTabSelect}
+            isMuted={isMuted}
+            onMuteToggle={() => setIsMuted((prev) => !prev)}
+            onSearchClick={() => router.push('/search')}
+          />
+          <div className="relative z-10" style={{ marginTop: '3.75rem' }}>
+            <StoriesBar />
+          </div>
+        </div>
+      )}
+
+      {/* Mobile Feed */}
+      {isDesktop === false && (
+        <div className="h-full w-full flex-1 min-h-0 pt-14">
+          <SprocketRail count={videos.length} activeIndex={activeIndex} />
+          <div
+            ref={mobileContainerRef}
+            className="feed-scroll h-full w-full overflow-y-scroll snap-y snap-mandatory"
+          >
+            {videos.map((video, i) => (
+              <div key={video.id} className="h-dvh w-full snap-start">
+                <VideoCard
+                  ref={(el) => { videoCardRefs.current[video.id] = el; }}
+                  video={video}
+                  isActive={i === activeIndex}
+                  isMuted={isMuted}
+                  shouldLoad={Math.abs(i - activeIndex) <= 1}
+                  focusMode={focusMode}
+                  onToggleFollow={handleToggleFollow}
+                  onDeleted={handleVideoDeleted}
+                />
+              </div>
+            ))}
+            {loadingMore && (
+              <div className="h-dvh w-full snap-start">
+                <FeedSkeletonCard />
               </div>
             )}
-
-            <div>
-              <label className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">
-                Password
-              </label>
-              <div className="relative mt-1.5">
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={form.password}
-                  onChange={update('password')}
-                  placeholder="Create a password"
-                  required
-                  className="w-full bg-zinc-900 border border-zinc-800 text-white text-sm rounded-xl px-4 py-3 pr-11 outline-none focus:border-amber-500 placeholder-zinc-600"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword((v) => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300"
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
-                >
-                  <EyeIcon open={showPassword} />
-                </button>
+            {videos.length === 0 && initialLoading && (
+              <div className="h-dvh w-full snap-start">
+                <FeedSkeletonCard />
               </div>
+            )}
+            {videos.length === 0 && !initialLoading && (
+              <div className="h-dvh flex items-center justify-center">
+                <p className="font-body text-smoke">No videos found for this filter.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
-              {form.password && (
-                <div className="mt-2">
-                  <div className="flex gap-1">
-                    {[0, 1, 2, 3].map((i) => (
-                      <div
-                        key={i}
-                        className={`h-1.5 flex-1 rounded-full ${
-                          i < strengthScore ? strengthColor : 'bg-zinc-800'
-                        }`}
-                      />
-                    ))}
+      {/* Desktop Workspace */}
+      {isDesktop === true && (
+        <div className="flex-1 min-h-0 flex gap-4 p-4">
+          <div className="flex-1 flex items-center justify-center min-w-0">
+            <div className="h-full w-full max-w-[calc((100vh-6rem)*9/16+2rem)] flex items-center justify-center bg-zinc-900/60 border border-zinc-800 rounded-2xl backdrop-blur-md shadow-2xl p-4">
+              <div
+                ref={desktopContainerRef}
+                className="feed-scroll h-full max-h-[calc(100vh-8rem)] w-auto aspect-[9/16] overflow-y-scroll snap-y snap-mandatory rounded-xl mx-auto"
+              >
+                {videos.map((video, i) => (
+                  <div key={video.id} className="h-full w-full snap-start">
+                    <VideoCard
+                      ref={(el) => { videoCardRefs.current[video.id] = el; }}
+                      video={video}
+                      isActive={i === activeIndex}
+                      isMuted={isMuted}
+                      shouldLoad={Math.abs(i - activeIndex) <= 1}
+                      focusMode={focusMode}
+                      onToggleFollow={handleToggleFollow}
+                      onDeleted={handleVideoDeleted}
+                      onActiveTimeUpdate={setActiveTime}
+                    />
                   </div>
-                  <p className="text-xs text-zinc-400 mt-1">{strengthLabel}</p>
-                </div>
-              )}
-
-              <ul className="mt-3 space-y-1.5">
-                {passedRules.map((rule) => (
-                  <li key={rule.key} className="flex items-center gap-2 text-xs">
-                    <span
-                      className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] shrink-0 ${
-                        rule.passed ? 'bg-green-500 text-black' : 'bg-zinc-800 text-zinc-600'
-                      }`}
-                    >
-                      {rule.passed ? '✓' : ''}
-                    </span>
-                    <span className={rule.passed ? 'text-zinc-300' : 'text-zinc-500'}>{rule.label}</span>
-                  </li>
                 ))}
-              </ul>
+                {loadingMore && (
+                  <div className="h-full w-full snap-start">
+                    <FeedSkeletonCard />
+                  </div>
+                )}
+                {videos.length === 0 && initialLoading && (
+                  <div className="h-full w-full snap-start">
+                    <FeedSkeletonCard />
+                  </div>
+                )}
+                {videos.length === 0 && !initialLoading && (
+                  <div className="h-full flex items-center justify-center">
+                    <p className="font-body text-smoke text-center px-6">No videos found for this filter.</p>
+                  </div>
+                )}
+              </div>
             </div>
+          </div>
 
-            <label className="flex items-start gap-2.5 text-xs text-zinc-400 pt-1">
-              <input
-                type="checkbox"
-                checked={agreed}
-                onChange={(e) => setAgreed(e.target.checked)}
-                className="mt-0.5 accent-amber-500"
+          {!focusMode && activeVideo && (
+            <div className="w-full max-w-md shrink-0 bg-zinc-900/60 border border-zinc-800 rounded-2xl backdrop-blur-md shadow-2xl p-4 overflow-hidden">
+              <DesktopRail
+                ref={desktopRailRef}
+                video={activeVideo}
+                onToggleFollow={handleToggleFollow}
+                currentTime={activeTime}
+                onSeek={(seconds) => videoCardRefs.current[activeVideo?.id]?.seekTo(seconds)}
               />
-              <span>
-                I agree to the{' '}
-                <Link href="/terms" className="text-amber-400 hover:underline">
-                  Terms of Service
-                </Link>{' '}
-                and{' '}
-                <Link href="/privacy" className="text-amber-400 hover:underline">
-                  Privacy Policy
-                </Link>
-                .
-              </span>
-            </label>
-
-            {error && <p className="text-sm text-red-400">{error}</p>}
-
-            <div className="flex gap-3 pt-1">
-              <button
-                type="button"
-                onClick={() => setStep(1)}
-                className="px-5 py-3.5 rounded-xl border border-zinc-800 text-zinc-300 text-sm font-semibold hover:bg-zinc-900 transition-all"
-              >
-                Back
-              </button>
-              <button
-                type="submit"
-                disabled={loading}
-                className="flex-1 bg-amber-500 hover:bg-amber-400 text-black font-bold py-3.5 rounded-xl transition-all shadow-lg disabled:opacity-50"
-              >
-                {loading ? 'Creating account…' : 'Complete Registration'}
-              </button>
             </div>
-          </form>
-        )}
+          )}
+        </div>
+      )}
 
-        <p className="text-sm text-zinc-400 mt-6 text-center">
-          Already have an account?{' '}
-          <Link href="/login" className="text-amber-400 font-semibold hover:underline">
-            Log in
-          </Link>
-        </p>
-      </div>
+      {celebration && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 animate-[fadeIn_0.2s_ease-out]">
+          <div className="bg-amber-400 text-black font-body font-semibold px-5 py-3 rounded-xl shadow-lg flex items-center gap-2">
+            <span className="text-lg">🎉</span>
+            <span>You just got tipped ${(celebration.amountCents / 100).toFixed(2)}!</span>
+          </div>
+        </div>
+      )}
+
+      <FeedFiltersDrawer
+        open={filtersOpen}
+        onClose={() => setFiltersOpen(false)}
+        circles={circles}
+        circle={circle}
+        onSelectCircle={(c) => {
+          setCircle(c);
+          setFiltersOpen(false);
+        }}
+        weights={tuningWeights}
+        onWeightsChange={setTuningWeights}
+      />
     </main>
+  );
+}
+
+function FeedSkeletonCard() {
+  return (
+    <div className="relative h-full w-full flex items-center justify-center bg-ink">
+      <div className="h-full w-full max-w-md bg-zinc-900 animate-pulse" />
+      <div className="absolute bottom-24 left-4 right-20 space-y-3">
+        <div className="h-4 w-1/3 bg-zinc-800 rounded animate-pulse" />
+        <div className="h-3 w-2/3 bg-zinc-800 rounded animate-pulse" />
+      </div>
+    </div>
+  );
+}
+
+function SearchIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="11" cy="11" r="7" />
+      <path d="m21 21-4.3-4.3" />
+    </svg>
+  );
+}
+
+function DotsIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+      <circle cx="5" cy="12" r="1.8" />
+      <circle cx="12" cy="12" r="1.8" />
+      <circle cx="19" cy="12" r="1.8" />
+    </svg>
   );
 }
