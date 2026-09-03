@@ -92,15 +92,15 @@ async function findOrCreateGoogleUser(profile) {
           emailVerified: true,
         },
       });
-      // Google accounts skip the emailed-code verification flow entirely
-      // (Google already verified the address), so this is the one place a
-      // Google-created account needs its own welcome-email trigger — the
-      // /verify-email route's trigger never runs for these users.
-      try {
-        await sendWelcomeEmail(user);
-      } catch (err) {
-        console.error('[auth] failed to send welcome email:', err.message);
-      }
+      // Google sign-in arrives pre-verified and never passes through
+      // POST /verify-email (see the welcome-email call there) — this is
+      // the only "just signed up" moment a brand-new Google-authenticated
+      // user gets, so it has to fire here specifically, and only in this
+      // branch (a genuinely new account), not the existingByEmail link
+      // case above, which is an existing user, not a new signup.
+      sendWelcomeEmail(user).catch((err) =>
+        console.error('[auth] failed to send welcome email:', err.message)
+      );
     }
   }
 
@@ -142,54 +142,61 @@ async function sendVerificationCode(user) {
   });
   await sendMail({
     to: user.email,
-    subject: 'Verify your ClipPulse account',
+    subject: 'Verify your Bledhi account',
     text: `Your verification code is ${code}. It expires in 15 minutes.`,
     html: `<p>Your verification code is <strong>${code}</strong>. It expires in 15 minutes.</p>`,
   });
 }
 
-// Sent once, right after email verification succeeds — that's when the
-// account is actually real/usable, rather than at raw registration when
-// it's still an unverified, unusable row.
+// Sent once someone can actually use the account — after email
+// verification for a normal signup, or immediately on account creation for
+// Google sign-in (which arrives pre-verified and never passes through
+// verify-email at all). Best-effort: a failure here shouldn't block
+// verify-email/login, so callers fire-and-catch this rather than await it
+// inline in the response path — see both call sites below.
 async function sendWelcomeEmail(user) {
   const name = user.displayName || user.username;
   await sendMail({
     to: user.email,
-    subject: 'Welcome to ClipPulse! 🚀',
+    subject: 'Welcome to ClipPulse! \ud83d\ude80',
     text: `Hey ${name}, welcome to ClipPulse! Set up your profile and post your first short video to get started.`,
     html: `
-      <div style="background:#0a090e;padding:32px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
-        <div style="max-width:480px;margin:0 auto;background:#151319;border:1px solid #2a2730;border-radius:16px;overflow:hidden;">
-          <div style="padding:32px 28px 8px;">
-            <p style="margin:0 0 4px;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#f5a623;font-weight:600;">
-              ClipPulse
-            </p>
-            <h1 style="margin:0 0 16px;font-size:22px;color:#ffffff;">Welcome, ${name} 🚀</h1>
-            <p style="margin:0 0 20px;font-size:14px;line-height:1.6;color:#b8b3c2;">
-              Your account is verified and ready to go. Two quick things to get the most out of ClipPulse:
-            </p>
-            <table role="presentation" style="width:100%;border-collapse:collapse;margin-bottom:24px;">
-              <tr>
-                <td style="padding:12px 0;border-top:1px solid #2a2730;font-size:14px;color:#e8e4ee;">
-                  🧑‍🎨&nbsp;&nbsp;Set up your profile — add a photo and bio so people know it's you
-                </td>
-              </tr>
-              <tr>
-                <td style="padding:12px 0;border-top:1px solid #2a2730;font-size:14px;color:#e8e4ee;">
-                  🎬&nbsp;&nbsp;Post your first short video — it's the fastest way to start getting seen
-                </td>
-              </tr>
-            </table>
-            <a href="${FRONTEND_URL}"
-               style="display:inline-block;background:#f5a623;color:#0a090e;font-weight:700;font-size:14px;padding:12px 24px;border-radius:10px;text-decoration:none;">
-              Open ClipPulse
-            </a>
-          </div>
-          <div style="padding:16px 28px;background:#0d0c11;border-top:1px solid #2a2730;">
-            <p style="margin:0;font-size:11px;color:#6b6673;">
-              You're getting this because you just verified a ClipPulse account.
-            </p>
-          </div>
+      <div style="background:#0a0a0f;padding:40px 24px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+        <div style="max-width:480px;margin:0 auto;background:#16151d;border:1px solid #2a2836;border-radius:16px;padding:36px 32px;">
+          <p style="color:#e8a33d;font-size:13px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;margin:0 0 20px;">
+            ClipPulse
+          </p>
+          <h1 style="color:#f2ebe2;font-size:24px;line-height:1.3;margin:0 0 16px;">
+            Welcome, ${name}! \ud83d\ude80
+          </h1>
+          <p style="color:#9a8fa8;font-size:15px;line-height:1.6;margin:0 0 28px;">
+            Your account is ready. Here's how to get started:
+          </p>
+          <table style="width:100%;border-collapse:collapse;margin-bottom:28px;">
+            <tr>
+              <td style="padding:12px 0;border-top:1px solid #2a2836;color:#f2ebe2;font-size:14px;">
+                \ud83d\udcf7 &nbsp;Set up your profile — add a photo and bio
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:12px 0;border-top:1px solid #2a2836;color:#f2ebe2;font-size:14px;">
+                \ud83c\udfac &nbsp;Post your first short video
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:12px 0;border-top:1px solid #2a2836;border-bottom:1px solid #2a2836;color:#f2ebe2;font-size:14px;">
+                \ud83d\udc65 &nbsp;Follow a few creators to build your feed
+              </td>
+            </tr>
+          </table>
+          <a href="${FRONTEND_URL}/upload"
+             style="display:inline-block;background:#e8a33d;color:#0a0a0f;font-size:14px;font-weight:700;
+                    text-decoration:none;padding:12px 24px;border-radius:999px;">
+            Post your first video
+          </a>
+          <p style="color:#5c5468;font-size:12px;margin:32px 0 0;">
+            You're receiving this because you created a ClipPulse account.
+          </p>
         </div>
       </div>
     `,
@@ -224,11 +231,15 @@ router.post('/register', authLimiter, validate(registerSchema), asyncHandler(asy
   try {
     await sendVerificationCode(user);
   } catch (err) {
-    // The account still gets created — a mail-provider hiccup shouldn't
-    // undo a successful signup — but the response now says so honestly
-    // instead of implying the email went out when it didn't. The frontend
-    // can show "we couldn't send it, tap Resend" instead of a generic
-    // "check your email" that's actively misleading if nothing arrives.
+    // The account exists either way — don't fail registration over a mail
+    // provider hiccup (e.g. bad SMTP credentials). The user can hit "Resend"
+    // once mail is fixed, or we retry on that same click. But the response
+    // needs to actually say so — previously this always returned
+    // { needsVerification: true } regardless of whether anything was sent,
+    // which reads to the frontend exactly like "code sent" even when the
+    // mail call threw. emailSendFailed lets the verify-email screen show a
+    // real "we couldn't send that — tap Resend" state instead of leaving
+    // someone staring at an empty inbox with no explanation.
     console.error('[auth] failed to send verification email:', err.message);
     emailSendFailed = true;
   }
@@ -259,14 +270,12 @@ router.post('/verify-email', asyncHandler(async (req, res) => {
     data: { emailVerified: true, emailVerificationCode: null, emailVerificationExpires: null },
   });
 
-  try {
-    await sendWelcomeEmail(verified);
-  } catch (err) {
-    // A failed welcome email is a nice-to-have miss, not a reason to fail
-    // an otherwise-successful verification — same non-blocking reasoning
-    // as the verification code send above.
-    console.error('[auth] failed to send welcome email:', err.message);
-  }
+  // Fire-and-forget — a failed welcome email is a nice-to-have miss, not
+  // something that should block someone from actually getting into their
+  // new account.
+  sendWelcomeEmail(verified).catch((err) =>
+    console.error('[auth] failed to send welcome email:', err.message)
+  );
 
   const token = signToken(verified);
   res.json({
@@ -275,10 +284,6 @@ router.post('/verify-email', asyncHandler(async (req, res) => {
   });
 }));
 
-// authLimiter (IP-based) sits alongside the per-email cooldown below —
-// the cooldown alone doesn't stop someone hammering many different email
-// addresses from the same IP to spam OTP emails; the limiter catches that,
-// the cooldown catches repeated hits on the same address.
 router.post('/resend-verification', authLimiter, asyncHandler(async (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ error: 'email is required' });
@@ -566,7 +571,7 @@ router.post('/forgot-password', authLimiter, validate(forgotPasswordSchema), asy
     try {
       await sendMail({
         to: user.email,
-        subject: 'Reset your ClipPulse password',
+        subject: 'Reset your Bledhi password',
         text: `We got a request to reset your password. This link expires in 1 hour:\n\n${resetUrl}\n\nIf you didn't request this, you can ignore this email — your password won't change.`,
         html: `<p>We got a request to reset your password. This link expires in 1 hour:</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>If you didn't request this, you can ignore this email — your password won't change.</p>`,
       });
