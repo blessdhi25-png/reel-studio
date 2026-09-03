@@ -142,14 +142,16 @@ export default function SignupPage() {
 
     setLoading(true);
     try {
-      await api.register({
+      const result = await api.register({
         username: form.username,
         displayName: form.displayName,
         email: form.email,
         password: form.password,
         dob: form.dob,
       });
-      router.push(`/verify-email?email=${encodeURIComponent(form.email)}`);
+      const params = new URLSearchParams({ email: form.email });
+      if (result.emailSendFailed) params.set('emailFailed', '1');
+      router.push(`/verify-email?${params.toString()}`);
     } catch (err) {
       // api.js already turns a raw fetch failure (wrong host, backend down,
       // CORS block, etc.) into this exact message and logs the attempted
