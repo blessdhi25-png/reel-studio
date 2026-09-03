@@ -92,6 +92,15 @@ async function findOrCreateGoogleUser(profile) {
           emailVerified: true,
         },
       });
+      // Google accounts skip the emailed-code verification flow entirely
+      // (Google already verified the address), so this is the one place a
+      // Google-created account needs its own welcome-email trigger — the
+      // /verify-email route's trigger never runs for these users.
+      try {
+        await sendWelcomeEmail(user);
+      } catch (err) {
+        console.error('[auth] failed to send welcome email:', err.message);
+      }
     }
   }
 
@@ -133,13 +142,61 @@ async function sendVerificationCode(user) {
   });
   await sendMail({
     to: user.email,
-    subject: 'Verify your Bledhi account',
+    subject: 'Verify your ClipPulse account',
     text: `Your verification code is ${code}. It expires in 15 minutes.`,
     html: `<p>Your verification code is <strong>${code}</strong>. It expires in 15 minutes.</p>`,
   });
 }
 
-router.post('/register', validate(registerSchema), asyncHandler(async (req, res) => {
+// Sent once, right after email verification succeeds — that's when the
+// account is actually real/usable, rather than at raw registration when
+// it's still an unverified, unusable row.
+async function sendWelcomeEmail(user) {
+  const name = user.displayName || user.username;
+  await sendMail({
+    to: user.email,
+    subject: 'Welcome to ClipPulse! 🚀',
+    text: `Hey ${name}, welcome to ClipPulse! Set up your profile and post your first short video to get started.`,
+    html: `
+      <div style="background:#0a090e;padding:32px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+        <div style="max-width:480px;margin:0 auto;background:#151319;border:1px solid #2a2730;border-radius:16px;overflow:hidden;">
+          <div style="padding:32px 28px 8px;">
+            <p style="margin:0 0 4px;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#f5a623;font-weight:600;">
+              ClipPulse
+            </p>
+            <h1 style="margin:0 0 16px;font-size:22px;color:#ffffff;">Welcome, ${name} 🚀</h1>
+            <p style="margin:0 0 20px;font-size:14px;line-height:1.6;color:#b8b3c2;">
+              Your account is verified and ready to go. Two quick things to get the most out of ClipPulse:
+            </p>
+            <table role="presentation" style="width:100%;border-collapse:collapse;margin-bottom:24px;">
+              <tr>
+                <td style="padding:12px 0;border-top:1px solid #2a2730;font-size:14px;color:#e8e4ee;">
+                  🧑‍🎨&nbsp;&nbsp;Set up your profile — add a photo and bio so people know it's you
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:12px 0;border-top:1px solid #2a2730;font-size:14px;color:#e8e4ee;">
+                  🎬&nbsp;&nbsp;Post your first short video — it's the fastest way to start getting seen
+                </td>
+              </tr>
+            </table>
+            <a href="${FRONTEND_URL}"
+               style="display:inline-block;background:#f5a623;color:#0a090e;font-weight:700;font-size:14px;padding:12px 24px;border-radius:10px;text-decoration:none;">
+              Open ClipPulse
+            </a>
+          </div>
+          <div style="padding:16px 28px;background:#0d0c11;border-top:1px solid #2a2730;">
+            <p style="margin:0;font-size:11px;color:#6b6673;">
+              You're getting this because you just verified a ClipPulse account.
+            </p>
+          </div>
+        </div>
+      </div>
+    `,
+  });
+}
+
+router.post('/register', authLimiter, validate(registerSchema), asyncHandler(async (req, res) => {
   const { username, email, password, displayName } = req.body;
   if (!username || !email || !password) {
     return res.status(400).json({ error: 'username, email, and password are required' });
@@ -163,17 +220,21 @@ router.post('/register', validate(registerSchema), asyncHandler(async (req, res)
     data: { username, email, passwordHash, displayName: displayName || username },
   });
 
+  let emailSendFailed = false;
   try {
     await sendVerificationCode(user);
   } catch (err) {
-    // The account exists either way — don't fail registration over a mail
-    // provider hiccup (e.g. bad SMTP credentials). The user can hit "Resend"
-    // once mail is fixed, or we retry on that same click.
+    // The account still gets created — a mail-provider hiccup shouldn't
+    // undo a successful signup — but the response now says so honestly
+    // instead of implying the email went out when it didn't. The frontend
+    // can show "we couldn't send it, tap Resend" instead of a generic
+    // "check your email" that's actively misleading if nothing arrives.
     console.error('[auth] failed to send verification email:', err.message);
+    emailSendFailed = true;
   }
 
   // No token yet — the account can't log in until the code is confirmed.
-  res.status(201).json({ needsVerification: true, email: user.email });
+  res.status(201).json({ needsVerification: true, email: user.email, emailSendFailed });
 }));
 
 router.post('/verify-email', asyncHandler(async (req, res) => {
@@ -198,6 +259,15 @@ router.post('/verify-email', asyncHandler(async (req, res) => {
     data: { emailVerified: true, emailVerificationCode: null, emailVerificationExpires: null },
   });
 
+  try {
+    await sendWelcomeEmail(verified);
+  } catch (err) {
+    // A failed welcome email is a nice-to-have miss, not a reason to fail
+    // an otherwise-successful verification — same non-blocking reasoning
+    // as the verification code send above.
+    console.error('[auth] failed to send welcome email:', err.message);
+  }
+
   const token = signToken(verified);
   res.json({
     token,
@@ -205,7 +275,11 @@ router.post('/verify-email', asyncHandler(async (req, res) => {
   });
 }));
 
-router.post('/resend-verification', asyncHandler(async (req, res) => {
+// authLimiter (IP-based) sits alongside the per-email cooldown below —
+// the cooldown alone doesn't stop someone hammering many different email
+// addresses from the same IP to spam OTP emails; the limiter catches that,
+// the cooldown catches repeated hits on the same address.
+router.post('/resend-verification', authLimiter, asyncHandler(async (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ error: 'email is required' });
 
@@ -492,7 +566,7 @@ router.post('/forgot-password', authLimiter, validate(forgotPasswordSchema), asy
     try {
       await sendMail({
         to: user.email,
-        subject: 'Reset your Bledhi password',
+        subject: 'Reset your ClipPulse password',
         text: `We got a request to reset your password. This link expires in 1 hour:\n\n${resetUrl}\n\nIf you didn't request this, you can ignore this email — your password won't change.`,
         html: `<p>We got a request to reset your password. This link expires in 1 hour:</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>If you didn't request this, you can ignore this email — your password won't change.</p>`,
       });
