@@ -12,7 +12,11 @@ function VerifyEmailForm() {
   const [email, setEmail] = useState(params.get('email') || '');
   const [code, setCode] = useState('');
   const [error, setError] = useState(null);
-  const [notice, setNotice] = useState(null);
+  const [notice, setNotice] = useState(
+    params.get('emailSendFailed')
+      ? "Your account was created, but we couldn't send the verification email — tap Resend below to try again."
+      : null
+  );
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
 
