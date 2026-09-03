@@ -8,7 +8,6 @@ import { api } from '../lib/api';
 import { getSocket } from '../lib/socket';
 import VideoCard from '../components/VideoCard';
 import DesktopRail from '../components/DesktopRail';
-import SprocketRail from '../components/SprocketRail';
 import { loadTuningWeights } from '../components/TuneFeedPanel';
 import FeedFiltersDrawer from '../components/FeedFiltersDrawer';
 import Logo from '../components/Logo';
@@ -372,7 +371,6 @@ export default function FeedPage() {
       {/* Mobile Feed */}
       {isDesktop === false && (
         <div className="h-full w-full flex-1 min-h-0 pt-14">
-          <SprocketRail count={videos.length} activeIndex={activeIndex} />
           <div
             ref={mobileContainerRef}
             className="feed-scroll h-full w-full overflow-y-scroll snap-y snap-mandatory"
