@@ -24,6 +24,6 @@ const transporter = hasSmtpConfig
     };
 
 export async function sendMail({ to, subject, text, html }) {
-  const from = process.env.SMTP_FROM || 'Bledhi <no-reply@bledhi.app>';
+  const from = process.env.SMTP_FROM || 'ClipPulse <no-reply@clippulse.app>';
   await transporter.sendMail({ from, to, subject, text, html });
 }
