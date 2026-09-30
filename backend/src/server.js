@@ -7,6 +7,27 @@ import { createServer } from 'http';
 import { initSocket } from './realtime/socket.js';
 import { connectDB } from './config/db.js';
 
+// Every signed-in request depends on JWT_SECRET (login, register, verify-email,
+// refresh, Google sign-in, the requireAuth middleware itself). Without this
+// check, a missing JWT_SECRET stays invisible until the first login attempt,
+// where jwt.sign() throws "secretOrPrivateKey must have a value" deep inside
+// routes/auth.js — caught by that route's try/catch, logged, and correctly
+// turned into a 500 JSON response by the global error handler below, but the
+// actual cause (one missing env var) is buried in a stack trace instead of
+// being obvious. A hardcoded fallback secret would "fix" the crash but open a
+// worse hole: anyone who reads this (public) source could forge a valid token
+// for any user by signing with that same known string. Failing fast at boot
+// with a clear, actionable message is the safe version of "never throws an
+// uncaught error" — it just fails at startup instead of on someone's first
+// login attempt.
+if (!process.env.JWT_SECRET) {
+  console.error(
+    '[startup] FATAL: JWT_SECRET is not set. Add it to backend/.env (see .env.example) ' +
+      'before starting the server — every login/signup/auth request depends on it.'
+  );
+  process.exit(1);
+}
+
 // Prisma returns BigInt for Video.viewCount/likeCount/commentCount.
 // JSON.stringify (which res.json() uses) can't serialize BigInt natively —
 // without this, any route returning a video silently 500s. Safe to convert
