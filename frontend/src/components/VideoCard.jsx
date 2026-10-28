@@ -90,12 +90,27 @@ function getStoredAudioEnabled() {
   return window.localStorage.getItem('feedAudioEnabled') === 'true';
 }
 
+// Renders the caption with #hashtags split into their own bold spans so they
+// share the caption's high-legibility styling (and can be linked later).
+function renderCaption(caption) {
+  if (!caption) return null;
+  return caption.split(/(#[\p{L}\p{N}_]+)/u).map((part, i) =>
+    part.startsWith('#') ? (
+      <span key={i} className="font-bold text-white">{part}</span>
+    ) : (
+      part
+    )
+  );
+}
+
 const VideoCard = forwardRef(function VideoCard(
   {
     video,
     isActive,
     shouldLoad = true,
     focusMode = false,
+    // True while the feed is being dragged/scrolled — hides the overlay chrome.
+    isScrolling = false,
     onToggleFollow,
     onActiveTimeUpdate,
     onDeleted,
@@ -514,18 +529,36 @@ const VideoCard = forwardRef(function VideoCard(
         </div>
       )}
 
-      {/* Everything below is "chrome" that focus mode (F) hides so the video is unobstructed */}
+      {/* ClipPulse watermark — always visible (even in focus mode / while
+          scrolling) so shared screen recordings stay attributed. Subtle,
+          semi-transparent, bottom-right, non-interactive. */}
       <div
-        className={`transition-opacity duration-200 ${
-          focusMode ? 'opacity-0 pointer-events-none' : 'opacity-100'
-        }`}
+        className="absolute right-3 bottom-[4.75rem] z-[6] pointer-events-none select-none text-[10px] font-bold tracking-wide text-white/60 drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]"
+        aria-hidden="true"
       >
+        ⚡ ClipPulse @{video.user?.username}
+      </div>
+
+      {/* Everything below is "chrome" that focus mode (F) hides so the video
+          is unobstructed, and that also fades out while the feed is being
+          dragged/scrolled (isScrolling) and fades back in once it settles. */}
+      <div
+        className={
+          focusMode || isScrolling
+            ? 'opacity-0 pointer-events-none transition-opacity duration-200'
+            : 'opacity-100 transition-opacity duration-300'
+        }
+      >
+        {/* Legibility gradient — sits behind the caption/rail so text stays
+            readable over bright video. Purely visual, never intercepts taps. */}
+        <div className="absolute inset-x-0 bottom-0 h-72 bg-gradient-to-t from-black/80 via-black/40 to-transparent pointer-events-none" />
+
         {/* Caption + creator — bottom-24 clears the fixed bottom nav on mobile */}
-        <div className="absolute bottom-24 left-10 right-24 text-bone">
-          <a href={`/profile/${video.user?.id}`} className="font-display text-2xl tracking-wide">
+        <div className="absolute bottom-24 left-10 right-24 text-white font-bold drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
+          <a href={`/profile/${video.user?.id}`} className="font-display text-2xl font-bold tracking-wide text-white">
             @{video.user?.username}
           </a>
-          <p className="font-body text-sm text-smoke mt-1">{video.caption}</p>
+          <p className="font-body text-sm font-bold text-white mt-1">{renderCaption(video.caption)}</p>
 
           {/* Sound ticker — only renders once video.track is actually
               populated. Today's feed endpoint doesn't include the track
@@ -536,9 +569,9 @@ const VideoCard = forwardRef(function VideoCard(
               way GET /artists/tracks/search already does. */}
           {video.track && (
             <div className="mt-2 flex items-center gap-1.5 max-w-full overflow-hidden">
-              <MusicNoteIcon className="w-3.5 h-3.5 text-bone shrink-0 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]" />
+              <MusicNoteIcon className="w-3.5 h-3.5 text-white shrink-0 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]" />
               <div className="overflow-hidden">
-                <div className="flex w-max animate-marquee font-body text-xs text-bone whitespace-nowrap drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
+                <div className="flex w-max animate-marquee font-body text-xs font-semibold text-white whitespace-nowrap drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
                   <span className="pr-8">
                     {video.track.artistName} - {video.track.title}
                   </span>
