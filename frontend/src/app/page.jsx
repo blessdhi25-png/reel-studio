@@ -7,6 +7,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { api } from '../lib/api';
 import { getSocket } from '../lib/socket';
 import VideoCard from '../components/VideoCard';
+import { useFeedScrolling } from '../hooks/useFeedScrolling';
 import DesktopRail from '../components/DesktopRail';
 import { loadTuningWeights } from '../components/TuneFeedPanel';
 import FeedFiltersDrawer from '../components/FeedFiltersDrawer';
@@ -53,6 +54,7 @@ export default function FeedPage() {
   const [user, setUser] = useState(null);
   const [unreadCount, setUnreadCount] = useState(0);
   const [focusMode, setFocusMode] = useState(false);
+  const { isScrolling, handlers: scrollHandlers } = useFeedScrolling();
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [tuningWeights, setTuningWeights] = useState({ nicheWeight: 50, freshWeight: 50, localWeight: 50 });
   const [activeTime, setActiveTime] = useState(0);
@@ -374,6 +376,7 @@ export default function FeedPage() {
           <div
             ref={mobileContainerRef}
             className="feed-scroll h-full w-full overflow-y-scroll snap-y snap-mandatory"
+            {...scrollHandlers}
           >
             {videos.map((video, i) => (
               <div key={video.id} className="h-dvh w-full snap-start">
@@ -384,6 +387,7 @@ export default function FeedPage() {
                   isMuted={isMuted}
                   shouldLoad={Math.abs(i - activeIndex) <= 1}
                   focusMode={focusMode}
+                  isScrolling={isScrolling}
                   onToggleFollow={handleToggleFollow}
                   onDeleted={handleVideoDeleted}
                 />
@@ -416,6 +420,7 @@ export default function FeedPage() {
               <div
                 ref={desktopContainerRef}
                 className="feed-scroll h-full max-h-[calc(100vh-8rem)] w-auto aspect-[9/16] overflow-y-scroll snap-y snap-mandatory rounded-xl mx-auto"
+                {...scrollHandlers}
               >
                 {videos.map((video, i) => (
                   <div key={video.id} className="h-full w-full snap-start">
@@ -426,6 +431,7 @@ export default function FeedPage() {
                       isMuted={isMuted}
                       shouldLoad={Math.abs(i - activeIndex) <= 1}
                       focusMode={focusMode}
+                      isScrolling={isScrolling}
                       onToggleFollow={handleToggleFollow}
                       onDeleted={handleVideoDeleted}
                       onActiveTimeUpdate={setActiveTime}
