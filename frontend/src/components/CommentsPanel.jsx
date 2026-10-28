@@ -212,7 +212,16 @@ const CommentsPanel = forwardRef(function CommentsPanel(
         })}
       </div>
 
-      <form onSubmit={handlePost} className="flex flex-col gap-1.5 p-4 border-t border-smoke/10">
+      <form
+        onSubmit={handlePost}
+        // In the mobile overlay the fixed BottomNav (z-40, ~64px tall) sits
+        // over the bottom of the sheet, so the input row needs extra bottom
+        // padding to land fully above the nav icons. The inline (desktop
+        // rail) variant has no BottomNav, so it keeps the normal padding.
+        className={`relative z-30 flex flex-col gap-1.5 p-4 border-t border-smoke/10 bg-ink2 ${
+          variant === 'inline' ? '' : 'pb-[calc(5rem+env(safe-area-inset-bottom))]'
+        }`}
+      >
         <div className="flex gap-2">
           <input
             ref={inputRef}
