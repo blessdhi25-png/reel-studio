@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { api } from '../lib/api';
 import { useToast } from '../context/ToastContext';
 
@@ -107,11 +108,15 @@ export default function StoryComposer({ onClose, onCreated }) {
     }
   }
 
-  return (
-    <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-2xl text-white flex flex-col">
+  // Portaled to <body> so the overlay isn't trapped inside StoriesBar's
+  // stacking context (the feed wraps it in `relative z-10`), which is what
+  // let the global feed header (LIVE / Communities / mute) draw over it.
+  if (typeof document === 'undefined') return null;
+  return createPortal(
+    <div className="fixed inset-0 z-[100] bg-black text-white flex flex-col">
       <input ref={fileInputRef} type="file" accept="image/*,video/*" onChange={handleFilePicked} className="hidden" />
 
-      <div className="flex items-center justify-between px-4 pt-[max(1.25rem,env(safe-area-inset-top))] pb-3 shrink-0">
+      <div className="relative z-50 flex justify-between items-center px-4 py-3 pt-[max(3rem,calc(env(safe-area-inset-top)+0.75rem))] shrink-0">
         <button onClick={onClose} className="text-white text-xl leading-none px-1" aria-label="Close">
           ✕
         </button>
@@ -251,6 +256,7 @@ export default function StoryComposer({ onClose, onCreated }) {
           )}
         </div>
       )}
-    </div>
+    </div>,
+    document.body
   );
 }
