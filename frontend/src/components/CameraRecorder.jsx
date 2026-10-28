@@ -138,6 +138,26 @@ function drawTextOverlay(ctx, overlay, width, height) {
   ctx.restore();
 }
 
+// ClipPulse watermark — drawn on the compositor canvas itself so it is baked
+// into every recorded frame (the recorder captures this canvas's stream).
+// Right-aligned in the lower-right corner; size scales with canvas width so
+// it stays proportionate on any device.
+function drawWatermark(ctx, username, width, height) {
+  const fontSize = Math.max(12, Math.round(width * 0.05));
+  const label = '⚡ ClipPulse' + (username ? ' @' + username : '');
+  ctx.save();
+  ctx.filter = 'none';
+  ctx.font = `bold ${fontSize}px Inter, sans-serif`;
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'alphabetic';
+  ctx.shadowColor = 'rgba(0,0,0,0.6)';
+  ctx.shadowBlur = 3;
+  ctx.shadowOffsetY = 1;
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.75)';
+  ctx.fillText(label, width - Math.round(width * 0.04), height - Math.round(height * 0.05));
+  ctx.restore();
+}
+
 // cover: crop the source to fill the destination with no letterboxing.
 // contain: letterbox/pillarbox to show the whole source.
 function computeDrawRect(srcW, srcH, dstW, dstH, fit) {
@@ -318,6 +338,15 @@ const CameraRecorder = forwardRef(function CameraRecorder(
   const effectKindRef = useRef(effectKind);
   const textOverlayRef = useRef(textOverlay);
   const aspectFitRef = useRef(aspectFit);
+  const usernameRef = useRef('');
+  useEffect(() => {
+    try {
+      const me = JSON.parse(localStorage.getItem('user') || 'null');
+      usernameRef.current = me?.username || '';
+    } catch {
+      usernameRef.current = '';
+    }
+  }, []);
   useEffect(() => {
     filterCssRef.current = filterCss;
   }, [filterCss]);
@@ -375,6 +404,9 @@ const CameraRecorder = forwardRef(function CameraRecorder(
 
         // 3. Text overlay, topmost.
         drawTextOverlay(ctx, textOverlayRef.current, w, h);
+
+        // 4. ClipPulse watermark — last, so nothing covers it.
+        drawWatermark(ctx, usernameRef.current, w, h);
 
         frame += 1;
       }
