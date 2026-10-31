@@ -296,7 +296,7 @@ export default function FeedPage() {
       <div className="flex items-center justify-end gap-5 font-mono text-xs uppercase tracking-widest flex-1">
         {user && (
           <>
-            {(user.role === 'admin' || user.role === 'moderator') && (
+            {user.role === 'admin' && (
               <a href="/admin" className="text-yellow-400 hover:text-yellow-300">Admin</a>
             )}
             <a href="/live" className="text-zinc-400 hover:text-white">Live</a>
@@ -388,6 +388,7 @@ export default function FeedPage() {
                   shouldLoad={Math.abs(i - activeIndex) <= 1}
                   focusMode={focusMode}
                   isScrolling={isScrolling}
+                  onAdvance={() => scrollToIndex(i + 1)}
                   onToggleFollow={handleToggleFollow}
                   onDeleted={handleVideoDeleted}
                 />
@@ -432,6 +433,7 @@ export default function FeedPage() {
                       shouldLoad={Math.abs(i - activeIndex) <= 1}
                       focusMode={focusMode}
                       isScrolling={isScrolling}
+                  onAdvance={() => scrollToIndex(i + 1)}
                       onToggleFollow={handleToggleFollow}
                       onDeleted={handleVideoDeleted}
                       onActiveTimeUpdate={setActiveTime}
