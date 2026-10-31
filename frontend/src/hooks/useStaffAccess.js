@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 
-// Whether the signed-in user is allowed into the admin portal.
+// Whether the signed-in user is an ADMIN (the only role allowed into the admin portal).
 //
 // Decided by the BACKEND (GET /admin/me, which re-reads the user's current
 // role from the database) rather than by the role cached in localStorage, so
@@ -13,7 +13,7 @@ import { api } from '../lib/api';
 // layout, and the backend's authorizeRoles('moderator', 'admin').
 //
 // Roles are stored lowercase in the database ('user' | 'moderator' | 'admin').
-export const STAFF_ROLES = ['admin', 'moderator'];
+export const STAFF_ROLES = ['admin'];
 
 export function useStaffAccess() {
   const [state, setState] = useState({ checked: false, isStaff: false, role: null });
