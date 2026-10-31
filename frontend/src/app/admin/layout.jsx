@@ -38,7 +38,7 @@ export default function AdminLayout({ children }) {
         // The backend already 403s non-staff; this re-checks the role it
         // returned so an unexpected payload can never fall through to "ok".
         // Role values are lowercase in the database.
-        if (!['admin', 'moderator'].includes(m?.role)) {
+        if (m?.role !== 'admin') {
           setStatus('denied');
           return;
         }
@@ -76,7 +76,7 @@ export default function AdminLayout({ children }) {
         <div>
           <p className="font-display text-3xl text-white tracking-wide mb-2">Not authorized</p>
           <p className="font-body text-zinc-400 text-sm mb-6">
-            This area is restricted to the moderation team.
+            This area is restricted to administrators.
           </p>
           <a href="/" className="font-body text-sm text-amber-400">
             Back to feed
