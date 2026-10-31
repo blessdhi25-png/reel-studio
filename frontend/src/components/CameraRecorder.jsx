@@ -3,6 +3,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { useCameraDevices } from '../lib/useCameraDevices';
 import CameraDeviceSelect from './CameraDeviceSelect';
+import { drawWatermark } from '../lib/watermark';
 
 const DURATIONS = [
   { label: '15s', seconds: 15 },
@@ -135,26 +136,6 @@ function drawTextOverlay(ctx, overlay, width, height) {
   const lineHeight = fontSize * 1.15;
   const startY = y - ((lines.length - 1) * lineHeight) / 2;
   lines.forEach((line, i) => ctx.fillText(line, x, startY + i * lineHeight));
-  ctx.restore();
-}
-
-// ClipPulse watermark — drawn on the compositor canvas itself so it is baked
-// into every recorded frame (the recorder captures this canvas's stream).
-// Right-aligned in the lower-right corner; size scales with canvas width so
-// it stays proportionate on any device.
-function drawWatermark(ctx, username, width, height) {
-  const fontSize = Math.max(12, Math.round(width * 0.05));
-  const label = '⚡ ClipPulse' + (username ? ' @' + username : '');
-  ctx.save();
-  ctx.filter = 'none';
-  ctx.font = `bold ${fontSize}px Inter, sans-serif`;
-  ctx.textAlign = 'right';
-  ctx.textBaseline = 'alphabetic';
-  ctx.shadowColor = 'rgba(0,0,0,0.6)';
-  ctx.shadowBlur = 3;
-  ctx.shadowOffsetY = 1;
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.75)';
-  ctx.fillText(label, width - Math.round(width * 0.04), height - Math.round(height * 0.05));
   ctx.restore();
 }
 
