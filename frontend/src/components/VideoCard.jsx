@@ -1,6 +1,6 @@
 'use client';
 
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import CommentsPanel from './CommentsPanel';
 import ReportModal from './ReportModal';
@@ -188,6 +188,28 @@ const VideoCard = forwardRef(function VideoCard(
   const [downloading, setDownloading] = useState(false);
   const mediaPausedByUserRef = useRef(false);
 
+  // Caption "...more / less". The caption is clamped to 2 lines; we measure
+  // whether the clamp is actually cutting text off (scrollHeight vs
+  // clientHeight) so the toggle only appears for captions that need it,
+  // rather than guessing from a character count.
+  const captionRef = useRef(null);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [captionOverflows, setCaptionOverflows] = useState(false);
+  useLayoutEffect(() => {
+    const el = captionRef.current;
+    if (!el || isExpanded) return; // while expanded the clamp is off; keep the last result
+    const measure = () => setCaptionOverflows(el.scrollHeight > el.clientHeight + 1);
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [video.caption, isExpanded]);
+  // A new caption, or scrolling to another card, starts collapsed again.
+  useEffect(() => {
+    setIsExpanded(false);
+  }, [video.id, video.caption]);
+
   // Drives actual play()/pause() off real on-screen visibility (see the
   // hook for why 60% specifically) instead of the parent's discretized
   // activeIndex — enabled only once shouldLoad has given this card a real
@@ -206,6 +228,7 @@ const VideoCard = forwardRef(function VideoCard(
     if (!inView) {
       setShowLongPressMenu(false);
       setClearDisplay(false);
+      setIsExpanded(false);
     }
   }, [inView]);
 
@@ -705,11 +728,40 @@ const VideoCard = forwardRef(function VideoCard(
         <div className="absolute inset-x-0 bottom-0 h-72 bg-gradient-to-t from-black/80 via-black/40 to-transparent pointer-events-none" />
 
         {/* Caption + creator — bottom-24 clears the fixed bottom nav on mobile */}
-        <div className="absolute bottom-24 left-10 right-24 text-white font-bold drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
+        <div
+          className={`absolute bottom-24 left-10 right-24 text-white font-bold drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] ${
+            // Expanded captions can get tall: cap the height and let them
+            // scroll internally so they never run under the top header, and
+            // keep extra padding between the text and the bottom nav.
+            isExpanded ? 'pb-4 max-h-[50dvh] overflow-y-auto' : ''
+          }`}
+        >
           <a href={`/profile/${video.user?.id}`} className="font-display text-2xl font-bold tracking-wide text-white">
             @{video.user?.username}
           </a>
-          <p className="font-body text-sm font-bold text-white mt-1">{renderCaption(video.caption)}</p>
+          {video.caption && (
+            <div className="mt-1">
+              <p
+                ref={captionRef}
+                className={`font-body text-sm font-bold text-white break-words ${isExpanded ? '' : 'line-clamp-2'}`}
+              >
+                {renderCaption(video.caption)}
+              </p>
+              {(captionOverflows || isExpanded) && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsExpanded((v) => !v);
+                  }}
+                  aria-expanded={isExpanded}
+                  className="mt-0.5 py-1 text-sm font-bold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] underline-offset-2 active:opacity-70"
+                >
+                  {isExpanded ? 'less' : '...more'}
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Sound ticker — only renders once video.track is actually
               populated. Today's feed endpoint doesn't include the track
