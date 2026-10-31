@@ -14,10 +14,10 @@ export default function TopHeaderNav({ activeTab, setActiveTab, onSearchClick, o
       <div className="flex items-center shrink-0 pointer-events-auto">
         <button
           onClick={() => setActiveTab('LIVE')}
-          className="flex items-center gap-1.5 text-white/90 hover:text-white font-bold text-xs bg-black/30 backdrop-blur-md px-2.5 py-1.5 rounded-lg border border-white/10 transition-all active:scale-95"
+          className="flex items-center gap-1.5 min-h-[40px] text-white hover:text-white font-extrabold text-xs bg-black/40 backdrop-blur-md px-3 py-2 rounded-lg border border-white/20 transition-all active:scale-95 drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]"
         >
           <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-          <span className="tracking-wide uppercase text-[11px]">LIVE</span>
+          <span className="tracking-wider uppercase text-xs">LIVE</span>
         </button>
       </div>
       {/* 2. Center: TikTok-Style Navigation Tabs */}
@@ -29,17 +29,17 @@ export default function TopHeaderNav({ activeTab, setActiveTab, onSearchClick, o
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`relative shrink-0 text-sm md:text-base transition-all duration-200 py-1 ${
+                className={`relative shrink-0 text-sm md:text-base transition-all duration-200 px-1 py-2 min-h-[40px] ${
                   isActive
-                    ? 'text-white font-extrabold scale-105 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]'
-                    : 'text-white/60 hover:text-white/90 font-medium drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]'
+                    ? 'text-white font-extrabold scale-105 drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]'
+                    : 'text-white/80 hover:text-white font-bold drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]'
                 }`}
               >
                 {tab}
                 
                 {/* Active Underline Bar */}
                 {isActive && (
-                  <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-4 h-[2.5px] bg-white rounded-full shadow-sm" />
+                  <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-6 h-[3px] bg-white rounded-full shadow-[0_1px_2px_rgba(0,0,0,0.6)]" />
                 )}
               </button>
             );
@@ -47,29 +47,29 @@ export default function TopHeaderNav({ activeTab, setActiveTab, onSearchClick, o
         </div>
       </nav>
       {/* 3. Right Actions: Search & Audio Controls */}
-      <div className="flex items-center gap-3 shrink-0 pointer-events-auto">
+      <div className="flex items-center gap-1 shrink-0 pointer-events-auto">
         <button
           onClick={onSearchClick}
-          className="text-white/90 hover:text-white transition-all active:scale-90 p-1 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]"
+          className="text-white hover:text-white transition-all active:scale-90 p-2 drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]"
           aria-label="Search"
         >
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.6" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
         </button>
         <button
           onClick={onMuteToggle}
-          className="text-white/90 hover:text-white transition-all active:scale-90 p-1 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]"
+          className="text-white hover:text-white transition-all active:scale-90 p-2 drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]"
           aria-label="Toggle Sound"
         >
           {isMuted ? (
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.2" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.6" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.6" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
             </svg>
           ) : (
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.2" d="M15.536 8.464a5 5 0 010 7.072M18.364 5.636a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.6" d="M15.536 8.464a5 5 0 010 7.072M18.364 5.636a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
             </svg>
           )}
         </button>
