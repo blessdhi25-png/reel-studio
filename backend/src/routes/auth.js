@@ -4,7 +4,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { OAuth2Client } from 'google-auth-library';
 import prisma from '../config/db.js';
-import { sendMail } from '../config/mailer.js';
+import { sendMail, describeMailError } from '../config/mailer.js';
 import { requireAuth } from '../middleware/auth.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { authLimiter } from '../middleware/rateLimiter.js';
@@ -131,21 +131,40 @@ async function generateUniqueUsername(email, name) {
   return candidate;
 }
 
-async function sendVerificationCode(user) {
-  const code = generateCode();
-  await prisma.user.update({
-    where: { id: user.id },
-    data: {
-      emailVerificationCode: code,
-      emailVerificationExpires: new Date(Date.now() + CODE_EXPIRY_MS),
-    },
-  });
+// Fresh OTP + expiry, in the shape Prisma wants for the user row.
+function newVerificationFields() {
+  return {
+    emailVerificationCode: generateCode(),
+    emailVerificationExpires: new Date(Date.now() + CODE_EXPIRY_MS),
+  };
+}
+
+async function sendVerificationEmail(email, code) {
   await sendMail({
-    to: user.email,
+    to: email,
     subject: 'Verify your Bledhi account',
     text: `Your verification code is ${code}. It expires in 15 minutes.`,
     html: `<p>Your verification code is <strong>${code}</strong>. It expires in 15 minutes.</p>`,
   });
+}
+
+async function sendVerificationCode(user) {
+  const fields = newVerificationFields();
+  await prisma.user.update({ where: { id: user.id }, data: fields });
+  await sendVerificationEmail(user.email, fields.emailVerificationCode);
+}
+
+// JSON body for a failed verification email: a user-safe message plus a
+// stable `reason` code ("smtp_auth_failed", "smtp_connection_failed", ...)
+// so the frontend/you can tell an API-key problem from a network problem
+// without opening the server logs.
+function mailFailureBody(err) {
+  const { reason, message } = describeMailError(err);
+  return {
+    error: `We couldn't send the verification email. ${message}`,
+    code: 'email_send_failed',
+    reason,
+  };
 }
 
 // Sent once someone can actually use the account — after email
@@ -215,37 +234,91 @@ router.post('/register', authLimiter, validate(registerSchema), asyncHandler(asy
     return res.status(400).json({ error: 'Password must be at least 8 characters' });
   }
 
-  const existing = await prisma.user.findFirst({
-    where: { OR: [{ email }, { username }] },
+  const normalizedEmail = email;
+  const matches = await prisma.user.findMany({
+    where: { OR: [{ email: normalizedEmail }, { username }] },
   });
-  if (existing) {
+  const byEmail = matches.find((u) => u.email === normalizedEmail) || null;
+  const byUsername = matches.find((u) => u.username === username) || null;
+
+  // Any VERIFIED account holding the email or username is a real conflict.
+  if (matches.some((u) => u.emailVerified)) {
     return res.status(409).json({ error: 'Username or email already in use' });
   }
 
-  const passwordHash = await bcrypt.hash(password, 10);
-  const user = await prisma.user.create({
-    data: { username, email, passwordHash, displayName: displayName || username },
-  });
+  // A different, unverified row squatting on the username (someone who
+  // never finished signing up, e.g. mistyped their email) only blocks it
+  // while its code is still live; after that it's abandoned and reclaimed.
+  if (byUsername && byUsername.id !== byEmail?.id) {
+    const stillPending =
+      byUsername.emailVerificationExpires && byUsername.emailVerificationExpires > new Date();
+    if (stillPending) {
+      return res.status(409).json({ error: 'Username or email already in use' });
+    }
+    try {
+      await prisma.user.delete({ where: { id: byUsername.id } });
+    } catch (err) {
+      console.error('[auth/register] could not reclaim abandoned username:', err);
+      return res.status(409).json({ error: 'Username or email already in use' });
+    }
+  }
 
-  let emailSendFailed = false;
+  const passwordHash = await bcrypt.hash(password, 10);
+  const verification = newVerificationFields();
+  let user;
+  let createdNow = false;
+
+  if (byEmail) {
+    // Unverified account for this email already exists — typically a retry
+    // after the first verification email failed or got lost. Instead of a
+    // dead-end "already in use", refresh its details and send a new code.
+    // Respect the resend cooldown so this can't be used to spam an inbox.
+    const justSent =
+      byEmail.emailVerificationExpires &&
+      byEmail.emailVerificationExpires.getTime() - CODE_EXPIRY_MS + RESEND_COOLDOWN_MS > Date.now();
+    if (justSent) {
+      return res.status(429).json({ error: 'A code was just sent — please wait a minute before trying again' });
+    }
+    user = await prisma.user.update({
+      where: { id: byEmail.id },
+      data: { username, passwordHash, displayName: displayName || username, ...verification },
+    });
+  } else {
+    try {
+      user = await prisma.user.create({
+        data: { username, email: normalizedEmail, passwordHash, displayName: displayName || username, ...verification },
+      });
+      createdNow = true;
+    } catch (err) {
+      // Two simultaneous signups can both pass the lookup above; the unique
+      // index decides the winner.
+      if (err?.code === 'P2002') {
+        return res.status(409).json({ error: 'Username or email already in use' });
+      }
+      throw err;
+    }
+  }
+
   try {
-    await sendVerificationCode(user);
+    await sendVerificationEmail(user.email, verification.emailVerificationCode);
   } catch (err) {
-    // The account exists either way — don't fail registration over a mail
-    // provider hiccup (e.g. bad SMTP credentials). The user can hit "Resend"
-    // once mail is fixed, or we retry on that same click. But the response
-    // needs to actually say so — previously this always returned
-    // { needsVerification: true } regardless of whether anything was sent,
-    // which reads to the frontend exactly like "code sent" even when the
-    // mail call threw. emailSendFailed lets the verify-email screen show a
-    // real "we couldn't send that — tap Resend" state instead of leaving
-    // someone staring at an empty inbox with no explanation.
-    console.error('[auth] failed to send verification email:', err.message);
-    emailSendFailed = true;
+    // sendMail already logged the full error ("Email send error: ...").
+    console.error(`[auth/register] verification email failed for user ${user.id}:`, err.message);
+    if (createdNow) {
+      // Roll back the row this request created so a retry isn't met with
+      // "username/email already in use". (Pre-existing unverified rows are
+      // kept — the user can simply try again and get a fresh code.)
+      try {
+        await prisma.user.delete({ where: { id: user.id } });
+      } catch (delErr) {
+        console.error(`[auth/register] rollback failed for user ${user.id}:`, delErr);
+      }
+    }
+    return res.status(502).json(mailFailureBody(err));
   }
 
   // No token yet — the account can't log in until the code is confirmed.
-  res.status(201).json({ needsVerification: true, email: user.email, emailSendFailed });
+  res.status(201).json({ needsVerification: true, email: user.email, emailSendFailed: false });
 }));
 
 router.post('/verify-email', asyncHandler(async (req, res) => {
@@ -303,7 +376,7 @@ router.post('/resend-verification', authLimiter, asyncHandler(async (req, res) =
     await sendVerificationCode(user);
   } catch (err) {
     console.error('[auth] failed to resend verification email:', err.message);
-    return res.status(502).json({ error: 'Could not send the email right now — try again shortly.' });
+    return res.status(502).json(mailFailureBody(err));
   }
   res.json({ ok: true });
 }));
