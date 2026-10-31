@@ -22,7 +22,9 @@ import {
 // everything else both sides of the conflict agreed on.
 const router = Router();
 
-router.use(authenticateUser, authorizeRoles('moderator', 'admin'));
+// The whole admin API is admin-only. Moderators are a role admins can grant
+// but they don't get portal access.
+router.use(authenticateUser, authorizeRoles('admin'));
 
 // ---------------------------------------------------------------------------
 // Access check + status strip (used by admin/layout.jsx)
