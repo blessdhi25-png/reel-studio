@@ -8,7 +8,10 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 // below accept either case and normalize before touching the database —
 // that's friendlier to callers than silently 400ing on 'ACTIVE'.
 const VALID_STATUSES = ['active', 'suspended', 'banned'];
-const VALID_ROLES = ['user', 'moderator', 'admin'];
+// Admins can make someone a moderator or take it back to user — nothing else.
+// 'admin' is deliberately NOT assignable here: new admins are only created
+// out-of-band with scripts/promote-admin.js.
+const VALID_ROLES = ['user', 'moderator'];
 
 // Reuses the same AdminActionType values the pre-existing suspend/ban/
 // reinstate routes already log under (see routes/admin.js) — the audit
@@ -79,8 +82,11 @@ export const updateUserRole = asyncHandler(async (req, res) => {
     return res.status(400).json({ error: `role must be one of ${VALID_ROLES.join(', ')}` });
   }
 
-  const target = await prisma.user.findUnique({ where: { id: req.params.id }, select: { id: true } });
+  const target = await prisma.user.findUnique({ where: { id: req.params.id }, select: { id: true, role: true } });
   if (!target) return res.status(404).json({ error: 'User not found' });
+  if (target.role === 'admin') {
+    return res.status(403).json({ error: "An admin's role can't be changed here" });
+  }
 
   const user = await prisma.user.update({ where: { id: req.params.id }, data: { role } });
   await logAdminAction(req.userId, 'change_role', 'user', user.id, `role -> ${role}`);
