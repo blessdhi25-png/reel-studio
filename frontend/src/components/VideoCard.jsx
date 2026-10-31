@@ -10,6 +10,10 @@ import SaveToCollectionModal from './SaveToCollectionModal';
 import { useOptimisticLike } from '../hooks/useOptimisticLike';
 import { useAutoPlayOnScroll } from '../hooks/useAutoPlayOnScroll';
 import { useToast } from '../context/ToastContext';
+import VideoLongPressMenu from './VideoLongPressMenu';
+import { useLongPress, longPressStyle } from '../hooks/useLongPress';
+import { useFeedPlayerPrefs, setFeedPlayerPref } from '../hooks/useFeedPlayerPrefs';
+import { downloadWithWatermark, WatermarkUnsupportedError } from '../lib/downloadWithWatermark';
 
 // A second tap/click arriving within this window counts as a double-tap
 // (like) rather than two separate single-taps (play/pause). 300ms matches
@@ -111,6 +115,9 @@ const VideoCard = forwardRef(function VideoCard(
     focusMode = false,
     // True while the feed is being dragged/scrolled — hides the overlay chrome.
     isScrolling = false,
+    // Called when "Auto scroll" is on and this clip finishes — the feed
+    // page advances to the next card.
+    onAdvance,
     onToggleFollow,
     onActiveTimeUpdate,
     onDeleted,
@@ -172,12 +179,145 @@ const VideoCard = forwardRef(function VideoCard(
   const [liveDuration, setLiveDuration] = useState(null);
   const following = Boolean(video.user?.isFollowing);
 
+  // Long-press menu state. Speed / auto scroll / background audio come from
+  // the shared prefs store so they persist across cards; clear display is
+  // per-card and resets when the card leaves the screen.
+  const prefs = useFeedPlayerPrefs();
+  const [showLongPressMenu, setShowLongPressMenu] = useState(false);
+  const [clearDisplay, setClearDisplay] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const mediaPausedByUserRef = useRef(false);
+
   // Drives actual play()/pause() off real on-screen visibility (see the
   // hook for why 60% specifically) instead of the parent's discretized
   // activeIndex — enabled only once shouldLoad has given this card a real
   // src to play, so an off-screen, unloaded card's observer never tries to
   // play a video with nothing loaded into it.
   const inView = useAutoPlayOnScroll(containerRef, videoRef, { threshold: 0.6, enabled: shouldLoad });
+
+  // Hold-to-open options sheet (400ms, cancelled by any drag/scroll).
+  const longPress = useLongPress(() => setShowLongPressMenu(true), {
+    delay: 400,
+    enabled: inView && !isScrolling && !showLongPressMenu,
+  });
+
+  // Leaving the card closes the menu and restores the UI.
+  useEffect(() => {
+    if (!inView) {
+      setShowLongPressMenu(false);
+      setClearDisplay(false);
+    }
+  }, [inView]);
+
+  // Escape restores the UI from clear-display mode.
+  useEffect(() => {
+    if (!clearDisplay) return;
+    const onKey = (e) => e.key === 'Escape' && setClearDisplay(false);
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [clearDisplay]);
+
+  // Playback speed. React has no `playbackRate` prop for <video>, so it's
+  // applied imperatively. defaultPlaybackRate matters because assigning a
+  // new src resets playbackRate back to it.
+  const applySpeed = () => {
+    const el = videoRef.current;
+    if (!el) return;
+    el.defaultPlaybackRate = prefs.speed;
+    el.playbackRate = prefs.speed;
+  };
+  useEffect(applySpeed, [prefs.speed, video.videoUrl, shouldLoad]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto scroll: `loop` is switched off (see the <video> below) so `ended`
+  // actually fires, then the feed is told to move on.
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el || !prefs.autoScroll || !inView) return;
+    const onEnded = () => onAdvance?.();
+    el.addEventListener('ended', onEnded);
+    return () => el.removeEventListener('ended', onEnded);
+  }, [prefs.autoScroll, inView, onAdvance]);
+
+  // Background audio (best effort — the web can't guarantee it): register
+  // Media Session metadata/controls and, if the browser auto-pauses the clip
+  // when the tab is hidden, resume it unless the user paused it themselves.
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el || !prefs.backgroundAudio || !inView) return;
+    mediaPausedByUserRef.current = false;
+
+    const ms = typeof navigator !== 'undefined' ? navigator.mediaSession : null;
+    if (ms && typeof MediaMetadata !== 'undefined') {
+      ms.metadata = new MediaMetadata({
+        title: video.caption || 'ClipPulse video',
+        artist: `@${video.user?.username || 'clippulse'}`,
+        artwork: video.thumbnailUrl ? [{ src: video.thumbnailUrl }] : [],
+      });
+      try {
+        ms.setActionHandler('play', () => { mediaPausedByUserRef.current = false; el.play().catch(() => {}); });
+        ms.setActionHandler('pause', () => { mediaPausedByUserRef.current = true; el.pause(); });
+      } catch {}
+    }
+    const onPause = () => {
+      if (document.visibilityState === 'hidden' && !mediaPausedByUserRef.current) el.play().catch(() => {});
+    };
+    el.addEventListener('pause', onPause);
+    return () => {
+      el.removeEventListener('pause', onPause);
+      if (ms) {
+        try { ms.setActionHandler('play', null); ms.setActionHandler('pause', null); } catch {}
+      }
+    };
+  }, [prefs.backgroundAudio, inView, video.caption, video.thumbnailUrl, video.user?.username]);
+
+  async function handleDownload() {
+    if (downloading || !video.videoUrl) return;
+    setDownloading(true);
+    setShowLongPressMenu(false);
+    toast.info('Preparing your download with the ClipPulse watermark…');
+    try {
+      await downloadWithWatermark({
+        url: video.videoUrl,
+        username: video.user?.username,
+        baseName: `clippulse-${video.user?.username || 'video'}-${String(video.id).slice(0, 8)}`,
+      });
+      toast.success('Saved with the ClipPulse watermark');
+    } catch (err) {
+      toast.error(
+        err instanceof WatermarkUnsupportedError
+          ? `Couldn't add the watermark: ${err.message}`
+          : "Couldn't download this video — try again."
+      );
+    } finally {
+      setDownloading(false);
+    }
+  }
+
+  function handleTranslate() {
+    if (!video.caption) return;
+    const lang = (typeof navigator !== 'undefined' && navigator.language) || 'en';
+    window.open(
+      `https://translate.google.com/?sl=auto&tl=${encodeURIComponent(lang)}&text=${encodeURIComponent(video.caption)}&op=translate`,
+      '_blank',
+      'noopener,noreferrer'
+    );
+    setShowLongPressMenu(false);
+  }
+
+  // Plain-language reasons built only from fields the feed already returns.
+  function buildReasons() {
+    const out = [];
+    if (following) out.push(`You follow @${video.user?.username}.`);
+    if (video.circle) out.push(`It's posted in the ${video.circle} circle.`);
+    if (Number(video.likeCount) > 0) out.push(`Other viewers liked it (${likeCount} like${likeCount === 1 ? '' : 's'}).`);
+    if (video.createdAt && Date.now() - new Date(video.createdAt).getTime() < 48 * 3600 * 1000) {
+      out.push('It was posted recently.');
+    }
+    const tags = (video.caption || '').match(/#[\p{L}\p{N}_]+/gu);
+    if (tags?.length) out.push(`It uses topics you may like: ${tags.slice(0, 3).join(' ')}.`);
+    if (!out.length) out.push('Suggested to help you discover new creators.');
+    return out;
+  }
 
   useEffect(() => {
     const stored = localStorage.getItem('user');
@@ -335,6 +475,14 @@ const VideoCard = forwardRef(function VideoCard(
   // for DOUBLE_TAP_MS before actually toggling play/pause, in case a
   // second tap is about to arrive and turn it into a like instead.
   function handleVideoTap() {
+    // The release that ends a long-press still produces a click — ignore it
+    // so opening the menu doesn't also pause the video.
+    if (longPress.shouldSuppressClick()) return;
+    // In clear-display mode a tap just brings the UI back.
+    if (clearDisplay) {
+      setClearDisplay(false);
+      return;
+    }
     const now = Date.now();
     const sinceLastTap = now - lastTapRef.current;
     lastTapRef.current = now;
@@ -435,10 +583,12 @@ const VideoCard = forwardRef(function VideoCard(
     <div ref={containerRef} className="relative h-full w-full flex items-center justify-center bg-ink">
       <video
         ref={videoRef}
-        loop
+        loop={!prefs.autoScroll}
         playsInline
         muted={!audioEnabled}
         onClick={handleVideoTap}
+        {...longPress.handlers}
+        style={longPressStyle}
         onWaiting={() => setBuffering(true)}
         onPlaying={() => setBuffering(false)}
         onCanPlay={() => setBuffering(false)}
@@ -449,6 +599,7 @@ const VideoCard = forwardRef(function VideoCard(
           // known yet (e.g. certain streamed responses mid-load) — only
           // trust it once it's an actual finite number.
           if (Number.isFinite(d)) setLiveDuration(d);
+          applySpeed();
         }}
         className="h-full w-full max-w-md object-cover mx-auto cursor-pointer touch-manipulation"
         poster={video.thumbnailUrl}
@@ -490,7 +641,7 @@ const VideoCard = forwardRef(function VideoCard(
             return next;
           });
         }}
-        className="absolute top-4 right-4 z-10 w-9 h-9 rounded-full bg-ink/50 flex items-center justify-center text-bone"
+        className={`absolute top-4 right-4 z-10 w-9 h-9 rounded-full bg-ink/50 flex items-center justify-center text-bone transition-opacity duration-200 ${clearDisplay ? 'opacity-0 pointer-events-none' : ''}`}
         aria-label={audioEnabled ? 'Mute' : 'Unmute'}
       >
         {audioEnabled ? (
@@ -544,7 +695,7 @@ const VideoCard = forwardRef(function VideoCard(
           dragged/scrolled (isScrolling) and fades back in once it settles. */}
       <div
         className={
-          focusMode || isScrolling
+          focusMode || isScrolling || clearDisplay
             ? 'opacity-0 pointer-events-none transition-opacity duration-200'
             : 'opacity-100 transition-opacity duration-300'
         }
@@ -750,6 +901,27 @@ const VideoCard = forwardRef(function VideoCard(
         </div>
       </div>
 
+      {showLongPressMenu && (
+        <VideoLongPressMenu
+          onClose={() => setShowLongPressMenu(false)}
+          speed={prefs.speed}
+          onSpeedChange={(v) => setFeedPlayerPref('speed', v)}
+          clearDisplay={clearDisplay}
+          onClearDisplayChange={(on) => {
+            setClearDisplay(on);
+            if (on) setShowLongPressMenu(false);
+          }}
+          autoScroll={prefs.autoScroll}
+          onAutoScrollChange={(v) => setFeedPlayerPref('autoScroll', v)}
+          backgroundAudio={prefs.backgroundAudio}
+          onBackgroundAudioChange={(v) => setFeedPlayerPref('backgroundAudio', v)}
+          onDownload={handleDownload}
+          downloading={downloading}
+          onTranslate={handleTranslate}
+          canTranslate={Boolean(video.caption)}
+          reasons={buildReasons()}
+        />
+      )}
       {showTip && <TipModal videoId={video.id} onClose={() => setShowTip(false)} />}
       {showTipUnavailable && (
         <TipUnavailableModal onClose={() => setShowTipUnavailable(false)} />
