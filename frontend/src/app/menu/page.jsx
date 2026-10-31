@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { api } from '../../lib/api';
+import { useStaffAccess } from '../../hooks/useStaffAccess';
 
 // ── Data ─────────────────────────────────────────────────────────────────
 // Every href here is a real route in this app. "Activity" deep-links into
@@ -117,6 +118,7 @@ export default function MenuPage() {
   const [query, setQuery] = useState('');
   const [balanceCents, setBalanceCents] = useState(null);
   const [dark, setDark] = useState(true);
+  const { isStaff } = useStaffAccess();
 
   useEffect(() => {
     const stored = localStorage.getItem('user');
@@ -153,8 +155,28 @@ export default function MenuPage() {
 
   const filteredCategories = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return CATEGORIES;
-    return CATEGORIES
+    // Staff-only section, confirmed by the backend (see useStaffAccess).
+    const all = isStaff
+      ? [
+          ...CATEGORIES,
+          {
+            key: 'admin',
+            title: 'Administration',
+            icon: ShieldIcon,
+            items: [
+              {
+                key: 'admin-dashboard',
+                icon: '🛡️',
+                title: 'Admin Dashboard',
+                description: 'Moderation, users, reports and audit logs',
+                href: '/admin',
+              },
+            ],
+          },
+        ]
+      : CATEGORIES;
+    if (!q) return all;
+    return all
       .map((cat) => ({
         ...cat,
         items: cat.items.filter(
@@ -163,7 +185,7 @@ export default function MenuPage() {
         ),
       }))
       .filter((cat) => cat.items.length > 0);
-  }, [query]);
+  }, [query, isStaff]);
 
   if (!user) return null;
 
