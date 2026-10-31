@@ -21,7 +21,7 @@ export const config = {
   matcher: ['/admin/:path*'],
 };
 
-const ADMIN_ROLES = ['admin', 'moderator'];
+const ADMIN_ROLES = ['admin']; // admin portal is admin-only
 
 export function middleware(request) {
   const cookieToken = request.cookies.get('token')?.value;
