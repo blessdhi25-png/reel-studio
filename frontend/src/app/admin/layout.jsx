@@ -35,6 +35,13 @@ export default function AdminLayout({ children }) {
     api
       .adminMe()
       .then((m) => {
+        // The backend already 403s non-staff; this re-checks the role it
+        // returned so an unexpected payload can never fall through to "ok".
+        // Role values are lowercase in the database.
+        if (!['admin', 'moderator'].includes(m?.role)) {
+          setStatus('denied');
+          return;
+        }
         setMe(m);
         setStatus('ok');
       })
