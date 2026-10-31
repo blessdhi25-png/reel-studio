@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useStaffAccess } from '../../hooks/useStaffAccess';
 
 export default function SettingsPage() {
   const router = useRouter();
   const [user, setUser] = useState(null);
+  const { isStaff } = useStaffAccess();
 
   useEffect(() => {
     const stored = localStorage.getItem('user');
@@ -64,6 +66,19 @@ export default function SettingsPage() {
           <span className="flex-1">Privacy</span>
           <span className="text-smoke">›</span>
         </a>
+        {isStaff && (
+          <a
+            href="/admin"
+            className="w-full flex items-center gap-4 py-4 border-b border-smoke/10 text-left font-body text-amber-400"
+          >
+            <span className="text-xl w-6 text-center">🛡️</span>
+            <span className="flex-1 flex flex-col">
+              <span>Admin Dashboard</span>
+              <span className="font-mono text-xs text-smoke mt-0.5">Moderation, users &amp; reports</span>
+            </span>
+            <span className="text-smoke">›</span>
+          </a>
+        )}
       </div>
 
       <button
