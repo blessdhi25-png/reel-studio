@@ -22,8 +22,8 @@ const HIDDEN_PREFIXES = ['/admin', '/messages/'];
 
 function HomeIcon({ active }) {
   return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      strokeWidth={active ? 2.5 : 2} strokeLinecap="round" strokeLinejoin="round">
+    <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth={active ? 3 : 2.5} strokeLinecap="round" strokeLinejoin="round">
       <path d="M3 11.5 12 4l9 7.5" />
       <path d="M5.5 10v9a1 1 0 0 0 1 1H9a1 1 0 0 0 1-1v-4a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v4a1 1 0 0 0 1 1h2.5a1 1 0 0 0 1-1v-9" />
     </svg>
@@ -32,8 +32,8 @@ function HomeIcon({ active }) {
 
 function FriendsIcon({ active }) {
   return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      strokeWidth={active ? 2.5 : 2} strokeLinecap="round" strokeLinejoin="round">
+    <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth={active ? 3 : 2.5} strokeLinecap="round" strokeLinejoin="round">
       <circle cx="9" cy="8" r="3" />
       <path d="M3.5 19c.5-3 2.5-5 5.5-5s5 2 5.5 5" />
       <circle cx="17" cy="8.5" r="2.4" />
@@ -44,8 +44,8 @@ function FriendsIcon({ active }) {
 
 function InboxIcon({ active }) {
   return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      strokeWidth={active ? 2.5 : 2} strokeLinecap="round" strokeLinejoin="round">
+    <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth={active ? 3 : 2.5} strokeLinecap="round" strokeLinejoin="round">
       <rect x="3.5" y="5" width="17" height="14" rx="1.5" />
       <path d="M3.5 6.5 12 13l8.5-6.5" />
     </svg>
@@ -54,8 +54,8 @@ function InboxIcon({ active }) {
 
 function ProfileIcon({ active }) {
   return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      strokeWidth={active ? 2.5 : 2} strokeLinecap="round" strokeLinejoin="round">
+    <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth={active ? 3 : 2.5} strokeLinecap="round" strokeLinejoin="round">
       <circle cx="12" cy="8" r="4" />
       <path d="M4.5 20c1-4 4-6 7.5-6s6.5 2 7.5 6" />
     </svg>
@@ -116,7 +116,7 @@ export default function BottomNav() {
         />
         <button
           onClick={() => go('/upload', true)}
-          className="relative z-10 flex flex-col items-center justify-center w-12 h-11"
+          className="relative z-10 flex flex-col items-center justify-center w-14 h-12"
           aria-label="Upload"
         >
           <span className="w-11 h-8 flex items-center justify-center rounded-sprocket bg-reel text-ink font-display text-2xl border border-reel2 pointer-events-none">
@@ -143,13 +143,27 @@ export default function BottomNav() {
 
 function NavItem({ label, icon, active, onClick, badge }) {
   return (
-    <button onClick={onClick} className="relative flex flex-col items-center gap-1 w-12">
-      <span className={active ? 'text-reel' : 'text-smoke'}>{icon}</span>
-      <span className={`font-mono text-[9px] uppercase tracking-widest ${active ? 'text-reel' : 'text-smoke'}`}>
+    <button
+      onClick={onClick}
+      aria-current={active ? 'page' : undefined}
+      // w-16 / min-h-[52px] gives a comfortable thumb-sized tap target (the
+      // old w-12 was ~48px wide with only the icon+label as the hit area).
+      className={`relative flex flex-col items-center justify-center gap-1 w-16 min-h-[52px] py-1 active:scale-95 transition-transform drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)] ${
+        active ? 'text-white' : 'text-white/80'
+      }`}
+    >
+      <span>{icon}</span>
+      <span className="text-[11px] font-extrabold uppercase tracking-wider leading-none">
         {label}
       </span>
+      {/* Active marker — colour alone (white vs white/80) is a subtle
+          difference, so the selected tab also gets a solid bar. */}
+      <span
+        aria-hidden="true"
+        className={`absolute bottom-0 h-[3px] w-6 rounded-full bg-white ${active ? 'opacity-100' : 'opacity-0'}`}
+      />
       {!!badge && (
-        <span className="absolute -top-1 right-1 bg-reel text-ink rounded-full min-w-[14px] h-[14px] px-[3px] flex items-center justify-center text-[9px] font-mono">
+        <span className="absolute top-0 right-2 bg-reel text-ink rounded-full min-w-[16px] h-[16px] px-[3px] flex items-center justify-center text-[10px] font-bold drop-shadow-none">
           {badge > 9 ? '9+' : badge}
         </span>
       )}
