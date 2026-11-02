@@ -327,6 +327,7 @@ adminGetStats: () => request('/admin/stats'),
   // Discovery
   search: (q) => request(`/search?q=${encodeURIComponent(q)}`),
   getTrending: () => request('/trending'),
+  getTrendingHashtags: () => request('/trending/hashtags'),
 
   // Stories
   getStoriesFeed: () => request('/stories/feed'),
