@@ -67,7 +67,7 @@ router.get('/suggested', requireAuth, asyncHandler(async (req, res) => {
   const users = await prisma.user.findMany({
     where: { id: { in: candidateIds } },
     select: {
-      id: true, username: true, avatarUrl: true, bio: true,
+      id: true, username: true, avatarUrl: true, bio: true, creatorStatus: true,
       _count: { select: { followers: true } },
     },
   });
