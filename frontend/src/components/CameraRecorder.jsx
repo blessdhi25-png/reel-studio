@@ -4,6 +4,13 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 're
 import { useCameraDevices } from '../lib/useCameraDevices';
 import CameraDeviceSelect from './CameraDeviceSelect';
 import { drawWatermark } from '../lib/watermark';
+import {
+  computeDrawRect,
+  createBeautyRenderer,
+  disposePreviewRenderer,
+  drawLensPreview,
+} from '../lib/beautyRenderer';
+import { DEFAULT_FILTER_ID, getFilter, resolveLook } from '../lib/cameraFilters';
 
 const DURATIONS = [
   { label: '15s', seconds: 15 },
@@ -139,33 +146,27 @@ function drawTextOverlay(ctx, overlay, width, height) {
   ctx.restore();
 }
 
-// cover: crop the source to fill the destination with no letterboxing.
-// contain: letterbox/pillarbox to show the whole source.
-function computeDrawRect(srcW, srcH, dstW, dstH, fit) {
-  if (!srcW || !srcH) return { sx: 0, sy: 0, sw: dstW, sh: dstH, dx: 0, dy: 0, dw: dstW, dh: dstH };
-  const srcRatio = srcW / srcH;
-  const dstRatio = dstW / dstH;
-  if (fit === 'contain') {
-    let w = dstW;
-    let h = dstW / srcRatio;
-    if (h > dstH) {
-      h = dstH;
-      w = dstH * srcRatio;
-    }
-    return { sx: 0, sy: 0, sw: srcW, sh: srcH, dx: (dstW - w) / 2, dy: (dstH - h) / 2, dw: w, dh: h };
+// 2D-canvas version of the look, used only when WebGL isn't available (or
+// its context is lost): CSS filter + a radial vignette. No skin smoothing.
+function drawBase2D(ctx, video, r, w, h, mirror, look) {
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, w, h);
+  ctx.save();
+  if (mirror) {
+    ctx.translate(w, 0);
+    ctx.scale(-1, 1);
   }
-  let sw = srcW;
-  let sh = srcH;
-  let sx = 0;
-  let sy = 0;
-  if (srcRatio > dstRatio) {
-    sw = srcH * dstRatio;
-    sx = (srcW - sw) / 2;
-  } else {
-    sh = srcW / dstRatio;
-    sy = (srcH - sh) / 2;
+  ctx.filter = look.css || 'none';
+  ctx.drawImage(video, r.sx, r.sy, r.sw, r.sh, r.dx, r.dy, r.dw, r.dh);
+  ctx.restore();
+  ctx.filter = 'none';
+  if (look.vignette > 0) {
+    const g = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.3, w / 2, h / 2, Math.hypot(w, h) / 2);
+    g.addColorStop(0, 'rgba(0,0,0,0)');
+    g.addColorStop(1, `rgba(0,0,0,${look.vignette})`);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
   }
-  return { sx, sy, sw, sh, dx: 0, dy: 0, dw: dstW, dh: dstH };
 }
 
 const CameraRecorder = forwardRef(function CameraRecorder(
@@ -173,10 +174,13 @@ const CameraRecorder = forwardRef(function CameraRecorder(
     onCaptured,
     onCancel,
     embedded = false,
-    // Baked into every recorded frame via the canvas compositor below —
-    // NOT applied as CSS to a <video> element, which would only affect
-    // on-screen display and never end up in the actual recorded pixels.
-    filterCss,
+    // Look applied in real time by the WebGL pass (see lib/beautyRenderer.js)
+    // and therefore baked into every recorded frame — NOT applied as CSS to
+    // a <video> element, which would only affect on-screen display. `lens` is
+    // an id from lib/cameraFilters.js; `retouch` turns skin smoothing on.
+    // Beautify is the default look.
+    lens = DEFAULT_FILTER_ID,
+    retouch = true,
     aspectFit = 'cover',
     effectKind = 'none',
     textOverlay,
@@ -263,6 +267,7 @@ const CameraRecorder = forwardRef(function CameraRecorder(
     return () => {
       bgAudioRef.current?.pause();
       audioCtxRef.current?.close().catch(() => {});
+      disposePreviewRenderer();
     };
   }, []);
 
@@ -309,13 +314,24 @@ const CameraRecorder = forwardRef(function CameraRecorder(
 
   // --- Canvas compositor: the single source of truth for both what's
   // displayed AND what gets recorded (see startRecording below, which
-  // captures a stream directly off this canvas). Frequently-changing
-  // cosmetic props (filter/effect/text) are read from refs each frame
-  // instead of being effect dependencies — putting them in the dependency
-  // array would tear down and restart the whole loop (resetting particle
-  // animation state) on every keystroke of a text overlay or every drag
-  // move, instead of just picking up the new value on the next frame. ---
-  const filterCssRef = useRef(filterCss);
+  // captures a stream directly off this canvas).
+  //
+  // Per frame: the camera frame goes through a WebGL pass (skin smoothing +
+  // colour look, see lib/beautyRenderer.js) into an offscreen canvas, which is
+  // copied onto this 2D canvas; effects, text and the watermark are then drawn
+  // on top in 2D. If WebGL is unavailable the base layer falls back to a
+  // plain 2D draw with a CSS filter.
+  //
+  // Frequently-changing props (look/effect/text) are read from refs each
+  // frame instead of being effect dependencies — putting them in the
+  // dependency array would tear down and restart the whole loop (resetting
+  // particle animation state and the GL context) on every keystroke of a text
+  // overlay or every drag move, instead of just picking up the new value on
+  // the next frame. ---
+  const lensRef = useRef(lens);
+  const retouchRef = useRef(retouch);
+  const facingRef = useRef(facingMode);
+  const recordingRef = useRef(false);
   const effectKindRef = useRef(effectKind);
   const textOverlayRef = useRef(textOverlay);
   const aspectFitRef = useRef(aspectFit);
@@ -329,8 +345,17 @@ const CameraRecorder = forwardRef(function CameraRecorder(
     }
   }, []);
   useEffect(() => {
-    filterCssRef.current = filterCss;
-  }, [filterCss]);
+    lensRef.current = lens;
+  }, [lens]);
+  useEffect(() => {
+    retouchRef.current = retouch;
+  }, [retouch]);
+  useEffect(() => {
+    facingRef.current = facingMode;
+  }, [facingMode]);
+  useEffect(() => {
+    recordingRef.current = recording;
+  }, [recording]);
   useEffect(() => {
     effectKindRef.current = effectKind;
   }, [effectKind]);
@@ -342,61 +367,134 @@ const CameraRecorder = forwardRef(function CameraRecorder(
   }, [aspectFit]);
 
   useEffect(() => {
-    if (!ready || error) return;
+    if (!ready || error) return undefined;
+    const canvas = canvasRef.current;
+    const stage = canvas?.parentElement;
+    if (!canvas || !stage) return undefined;
+
+    // Opaque canvas: lets the browser skip alpha compositing for the preview.
+    const ctx = canvas.getContext('2d', { alpha: false });
+    const renderer = createBeautyRenderer(); // null => 2D fallback
+
+    // Size follows the stage via ResizeObserver rather than measuring layout
+    // every frame. Even dimensions keep H.264/VP9 encoders happy.
+    let w = 0;
+    let h = 0;
+    const measure = () => {
+      const rect = stage.getBoundingClientRect();
+      const nw = Math.max(2, Math.round(rect.width) & ~1);
+      const nh = Math.max(2, Math.round(rect.height) & ~1);
+      if (nw === w && nh === h) return;
+      w = nw;
+      h = nh;
+      canvas.width = w;
+      canvas.height = h;
+      renderer?.resize(w, h);
+    };
+    measure();
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
+    ro?.observe(stage);
+
     let rafId;
     let particles = [];
     let lastEffectKind = null;
     let frame = 0;
 
-    function tick() {
-      const canvas = canvasRef.current;
-      const video = videoRef.current;
-      if (canvas && video && video.readyState >= 2 && canvas.parentElement) {
-        const rect = canvas.parentElement.getBoundingClientRect();
-        if (canvas.width !== rect.width || canvas.height !== rect.height) {
-          canvas.width = rect.width;
-          canvas.height = rect.height;
-        }
-        const ctx = canvas.getContext('2d');
-        const w = canvas.width;
-        const h = canvas.height;
-        ctx.clearRect(0, 0, w, h);
+    // Texture uploads are the expensive part on phones, and the camera
+    // delivers ~30 frames/s while rAF runs at 60, so only re-upload when the
+    // video actually advanced. The 40ms floor covers browsers that don't
+    // update currentTime reliably for live streams.
+    let lastVideoTime = -1;
+    let lastUploadAt = 0;
 
-        // 1. Base camera frame — mirrored (selfie view) and filtered.
-        ctx.save();
-        if (facingMode === 'user') {
-          ctx.translate(w, 0);
-          ctx.scale(-1, 1);
-        }
-        ctx.filter = filterCssRef.current || 'none';
-        const r = computeDrawRect(video.videoWidth, video.videoHeight, w, h, aspectFitRef.current);
-        ctx.drawImage(video, r.sx, r.sy, r.sw, r.sh, r.dx, r.dy, r.dw, r.dh);
-        ctx.restore();
+    // Adaptive quality: if frames are consistently slow, step the shader down
+    // (17-tap -> 9-tap -> grade only) rather than let the recording stutter.
+    // Never steps back up, to avoid flip-flopping. Measured from rAF spacing,
+    // so a 30Hz-throttled display (e.g. iOS Low Power Mode) will also step down.
+    let quality = 2;
+    let lastTs = 0;
+    let slowAcc = 0;
+    let slowFrames = 0;
+    let warmup = 90;
 
-        // 2. Animated effect layer — never mirrored/filtered, drawn in
-        // normal screen space on top of the (already mirrored) frame.
-        const currentKind = effectKindRef.current;
-        if (currentKind !== lastEffectKind) {
-          particles = []; // switching effects shouldn't carry over stale particles from the last one
-          lastEffectKind = currentKind;
-        }
-        ctx.filter = 'none';
-        particles = drawEffectFrame(ctx, currentKind, w, h, particles, frame);
+    let look = null;
+    let lookKey = '';
 
-        // 3. Text overlay, topmost.
-        drawTextOverlay(ctx, textOverlayRef.current, w, h);
-
-        // 4. ClipPulse watermark — last, so nothing covers it.
-        drawWatermark(ctx, usernameRef.current, w, h);
-
-        frame += 1;
-      }
+    function tick(now) {
       rafId = requestAnimationFrame(tick);
+
+      if (renderer && lastTs && now - lastTs < 100 && document.visibilityState === 'visible') {
+        if (warmup > 0) {
+          warmup -= 1;
+        } else {
+          slowAcc += now - lastTs;
+          slowFrames += 1;
+          if (slowFrames >= 60) {
+            if (slowAcc / slowFrames > 26 && quality > 0) quality -= 1;
+            slowAcc = 0;
+            slowFrames = 0;
+          }
+        }
+      }
+      lastTs = now;
+
+      const video = videoRef.current;
+      if (!video || video.readyState < 2 || w <= 2) return;
+      const vw = video.videoWidth;
+      const vh = video.videoHeight;
+      if (!vw || !vh) return;
+
+      const lensDef = getFilter(lensRef.current);
+      const retouchOn = !!retouchRef.current;
+      const key = `${lensDef.id}|${retouchOn}|${h}|${quality}`;
+      if (key !== lookKey) {
+        look = resolveLook(lensDef, { retouch: retouchOn, height: h, quality });
+        lookKey = key;
+      }
+
+      const mirror = facingRef.current === 'user';
+      const r = computeDrawRect(vw, vh, w, h, aspectFitRef.current);
+
+      const t = video.currentTime;
+      const upload = t !== lastVideoTime || now - lastUploadAt > 40;
+      if (upload) {
+        lastVideoTime = t;
+        lastUploadAt = now;
+      }
+
+      // 1. Base camera frame — mirrored (selfie view), smoothed and graded.
+      let drewBase = false;
+      if (renderer && renderer.ready) {
+        drewBase = renderer.render(video, vw, vh, r, look, { mirror, upload, time: (now / 1000) % 1000 });
+        if (drewBase) ctx.drawImage(renderer.canvas, 0, 0, w, h);
+      }
+      if (!drewBase) drawBase2D(ctx, video, r, w, h, mirror, look);
+
+      // 2. Animated effect layer — never mirrored/filtered, drawn in
+      // normal screen space on top of the (already mirrored) frame.
+      const currentKind = effectKindRef.current;
+      if (currentKind !== lastEffectKind) {
+        particles = []; // switching effects shouldn't carry over stale particles from the last one
+        lastEffectKind = currentKind;
+      }
+      particles = drawEffectFrame(ctx, currentKind, w, h, particles, frame);
+
+      // 3. Text overlay, topmost.
+      drawTextOverlay(ctx, textOverlayRef.current, w, h);
+
+      // 4. ClipPulse watermark — last, so nothing covers it.
+      drawWatermark(ctx, usernameRef.current, w, h);
+
+      frame += 1;
     }
 
-    tick();
-    return () => cancelAnimationFrame(rafId);
-  }, [ready, error, facingMode]);
+    rafId = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(rafId);
+      ro?.disconnect();
+      renderer?.dispose();
+    };
+  }, [ready, error]);
 
   function flipCamera() {
     setManualFacingFlip(true); // hand control to the mobile front/back flip
@@ -582,6 +680,18 @@ const CameraRecorder = forwardRef(function CameraRecorder(
     startRecording,
     stopRecording,
     toggleMic,
+    // Draws one filter thumbnail onto a square <canvas> from the live camera
+    // frame (or a sample portrait before the camera is up). Skipped while
+    // recording so previews never compete with the recording for frame time.
+    drawFilterPreview: (target, lensId) => {
+      if (recordingRef.current || !target) return;
+      drawLensPreview(target, lensId, {
+        video: videoRef.current,
+        mirror: facingRef.current === 'user',
+        retouch: !!retouchRef.current,
+        referenceHeight: canvasRef.current?.height || 640,
+      });
+    },
     setDurationSeconds: (seconds) => setDuration(seconds),
     // Called synchronously from the shutter tap itself (before any
     // pre-record countdown delay) so AudioContext creation/resume traces

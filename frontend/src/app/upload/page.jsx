@@ -1,12 +1,15 @@
 'use client';
 
-import { Suspense, useEffect, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { api, API_BASE } from '@/lib/api';
 import { ALLOWED_CIRCLES } from '@/lib/circles';
 import CameraRecorder from '@/components/CameraRecorder';
 import AICoPilotDrawer from '@/components/AICoPilotDrawer';
 import SoundPicker from '@/components/SoundPicker';
+import TemplatePicker from '@/components/TemplatePicker';
+import { FilterSheet, LensPreview, useLensPreviews } from '@/components/studio/LensPicker';
+import { DEFAULT_FILTER_ID, FILTERS } from '@/lib/cameraFilters';
 
 const CAPTION_MAX = 2200;
 
@@ -16,20 +19,11 @@ const VISIBILITY_OPTIONS = [
   { value: 'private', label: 'Private (Only Me)' },
 ];
 
-// Live-preview-only — see the CameraRecorder <video> comment further down
-// for why these aren't (and can't cheaply be) baked into the actual
-// recorded file.
-const FILTERS = [
-  { id: 'normal', label: 'Normal', css: '', swatch: 'linear-gradient(135deg,#52525b,#3f3f46)' },
-  { id: 'vintage', label: 'Vintage', css: 'sepia(0.4) contrast(1.1) saturate(1.3) brightness(1.05)', swatch: 'linear-gradient(135deg,#b45309,#78350f)' },
-  { id: 'noir', label: 'B&W · Noir', css: 'grayscale(1) contrast(1.3) brightness(0.95)', swatch: 'linear-gradient(135deg,#e5e5e5,#171717)' },
-  { id: 'warm', label: 'Warm', css: 'sepia(0.2) saturate(1.4) hue-rotate(-8deg) brightness(1.05)', swatch: 'linear-gradient(135deg,#f59e0b,#dc2626)' },
-  { id: 'cyberpunk', label: 'Cyberpunk', css: 'hue-rotate(220deg) saturate(2.2) contrast(1.2)', swatch: 'linear-gradient(135deg,#22d3ee,#a21caf)' },
-  { id: 'glow', label: 'Glow', css: 'brightness(1.25) contrast(0.9) saturate(1.25)', swatch: 'linear-gradient(135deg,#fde68a,#fca5a5)' },
-];
+// Looks (Beautify, Vintage, Noir…) live in lib/cameraFilters.js and are applied
+// by CameraRecorder's WebGL pass, so they're baked into the recorded video.
 
-// Animated overlays, distinct from FILTERS above — those are static CSS
-// color grading; these are drawn frame-by-frame onto CameraRecorder's own
+// Animated overlays, distinct from FILTERS above — those are colour looks
+// applied per-pixel; these are drawn frame-by-frame onto CameraRecorder's own
 // compositor canvas (see drawEffectFrame in components/CameraRecorder.jsx),
 // the same way a face-filter sticker layer works in a real camera app.
 // `kind` (not `id`) is what the drawing code switches on — several ids can
@@ -43,27 +37,6 @@ const EFFECTS = [
   { id: 'glowframe', label: 'Glow Frame', kind: 'glow', swatch: 'linear-gradient(135deg,#fde68a,#f59e0b)' },
   { id: 'sparkle', label: 'Sparkles', kind: 'sparkle', swatch: 'linear-gradient(135deg,#e9d5ff,#a855f7)' },
   { id: 'snow', label: 'Snowfall', kind: 'snow', swatch: 'linear-gradient(135deg,#e0f2fe,#7dd3fc)' },
-];
-
-const TEMPLATE_CATEGORIES = ['For You', 'Viral Song', 'Trendy', 'AI', 'Monthly Recap', 'Daily life', 'Aesthetic', 'One Clip'];
-
-// No backend Template model exists (this is a from-scratch UI feature, not
-// wired to real data) — a fixed local catalog, gradient placeholders
-// standing in for real preview thumbnails/video loops the same way
-// FILTERS/EFFECTS above use swatches instead of real imagery.
-const TEMPLATES = [
-  { id: 'tp1', title: 'July is calling', category: 'Monthly Recap', clipCount: 6, uses: '185.2K videos', tag: 'Trending', swatch: 'linear-gradient(160deg,#f59e0b,#ec4899)' },
-  { id: 'tp2', title: 'Then vs Now', category: 'Trendy', clipCount: 2, uses: '92.4K videos', tag: 'Viral', swatch: 'linear-gradient(160deg,#4f46e5,#0ea5e9)' },
-  { id: 'tp3', title: 'AI Fridge Magnet Football', category: 'AI', clipCount: 1, uses: '340.7K videos', tag: 'AI', swatch: 'linear-gradient(160deg,#16a34a,#facc15)' },
-  { id: 'tp4', title: 'World Cup Player Avatar', category: 'AI', clipCount: 1, uses: '210.9K videos', tag: 'AI', swatch: 'linear-gradient(160deg,#059669,#eab308)' },
-  { id: 'tp5', title: 'Crochet Yourself', category: 'AI', clipCount: 1, uses: '128.3K videos', tag: 'AI', swatch: 'linear-gradient(160deg,#db2777,#f97316)' },
-  { id: 'tp6', title: 'A Day in My Life', category: 'Daily life', clipCount: 8, uses: '76.1K videos', tag: 'New', swatch: 'linear-gradient(160deg,#0f766e,#14b8a6)' },
-  { id: 'tp7', title: 'Golden Hour Moodboard', category: 'Aesthetic', clipCount: 5, uses: '54.8K videos', tag: 'Aesthetic', swatch: 'linear-gradient(160deg,#f59e0b,#f97316)' },
-  { id: 'tp8', title: 'One Take Glow Up', category: 'One Clip', clipCount: 1, uses: '301.5K videos', tag: 'Viral', swatch: 'linear-gradient(160deg,#a21caf,#ec4899)' },
-  { id: 'tp9', title: 'Beat Drop Sync', category: 'Viral Song', clipCount: 4, uses: '412.0K videos', tag: 'Trending', swatch: 'linear-gradient(160deg,#dc2626,#7c2d12)' },
-  { id: 'tp10', title: 'Slow Motion Reveal', category: 'Trendy', clipCount: 3, uses: '67.2K videos', tag: 'New', swatch: 'linear-gradient(160deg,#1d4ed8,#4f46e5)' },
-  { id: 'tp11', title: 'This Month in Review', category: 'Monthly Recap', clipCount: 10, uses: '145.6K videos', tag: 'Trending', swatch: 'linear-gradient(160deg,#be185d,#f43f5e)' },
-  { id: 'tp12', title: 'Minimal Morning', category: 'Aesthetic', clipCount: 6, uses: '38.9K videos', tag: 'Aesthetic', swatch: 'linear-gradient(160deg,#78716c,#a8a29e)' },
 ];
 
 /* ------------------------------------------------------------------ */
@@ -110,15 +83,6 @@ function XIcon(props) {
   );
 }
 
-function SearchIcon(props) {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <circle cx="11" cy="11" r="7" />
-      <line x1="21" y1="21" x2="16.65" y2="16.65" />
-    </svg>
-  );
-}
-
 function BookmarkIcon({ filled, ...props }) {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill={filled ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -137,10 +101,10 @@ function MusicNoteIcon({ className = '' }) {
   );
 }
 
-function FilterIcon(props) {
+function FilterIcon({ size = 20, ...props }) {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3Z" />
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="stroke-[2.5]" {...props}>
+      <path className="fill-white" d="M22 3H2l8 9.46V19l4 2v-8.54L22 3Z" />
     </svg>
   );
 }
@@ -155,45 +119,46 @@ function TextToolIcon(props) {
   );
 }
 
-function FlipCameraIcon(props) {
+function FlipCameraIcon({ size = 20, ...props }) {
   return (
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...props}>
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="stroke-[2.5]" {...props}>
       <path d="M20 8a8 8 0 0 0-14.3-4.3M4 16a8 8 0 0 0 14.3 4.3" />
       <path d="M4 3v5h5M20 21v-5h-5" />
     </svg>
   );
 }
 
-function FlashIcon(props) {
+function SparkleIcon({ size = 17, ...props }) {
   return (
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <path d="M13 2 3 14h8l-1 8 10-12h-8l1-8Z" />
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="stroke-[2.5] fill-white" {...props}>
+      <path d="M11 3l1.9 5.1L18 10l-5.1 1.9L11 17l-1.9-5.1L4 10l5.1-1.9L11 3z" />
+      <path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z" />
     </svg>
   );
 }
 
-function TimerIcon(props) {
+function TimerIcon({ size = 20, ...props }) {
   return (
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...props}>
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="stroke-[2.5]" {...props}>
       <circle cx="12" cy="13" r="8" />
       <path d="M12 9v4l2.5 2.5M9 2h6" />
     </svg>
   );
 }
 
-function MicIcon({ crossedOut, ...props }) {
+function MicIcon({ crossedOut, size = 17, ...props }) {
   return (
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="stroke-[2.5]" {...props}>
+      <path className="fill-white" d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
       <path d="M19 11a7 7 0 0 1-14 0M12 18v4" />
       {crossedOut && <line x1="3" y1="21" x2="21" y2="3" />}
     </svg>
   );
 }
 
-function ExpandIcon(props) {
+function ExpandIcon({ size = 20, ...props }) {
   return (
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...props}>
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="stroke-[2.5]" {...props}>
       <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
     </svg>
   );
@@ -277,7 +242,7 @@ function UploadPageInner() {
   const [recordingSecondsLeft, setRecordingSecondsLeft] = useState(0);
   const [cameraError, setCameraError] = useState(null);
   const [cameraRecordError, setCameraRecordError] = useState(null);
-  const [activeFilterId, setActiveFilterId] = useState('normal');
+  const [activeFilterId, setActiveFilterId] = useState(DEFAULT_FILTER_ID);
   const [showFilterGrid, setShowFilterGrid] = useState(false);
   const [textOverlay, setTextOverlay] = useState(null); // { content, x, y (both 0-100, % of stage) } | null
   const [showTextEditor, setShowTextEditor] = useState(false);
@@ -295,7 +260,9 @@ function UploadPageInner() {
   const DURATION_SECONDS = { '10m': 600, '60s': 60, '15s': 15 };
 
   const [micOn, setMicOn] = useState(true);
-  const [retouchOn, setRetouchOn] = useState(false);
+  // Skin smoothing (Retouch). On by default alongside the Beautify lens; the
+  // button in the right-hand column turns it off.
+  const [retouchOn, setRetouchOn] = useState(true);
   const [timerSeconds, setTimerSeconds] = useState(0); // 0 (off) | 3 | 10
   const [countdownValue, setCountdownValue] = useState(null);
   const [expandedAspect, setExpandedAspect] = useState(false);
@@ -714,16 +681,12 @@ function UploadPageInner() {
   }, [countdownValue]);
 
   const captionRemaining = CAPTION_MAX - caption.length;
-  const activeFilter = FILTERS.find((f) => f.id === activeFilterId) || FILTERS[0];
   const activeEffect = EFFECTS.find((f) => f.id === activeEffectId) || EFFECTS[0];
-  // Baked directly into the recording now (see CameraRecorder's canvas
-  // compositor) rather than only ever being a CSS/DOM display effect —
-  // this string is the same one previously applied to the <video>'s CSS
-  // `filter`, now applied to the canvas context instead so it actually
-  // ends up in the recorded pixels.
-  const combinedFilterCss = [activeFilter.css, retouchOn ? 'brightness(1.06) contrast(0.95) saturate(1.08)' : '']
-    .filter(Boolean)
-    .join(' ');
+  // Filter thumbnails are drawn by the camera engine itself (same shader as the
+  // live preview), so they stay in step with what will actually be recorded.
+  const drawFilterPreview = useCallback((canvas, lensId) => {
+    cameraRef.current?.drawFilterPreview(canvas, lensId);
+  }, []);
 
   return (
     <main className="fixed inset-0 bg-black overflow-hidden">
@@ -740,7 +703,8 @@ function UploadPageInner() {
             ref={cameraRef}
             embedded
             hideOwnControls
-            filterCss={combinedFilterCss}
+            lens={activeFilterId}
+            retouch={retouchOn}
             aspectFit={expandedAspect ? 'contain' : 'cover'}
             effectKind={activeEffect.kind}
             textOverlay={textOverlay}
@@ -810,6 +774,7 @@ function UploadPageInner() {
             onShutterPress={handleShutterPress}
             activeFilterId={activeFilterId}
             onSelectFilter={setActiveFilterId}
+            drawFilterPreview={drawFilterPreview}
             galleryPreviewUrl={lastPickedPreviewUrl}
             onOpenGallery={() => fileInputRef.current?.click()}
             onGalleryDrop={handleDrop}
@@ -831,7 +796,13 @@ function UploadPageInner() {
           )}
 
           {showFilterGrid && (
-            <FilterGridModal activeId={activeFilterId} onSelect={setActiveFilterId} onClose={() => setShowFilterGrid(false)} />
+            <FilterSheet
+              activeId={activeFilterId}
+              onSelect={setActiveFilterId}
+              onClose={() => setShowFilterGrid(false)}
+              drawPreview={drawFilterPreview}
+              paused={isRecording}
+            />
           )}
 
           {showFavoritesDrawer && (
@@ -848,7 +819,7 @@ function UploadPageInner() {
       {/* ---------------- Step 1b: Templates hub (bottom-tab alternative to the camera) ---------------- */}
       {!file && publishTab === 'templates' && (
         <>
-          <TemplatesHub
+          <TemplatePicker
             onClose={() => setPublishTab('post')}
             category={templateCategory}
             setCategory={setTemplateCategory}
@@ -1057,11 +1028,10 @@ function RightToolColumn({
 }) {
   const items = [
     { key: 'flip', icon: FlipCameraIcon, label: 'Flip', onClick: onFlip, active: false },
-    // getUserMedia has no reliable cross-browser flash/torch control, and a
-    // real beauty/retouch filter would need face landmark detection this
-    // app doesn't have — this toggles a light brightness/contrast/saturation
-    // smoothing pass on the preview instead of pretending to do either.
-    { key: 'retouch', icon: FlashIcon, label: 'Retouch', onClick: onToggleRetouch, active: retouchOn },
+    // Retouch = skin smoothing (edge-preserving bilateral pass in the WebGL
+    // shader, see lib/beautyRenderer.js). It's colour-based skin detection,
+    // not face tracking.
+    { key: 'retouch', icon: SparkleIcon, label: 'Retouch', onClick: onToggleRetouch, active: retouchOn },
     {
       key: 'timer',
       icon: TimerIcon,
@@ -1075,61 +1045,31 @@ function RightToolColumn({
   ];
 
   return (
-    <div className="absolute right-3 top-24 flex flex-col gap-5 items-center">
+    // On short screens the column scrolls rather than running under the
+    // capture controls (reserved 21.5rem at the bottom).
+    <div className="absolute right-2 top-[4.5rem] flex flex-col items-center gap-2.5 px-1.5 py-1 max-h-[calc(100%-21.5rem)] overflow-y-auto no-scrollbar">
       {items.map(({ key, icon: Icon, label, onClick, active, muted }) => (
         <button
           key={key}
+          type="button"
           onClick={onClick}
           disabled={disabled && key !== 'aspect'}
-          className="flex flex-col items-center gap-1 disabled:opacity-30"
           aria-label={label}
+          aria-pressed={key === 'flip' || key === 'filters' ? undefined : active}
+          className="flex flex-col items-center gap-1 w-14 shrink-0 disabled:opacity-30 focus:outline-none group"
         >
           <span
-            className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors ${
-              active ? 'bg-amber-500 text-black' : 'bg-black/40 text-white'
+            className={`bg-black/40 backdrop-blur-md w-11 h-11 flex items-center justify-center rounded-full shadow-lg text-white transition-transform active:scale-90 group-focus-visible:ring-2 group-focus-visible:ring-white ${
+              active ? 'ring-2 ring-amber-500' : ''
             }`}
           >
-            {key === 'mic' ? <Icon crossedOut={muted} /> : <Icon />}
+            {key === 'mic' ? <Icon size={22} crossedOut={muted} /> : <Icon size={22} />}
           </span>
-          <span className="text-white text-[9px] font-semibold drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">{label}</span>
+          <span className="font-semibold text-[11px] leading-none text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+            {label}
+          </span>
         </button>
       ))}
-    </div>
-  );
-}
-
-function FilterGridModal({ activeId, onSelect, onClose }) {
-  return (
-    <div className="absolute inset-0 z-30 bg-black/70 backdrop-blur-sm flex items-end" onClick={onClose}>
-      <div
-        className="w-full bg-zinc-900 border-t border-zinc-800 rounded-t-2xl p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between mb-4">
-          <p className="text-white font-semibold text-sm">Filters</p>
-          <button onClick={onClose} className="text-zinc-400 hover:text-white text-lg leading-none">
-            ✕
-          </button>
-        </div>
-        <div className="grid grid-cols-3 gap-4">
-          {FILTERS.map((f) => (
-            <button
-              key={f.id}
-              onClick={() => {
-                onSelect(f.id);
-                onClose();
-              }}
-              className="flex flex-col items-center gap-1.5"
-            >
-              <span
-                className={`w-14 h-14 rounded-full border-2 ${activeId === f.id ? 'border-amber-400' : 'border-white/20'}`}
-                style={{ background: f.swatch }}
-              />
-              <span className="text-white text-[11px] font-medium">{f.label}</span>
-            </button>
-          ))}
-        </div>
-      </div>
     </div>
   );
 }
@@ -1225,93 +1165,8 @@ function FavoritesDrawer({ favoriteIds, activeEffectId, onSelect, onClose }) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Templates hub                                                        */
+/* Templates (hub UI lives in components/TemplatePicker.jsx)               */
 /* ------------------------------------------------------------------ */
-
-function TemplatesHub({ onClose, category, setCategory, showSearch, setShowSearch, query, setQuery, onSelectTemplate }) {
-  const filtered = TEMPLATES.filter((t) => {
-    const matchesCategory = category === 'For You' || t.category === category;
-    const matchesQuery = !query.trim() || t.title.toLowerCase().includes(query.trim().toLowerCase());
-    return matchesCategory && matchesQuery;
-  });
-
-  return (
-    <div className="absolute inset-0 bg-zinc-950 flex flex-col">
-      <div className="flex items-center justify-between px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 shrink-0">
-        <button onClick={onClose} aria-label="Close templates" className="w-9 h-9 flex items-center justify-center text-white">
-          <XIcon />
-        </button>
-        <p className="text-white font-bold text-base">Templates</p>
-        <button
-          onClick={() => setShowSearch((v) => !v)}
-          aria-label="Search templates"
-          className="w-9 h-9 flex items-center justify-center text-white"
-        >
-          <SearchIcon />
-        </button>
-      </div>
-
-      {showSearch && (
-        <div className="px-4 pb-3 shrink-0">
-          <input
-            autoFocus
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search templates"
-            className="w-full bg-zinc-900 border border-zinc-800 rounded-full px-4 py-2 text-sm text-white placeholder-zinc-500 outline-none focus:ring-2 focus:ring-amber-500/50"
-          />
-        </div>
-      )}
-
-      <div className="flex gap-2 overflow-x-auto no-scrollbar px-4 pb-3 shrink-0">
-        {TEMPLATE_CATEGORIES.map((c) => (
-          <button
-            key={c}
-            onClick={() => setCategory(c)}
-            className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
-              category === c ? 'bg-white text-black' : 'bg-zinc-900 text-zinc-400'
-            }`}
-          >
-            {c}
-          </button>
-        ))}
-      </div>
-
-      <div className="flex-1 overflow-y-auto px-3 pb-6">
-        {filtered.length === 0 ? (
-          <p className="text-zinc-500 text-sm text-center py-12">No templates match &quot;{query}&quot;.</p>
-        ) : (
-          <div className="grid grid-cols-2 gap-3">
-            {filtered.map((t) => (
-              <TemplateCard key={t.id} template={t} onClick={() => onSelectTemplate(t)} />
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function TemplateCard({ template, onClick }) {
-  return (
-    <button onClick={onClick} className="text-left rounded-2xl overflow-hidden bg-zinc-900 border border-zinc-800">
-      <div className="relative aspect-[9/16]" style={{ background: template.swatch }}>
-        <span className="absolute top-2 left-2 bg-black/50 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
-          {template.tag}
-        </span>
-        <span className="absolute bottom-2 right-2 w-6 h-6 rounded-full bg-black/50 flex items-center justify-center text-white">
-          <MusicNoteIcon className="w-3 h-3" />
-        </span>
-      </div>
-      <div className="p-2.5">
-        <p className="text-white text-xs font-semibold truncate">{template.title}</p>
-        <p className="text-zinc-500 text-[10px] mt-0.5">
-          {template.uses} • {template.clipCount} clip{template.clipCount === 1 ? '' : 's'}
-        </p>
-      </div>
-    </button>
-  );
-}
 
 function TemplateClipPicker({ template, error, onPickClips, onConfirmSingleFallback, onClose }) {
   return (
@@ -1408,6 +1263,7 @@ function BottomCaptureControls({
   onShutterPress,
   activeFilterId,
   onSelectFilter,
+  drawFilterPreview,
   galleryPreviewUrl,
   onOpenGallery,
   onGalleryDrop,
@@ -1428,9 +1284,13 @@ function BottomCaptureControls({
   ];
   // The two flanking each side of the shutter — a quick-access subset, not
   // the full set (that's what the Filters icon in the right column opens
-  // via FilterGridModal).
+  // via FilterSheet). Index 0 is "Original", so these start at Beautify.
   const leftFilters = FILTERS.slice(1, 3);
   const rightFilters = FILTERS.slice(3, 5);
+  const flankIds = [...leftFilters, ...rightFilters].map((f) => f.id);
+  // Slower refresh than the sheet (these sit over the live preview all the
+  // time) and fully paused while recording.
+  const registerFlank = useLensPreviews(flankIds, drawFilterPreview, { intervalMs: 1000, paused: isRecording });
 
   return (
     <div className="absolute bottom-0 inset-x-0 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
@@ -1461,7 +1321,16 @@ function BottomCaptureControls({
 
       <div className="flex items-center justify-center gap-5 px-6">
         {leftFilters.map((f) => (
-          <FilterThumb key={f.id} filter={f} active={activeFilterId === f.id} onClick={() => onSelectFilter(f.id)} />
+          <LensPreview
+            key={f.id}
+            lens={f}
+            active={activeFilterId === f.id}
+            onSelect={onSelectFilter}
+            register={registerFlank}
+            sizeClass="w-10 h-10"
+            canvasSize={80}
+            label={false}
+          />
         ))}
 
         <ShutterButton
@@ -1472,7 +1341,16 @@ function BottomCaptureControls({
         />
 
         {rightFilters.map((f) => (
-          <FilterThumb key={f.id} filter={f} active={activeFilterId === f.id} onClick={() => onSelectFilter(f.id)} />
+          <LensPreview
+            key={f.id}
+            lens={f}
+            active={activeFilterId === f.id}
+            onSelect={onSelectFilter}
+            register={registerFlank}
+            sizeClass="w-10 h-10"
+            canvasSize={80}
+            label={false}
+          />
         ))}
       </div>
 
@@ -1501,17 +1379,6 @@ function BottomCaptureControls({
         <span className="w-10" aria-hidden="true" />
       </div>
     </div>
-  );
-}
-
-function FilterThumb({ filter, active, onClick }) {
-  return (
-    <button onClick={onClick} className="flex flex-col items-center gap-1" aria-label={filter.label}>
-      <span
-        className={`w-10 h-10 rounded-full border-2 ${active ? 'border-amber-400' : 'border-white/40'}`}
-        style={{ background: filter.swatch }}
-      />
-    </button>
   );
 }
 
