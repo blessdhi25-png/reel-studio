@@ -14,11 +14,22 @@ import VideoLongPressMenu from './VideoLongPressMenu';
 import { useLongPress, longPressStyle } from '../hooks/useLongPress';
 import { useFeedPlayerPrefs, setFeedPlayerPref } from '../hooks/useFeedPlayerPrefs';
 import { downloadWithWatermark, WatermarkUnsupportedError } from '../lib/downloadWithWatermark';
+import { downloadPlain, PlainDownloadUnsupportedError } from '../lib/downloadPlain';
+import { usePref } from '../lib/settingsPrefs';
 
 // A second tap/click arriving within this window counts as a double-tap
 // (like) rather than two separate single-taps (play/pause). 300ms matches
 // the double-tap window most touch UIs already train people to expect.
 const DOUBLE_TAP_MS = 300;
+
+// Data Saver caps adaptive streams at this height unless the browser says we're
+// on Wi-Fi / Ethernet. navigator.connection.type only exists in Chromium; where
+// it's missing (Safari/Firefox) we can't tell, so the user's explicit opt-in wins.
+const DATA_SAVER_MAX_HEIGHT = 480;
+function isOnWifiOrWired() {
+  const type = typeof navigator !== 'undefined' ? navigator.connection?.type : undefined;
+  return type === 'wifi' || type === 'ethernet';
+}
 
 // High-contrast engagement-rail icons — deliberately plain white/red fills
 // rather than the app's softer `bone` text token, since these sit directly
@@ -186,6 +197,9 @@ const VideoCard = forwardRef(function VideoCard(
   const [showLongPressMenu, setShowLongPressMenu] = useState(false);
   const [clearDisplay, setClearDisplay] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  // Settings → Video Downloads & Watermarking / Data Saver Mode.
+  const [watermarkOn] = usePref('watermark');
+  const [dataSaver] = usePref('dataSaver');
   const mediaPausedByUserRef = useRef(false);
 
   // Caption "...more / less". The caption is clamped to 2 lines; we measure
@@ -297,19 +311,24 @@ const VideoCard = forwardRef(function VideoCard(
     if (downloading || !video.videoUrl) return;
     setDownloading(true);
     setShowLongPressMenu(false);
-    toast.info('Preparing your download with the ClipPulse watermark…');
+    const baseName = `clippulse-${video.user?.username || 'video'}-${String(video.id).slice(0, 8)}`;
     try {
-      await downloadWithWatermark({
-        url: video.videoUrl,
-        username: video.user?.username,
-        baseName: `clippulse-${video.user?.username || 'video'}-${String(video.id).slice(0, 8)}`,
-      });
-      toast.success('Saved with the ClipPulse watermark');
+      if (watermarkOn) {
+        toast.info('Preparing your download with the ClipPulse watermark…');
+        await downloadWithWatermark({ url: video.videoUrl, username: video.user?.username, baseName });
+        toast.success('Saved with the ClipPulse watermark');
+      } else {
+        toast.info('Preparing your download…');
+        await downloadPlain({ url: video.videoUrl, baseName });
+        toast.success('Download started');
+      }
     } catch (err) {
       toast.error(
         err instanceof WatermarkUnsupportedError
           ? `Couldn't add the watermark: ${err.message}`
-          : "Couldn't download this video — try again."
+          : err instanceof PlainDownloadUnsupportedError
+            ? `Couldn't download: ${err.message}`
+            : "Couldn't download this video — try again."
       );
     } finally {
       setDownloading(false);
@@ -382,6 +401,13 @@ const VideoCard = forwardRef(function VideoCard(
       import('hls.js').then(({ default: Hls }) => {
         if (Hls.isSupported()) {
           hls = new Hls();
+          if (dataSaver && !isOnWifiOrWired()) {
+            // Data Saver: once the ladder is known, never pick a rung taller than 480p.
+            hls.on(Hls.Events.MANIFEST_PARSED, (_e, data) => {
+              const lowRungs = data.levels.map((l, i) => (l.height && l.height <= DATA_SAVER_MAX_HEIGHT ? i : -1)).filter((i) => i >= 0);
+              hls.autoLevelCapping = lowRungs.length ? Math.max(...lowRungs) : 0;
+            });
+          }
           hls.loadSource(video.videoUrl);
           hls.attachMedia(el);
         }
@@ -391,7 +417,7 @@ const VideoCard = forwardRef(function VideoCard(
     }
 
     return () => hls?.destroy();
-  }, [video.videoUrl, shouldLoad]);
+  }, [video.videoUrl, shouldLoad, dataSaver]);
 
   // A fresh src (new video, or shouldLoad just turned on for this card) is
   // presumed to need buffering again — cleared once onCanPlay/onPlaying/
@@ -969,6 +995,7 @@ const VideoCard = forwardRef(function VideoCard(
           onBackgroundAudioChange={(v) => setFeedPlayerPref('backgroundAudio', v)}
           onDownload={handleDownload}
           downloading={downloading}
+          watermark={watermarkOn}
           onTranslate={handleTranslate}
           canTranslate={Boolean(video.caption)}
           reasons={buildReasons()}
