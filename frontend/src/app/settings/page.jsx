@@ -2,7 +2,48 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { ArrowLeft, Bell, ChevronRight, KeyRound, Lock, Mail, ShieldCheck, User } from 'lucide-react';
 import { useStaffAccess } from '../../hooks/useStaffAccess';
+
+const ROW =
+  'flex items-center justify-between p-4 bg-neutral-900 hover:bg-neutral-800/80 rounded-xl transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500';
+
+function IconBadge({ children, gold = false }) {
+  return (
+    <span
+      className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
+        gold ? 'bg-amber-500/15 text-amber-400' : 'bg-neutral-800 text-neutral-200'
+      }`}
+    >
+      {children}
+    </span>
+  );
+}
+
+// A tappable settings row. `subtitle` is optional secondary text.
+function SettingsLink({ href, icon, label, subtitle, gold = false }) {
+  return (
+    <a href={href} className={ROW}>
+      <span className="flex items-center gap-3 min-w-0">
+        <IconBadge gold={gold}>{icon}</IconBadge>
+        <span className="min-w-0">
+          <span className={`block text-base font-semibold ${gold ? 'text-amber-400' : 'text-white'}`}>{label}</span>
+          {subtitle && <span className="block text-xs text-neutral-400 mt-0.5 truncate">{subtitle}</span>}
+        </span>
+      </span>
+      <ChevronRight className="w-5 h-5 ml-3 text-neutral-500 shrink-0" strokeWidth={2.5} aria-hidden="true" />
+    </a>
+  );
+}
+
+function Section({ title, children }) {
+  return (
+    <section className="mb-7" aria-label={title}>
+      <h2 className="px-1 mb-2 text-xs font-bold uppercase tracking-wider text-neutral-500">{title}</h2>
+      <div className="space-y-2">{children}</div>
+    </section>
+  );
+}
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -27,63 +68,55 @@ export default function SettingsPage() {
   if (!user) return null;
 
   return (
-    <main className="min-h-screen px-6 py-10 max-w-2xl mx-auto pb-20">
-      <a href="/menu" className="font-mono text-xs text-smoke uppercase tracking-widest">
-        ← Back to menu
+    <main className="min-h-screen font-sans px-4 pt-6 pb-24 max-w-2xl mx-auto">
+      <a href="/menu" className="inline-flex items-center gap-2 text-sm font-semibold text-neutral-400 hover:text-white transition-colors">
+        <ArrowLeft className="w-4 h-4" strokeWidth={2.5} aria-hidden="true" />
+        Back to menu
       </a>
 
-      <h1 className="font-display text-4xl text-bone tracking-wide mt-8 mb-8">Settings and privacy</h1>
+      <h1 className="mt-6 mb-8 text-2xl font-extrabold tracking-tight text-white">Settings and privacy</h1>
 
-      <div className="space-y-1 mb-8">
-        <a
-          href="/profile/edit"
-          className="w-full flex items-center gap-4 py-4 border-b border-smoke/10 text-left font-body text-bone"
-        >
-          <span className="text-xl w-6 text-center">👤</span>
-          <span className="flex-1">Edit profile</span>
-          <span className="text-smoke">›</span>
-        </a>
-        <div className="w-full flex items-center gap-4 py-4 border-b border-smoke/10 text-left">
-          <span className="text-xl w-6 text-center">✉</span>
-          <span className="flex-1 flex flex-col">
-            <span className="font-body text-bone">Account &amp; Email</span>
-            <span className="font-mono text-xs text-smoke mt-0.5">{user.email}</span>
+      <Section title="Account">
+        <SettingsLink href="/profile/edit" icon={<User className="w-5 h-5" strokeWidth={2.25} />} label="Edit profile" />
+        {/* There's no separate email page yet, so this row shows the address
+            without pretending to navigate anywhere. */}
+        <div className="flex items-center gap-3 p-4 bg-neutral-900 rounded-xl">
+          <IconBadge>
+            <Mail className="w-5 h-5" strokeWidth={2.25} />
+          </IconBadge>
+          <span className="min-w-0">
+            <span className="block text-base font-semibold text-white">Account &amp; Email</span>
+            <span className="block text-xs text-neutral-400 mt-0.5 truncate">{user.email}</span>
           </span>
         </div>
-        <a
+        <SettingsLink
           href="/settings/change-password"
-          className="w-full flex items-center gap-4 py-4 border-b border-smoke/10 text-left font-body text-bone"
-        >
-          <span className="text-xl w-6 text-center">🔑</span>
-          <span className="flex-1">Change password</span>
-          <span className="text-smoke">›</span>
-        </a>
-        <a
-          href="/settings/privacy"
-          className="w-full flex items-center gap-4 py-4 border-b border-smoke/10 text-left font-body text-bone"
-        >
-          <span className="text-xl w-6 text-center">🔒</span>
-          <span className="flex-1">Privacy</span>
-          <span className="text-smoke">›</span>
-        </a>
-        {isStaff && (
-          <a
+          icon={<KeyRound className="w-5 h-5" strokeWidth={2.25} />}
+          label="Change password"
+        />
+      </Section>
+
+      <Section title="Preferences">
+        <SettingsLink href="/settings/privacy" icon={<Lock className="w-5 h-5" strokeWidth={2.25} />} label="Privacy" />
+        <SettingsLink href="/notifications" icon={<Bell className="w-5 h-5" strokeWidth={2.25} />} label="Notifications" />
+      </Section>
+
+      {isStaff && (
+        <Section title="Management">
+          <SettingsLink
             href="/admin"
-            className="w-full flex items-center gap-4 py-4 border-b border-smoke/10 text-left font-body text-amber-400"
-          >
-            <span className="text-xl w-6 text-center">🛡️</span>
-            <span className="flex-1 flex flex-col">
-              <span>Admin Dashboard</span>
-              <span className="font-mono text-xs text-smoke mt-0.5">Moderation, users &amp; reports</span>
-            </span>
-            <span className="text-smoke">›</span>
-          </a>
-        )}
-      </div>
+            gold
+            icon={<ShieldCheck className="w-5 h-5" strokeWidth={2.25} />}
+            label="Admin Dashboard"
+            subtitle="Moderation, users & reports"
+          />
+        </Section>
+      )}
 
       <button
+        type="button"
         onClick={logout}
-        className="w-full py-3 font-body text-sm font-semibold rounded-sprocket border border-red-400/50 text-red-400"
+        className="w-full bg-red-500/10 text-red-500 hover:bg-red-500/20 font-bold py-3.5 rounded-xl border border-red-500/20 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
       >
         Log out
       </button>
