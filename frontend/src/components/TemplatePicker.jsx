@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Film, Music2, Search, X } from 'lucide-react';
-import { TEMPLATES, TEMPLATE_CATEGORIES } from '@/lib/templates';
+import { TEMPLATES, TEMPLATE_CATEGORIES, fallbackPreviewFor, resolveTemplatePreview } from '@/lib/templates';
 
 const compact = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 });
 
@@ -39,6 +39,9 @@ function TemplateCard({ template, onClick }) {
   const [near, setNear] = useState(false);
   const [visible, setVisible] = useState(false);
   const [failed, setFailed] = useState(false);
+  // The template's own preview, or a generic loop if it has none (or its file
+  // fails to load). Only if the fallback fails too do we settle for a poster.
+  const [source, setSource] = useState(() => resolveTemplatePreview(template));
 
   useEffect(() => {
     const el = cardRef.current;
@@ -67,7 +70,7 @@ function TemplateCard({ template, onClick }) {
     else v.pause();
   }, [visible, near, reduceMotion]);
 
-  const showVideo = template.previewUrl && !failed;
+  const showVideo = !!source.src && !failed;
   const playing = visible && !reduceMotion && showVideo;
   const usesLabel = `${compact.format(template.uses)} videos`;
   const clipsLabel = `${template.clipCount} clip${template.clipCount === 1 ? '' : 's'}`;
@@ -83,19 +86,22 @@ function TemplateCard({ template, onClick }) {
       {showVideo ? (
         <video
           ref={videoRef}
-          src={near ? template.previewUrl : undefined}
-          poster={template.posterUrl}
+          src={near ? source.src : undefined}
+          poster={source.poster}
           autoPlay={!reduceMotion}
           loop
           muted
           playsInline
           preload="none"
-          onError={() => setFailed(true)}
+          onError={() => {
+            if (!source.fallback) setSource(fallbackPreviewFor(template));
+            else setFailed(true);
+          }}
           aria-hidden="true"
-          className="absolute inset-0 w-full h-full object-cover"
+          className="absolute inset-0 w-full h-full object-cover rounded-2xl"
         />
-      ) : template.posterUrl ? (
-        <img src={template.posterUrl} alt="" className="absolute inset-0 w-full h-full object-cover" />
+      ) : source.poster ? (
+        <img src={source.poster} alt="" className="absolute inset-0 w-full h-full object-cover" />
       ) : (
         <span className="absolute inset-0 flex items-center justify-center text-zinc-600">
           <Film className="w-8 h-8" aria-hidden="true" />
