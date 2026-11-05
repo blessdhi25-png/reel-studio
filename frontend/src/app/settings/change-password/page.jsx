@@ -1,10 +1,12 @@
 'use client';
 
-import { useState } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, AlertCircle } from 'lucide-react';
-import { api } from '../../../lib/api';
-import { useToast } from '../../../context/ToastContext';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { AlertCircle } from 'lucide-react';
+import { api } from '@/lib/api';
+import { useAuth } from '@/context/AuthContext';
+import { useToast } from '@/context/ToastContext';
+import { SettingsPage } from '@/components/settings/SettingsUI';
 
 export default function ChangePasswordPage() {
   const [currentPassword, setCurrentPassword] = useState('');
@@ -13,6 +15,12 @@ export default function ChangePasswordPage() {
   const [formError, setFormError] = useState(null);
   const [loading, setLoading] = useState(false);
   const toast = useToast();
+  const router = useRouter();
+  const { ready, isAuthenticated } = useAuth();
+
+  useEffect(() => {
+    if (ready && !isAuthenticated) router.replace('/login');
+  }, [ready, isAuthenticated, router]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -45,20 +53,10 @@ export default function ChangePasswordPage() {
     }
   };
 
+  if (!ready || !isAuthenticated) return null;
+
   return (
-    <div className="min-h-screen bg-[#0d0b14] text-white p-4 font-sans max-w-md mx-auto">
-      <Link
-        href="/settings"
-        className="inline-flex items-center gap-1.5 text-xs font-mono text-zinc-400 hover:text-white uppercase tracking-widest mb-6 pt-2"
-      >
-        <ArrowLeft size={14} />
-        <span>Back to Settings</span>
-      </Link>
-
-      <h1 className="text-2xl font-black uppercase tracking-wider text-white mb-6">
-        Change Password
-      </h1>
-
+    <SettingsPage title="Change Password" backHref="/settings/account" backLabel="Account">
       {/* Success now surfaces as a toast (global system) rather than an
           inline banner — inline stays only for the validation error that
           blocks submission (mismatched passwords), since that needs to
@@ -73,7 +71,7 @@ export default function ChangePasswordPage() {
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">
+          <label className="block font-sans font-bold text-[11px] text-neutral-500 uppercase tracking-widest mb-2 px-1">
             Current Password
           </label>
           <input
@@ -81,12 +79,12 @@ export default function ChangePasswordPage() {
             required
             value={currentPassword}
             onChange={(e) => setCurrentPassword(e.target.value)}
-            className="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-amber-500"
+            className="w-full bg-neutral-900/90 border border-neutral-800 rounded-2xl px-4 py-3 text-sm font-sans font-bold text-white focus:outline-none focus:border-amber-500"
           />
         </div>
 
         <div>
-          <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">
+          <label className="block font-sans font-bold text-[11px] text-neutral-500 uppercase tracking-widest mb-2 px-1">
             New Password
           </label>
           <input
@@ -94,12 +92,12 @@ export default function ChangePasswordPage() {
             required
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
-            className="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-amber-500"
+            className="w-full bg-neutral-900/90 border border-neutral-800 rounded-2xl px-4 py-3 text-sm font-sans font-bold text-white focus:outline-none focus:border-amber-500"
           />
         </div>
 
         <div>
-          <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">
+          <label className="block font-sans font-bold text-[11px] text-neutral-500 uppercase tracking-widest mb-2 px-1">
             Confirm New Password
           </label>
           <input
@@ -107,18 +105,18 @@ export default function ChangePasswordPage() {
             required
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
-            className="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-amber-500"
+            className="w-full bg-neutral-900/90 border border-neutral-800 rounded-2xl px-4 py-3 text-sm font-sans font-bold text-white focus:outline-none focus:border-amber-500"
           />
         </div>
 
         <button
           type="submit"
           disabled={loading}
-          className="w-full mt-4 py-3 rounded-xl bg-amber-500 text-black text-xs font-extrabold uppercase tracking-wider hover:bg-amber-400 transition-all disabled:opacity-50"
+          className="w-full mt-4 py-3.5 rounded-2xl bg-amber-500 text-black text-sm font-sans font-bold hover:bg-amber-400 transition-all disabled:opacity-50"
         >
           {loading ? 'Updating...' : 'Update Password'}
         </button>
       </form>
-    </div>
+    </SettingsPage>
   );
 }
