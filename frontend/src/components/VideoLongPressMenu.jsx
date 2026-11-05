@@ -76,6 +76,7 @@ export default function VideoLongPressMenu({
   onBackgroundAudioChange,
   onDownload,
   downloading = false,
+  watermark = true,
   onTranslate,
   canTranslate = true,
   reasons = [],
@@ -154,7 +155,11 @@ export default function VideoLongPressMenu({
                 </Icon>
               }
               label={downloading ? 'Preparing download…' : 'Download'}
-              hint={downloading ? 'Adding the ClipPulse watermark — keep this tab open' : 'Saved with the ClipPulse watermark'}
+              hint={
+                downloading
+                  ? (watermark ? 'Adding the ClipPulse watermark — keep this tab open' : 'Preparing your download…')
+                  : (watermark ? 'Saved with the ClipPulse watermark' : 'Saved without a watermark')
+              }
               onClick={onDownload}
               disabled={downloading}
             />
