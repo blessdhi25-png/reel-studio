@@ -222,7 +222,7 @@ export default function CommunityDetailPage({ params }) {
   const isAdmin = community.myRole === 'admin';
 
   return (
-    <main className="min-h-screen bg-zinc-950 pb-10">
+    <main className="min-h-screen bg-zinc-950 pb-36">
       {/* Banner header */}
       <div className="relative w-full h-40 sm:h-56">
         {community.bannerUrl ? (
