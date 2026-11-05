@@ -1,20 +1,19 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, MoreHorizontal, Settings, Menu as MenuIcon, Share2, Home, Lock } from 'lucide-react';
+import { ArrowLeft, MoreHorizontal, Menu as MenuIcon, Share2, Home, Lock } from 'lucide-react';
 import { api, getStoredUser } from '@/lib/api';
-import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
 import ReportModal from '@/components/ReportModal';
 import ConfirmModal from '@/components/ConfirmModal';
+import ProfileDrawer from '@/components/ProfileDrawer';
 import { LoadingSpinner } from '@/components/LoadingScreen';
 
 export default function ProfilePage({ params }) {
   const { id } = params;
   const router = useRouter();
-  const { logout } = useAuth();
   const toast = useToast();
 
   const [user, setUser] = useState(null);
@@ -28,10 +27,11 @@ export default function ProfilePage({ params }) {
   const [activeTab, setActiveTab] = useState('videos');
   const [showMenu, setShowMenu] = useState(false);
   const [showReport, setShowReport] = useState(false);
-  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false); // own-profile ≡ bottom sheet
   const [deleteTarget, setDeleteTarget] = useState(null); // video object pending delete confirmation, or null
   const [deleting, setDeleting] = useState(false);
   const menuRef = useRef(null);
+  const closeDrawer = useCallback(() => setIsMenuOpen(false), []); // stable: the drawer's effects depend on it
 
   // Close the ⋯ dropdown on an outside click, not just its own options.
   useEffect(() => {
@@ -87,17 +87,6 @@ export default function ProfilePage({ params }) {
     }
   }
 
-  function confirmLogout() {
-    setShowLogoutConfirm(false);
-    // logout() (context/AuthContext.jsx) clears localStorage AND the live
-    // Context state in one call — a raw localStorage.removeItem() here
-    // would leave every other useAuth() consumer on this page (BottomNav,
-    // etc.) still thinking there's a signed-in user until a full reload.
-    logout();
-    toast.success('Logged out');
-    router.push('/login');
-  }
-
   // The main feed (app/page.jsx) already has a complete delete flow via
   // VideoCard's own DeleteConfirmModal — this profile grid was a plain
   // thumbnail link with no delete affordance of its own at all, which was
@@ -137,7 +126,7 @@ export default function ProfilePage({ params }) {
   }
 
   return (
-    <div className="min-h-screen bg-[#0a090e] text-white pb-24 font-sans max-w-md mx-auto">
+    <div className="min-h-screen bg-[#0a090e] text-white pb-36 font-sans max-w-md mx-auto">
       {/* Banner */}
       <div className="h-32 w-full bg-zinc-900 relative overflow-hidden">
         {user.bannerUrl && (
@@ -153,45 +142,41 @@ export default function ProfilePage({ params }) {
           </Link>
 
           <div className="flex items-center gap-2 relative" ref={menuRef}>
-            {isSelf && (
-              <Link
-                href="/settings"
-                aria-label="Settings"
+            {isSelf ? (
+              // Own profile: ≡ opens the slide-up drawer (Wallet, Studio,
+              // QR / share, Settings & Privacy). Log out lives in Settings.
+              <button
+                type="button"
+                onClick={() => setIsMenuOpen(true)}
+                aria-label="Open profile menu"
+                aria-haspopup="dialog"
                 className="p-1.5 text-zinc-200 hover:text-white bg-black/40 rounded-lg"
               >
-                <Settings size={18} />
-              </Link>
-            )}
-            <button
-              onClick={() => setShowMenu((v) => !v)}
-              className="p-1 text-zinc-200 hover:text-white bg-black/40 rounded-lg"
-            >
-              <MoreHorizontal size={20} />
-            </button>
-            {showMenu && (
-              <div className="absolute right-0 top-9 bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden z-10 w-40">
-                {isSelf ? (
-                  <button
-                    onClick={() => {
-                      setShowMenu(false);
-                      setShowLogoutConfirm(true);
-                    }}
-                    className="w-full text-left px-4 py-2.5 text-xs text-rose-400 hover:bg-zinc-800"
-                  >
-                    Log out
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => {
-                      setShowMenu(false);
-                      setShowReport(true);
-                    }}
-                    className="w-full text-left px-4 py-2.5 text-xs text-zinc-200 hover:bg-zinc-800"
-                  >
-                    Report
-                  </button>
+                <MenuIcon size={20} />
+              </button>
+            ) : (
+              <>
+                <button
+                  onClick={() => setShowMenu((v) => !v)}
+                  aria-label="More options"
+                  className="p-1 text-zinc-200 hover:text-white bg-black/40 rounded-lg"
+                >
+                  <MoreHorizontal size={20} />
+                </button>
+                {showMenu && (
+                  <div className="absolute right-0 top-9 bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden z-10 w-40">
+                    <button
+                      onClick={() => {
+                        setShowMenu(false);
+                        setShowReport(true);
+                      }}
+                      className="w-full text-left px-4 py-2.5 text-xs text-zinc-200 hover:bg-zinc-800"
+                    >
+                      Report
+                    </button>
+                  </div>
                 )}
-              </div>
+              </>
             )}
           </div>
         </div>
@@ -294,23 +279,28 @@ export default function ProfilePage({ params }) {
           </div>
         )}
 
-        {/* Secondary Action Row: Settings & Menu (self only) */}
+        {/* Own-profile actions: Settings goes straight to /settings; Menu opens the
+            slide-up drawer (Wallet, Studio, QR / share, Settings & Privacy). */}
         {isSelf && (
           <div className="grid grid-cols-2 gap-2 mb-5">
-            <Link
-              href="/settings"
-              className="flex items-center justify-center gap-2 py-2 rounded-xl bg-zinc-900/90 border border-zinc-800 text-zinc-200 text-xs font-semibold hover:bg-zinc-800 transition-all"
+            <button
+              type="button"
+              onClick={() => router.push('/settings')}
+              className="flex items-center justify-center gap-2 py-2 rounded-xl bg-neutral-900/90 border border-neutral-800 text-zinc-200 text-xs font-semibold hover:bg-neutral-800 transition-all"
             >
-              <Settings size={14} className="text-amber-500" />
+              <span aria-hidden="true">⚙️</span>
               <span>Settings</span>
-            </Link>
-            <Link
-              href="/menu"
-              className="flex items-center justify-center gap-2 py-2 rounded-xl bg-zinc-900/90 border border-zinc-800 text-zinc-200 text-xs font-semibold hover:bg-zinc-800 transition-all"
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsMenuOpen(true)}
+              aria-haspopup="dialog"
+              aria-expanded={isMenuOpen}
+              className="flex items-center justify-center gap-2 py-2 rounded-xl bg-neutral-900/90 border border-neutral-800 text-zinc-200 text-xs font-semibold hover:bg-neutral-800 transition-all"
             >
-              <MenuIcon size={14} className="text-amber-500" />
+              <MenuIcon size={14} className="text-amber-500" aria-hidden="true" />
               <span>Menu</span>
-            </Link>
+            </button>
           </div>
         )}
 
@@ -413,15 +403,7 @@ export default function ProfilePage({ params }) {
         <ReportModal targetType="user" targetId={user.id} onClose={() => setShowReport(false)} />
       )}
 
-      {showLogoutConfirm && (
-        <ConfirmModal
-          title="Log out?"
-          message="You'll need to sign back in to access your account."
-          confirmLabel="Log out"
-          onConfirm={confirmLogout}
-          onCancel={() => setShowLogoutConfirm(false)}
-        />
-      )}
+      {isSelf && <ProfileDrawer open={isMenuOpen} onClose={closeDrawer} user={user} />}
     </div>
   );
 }
