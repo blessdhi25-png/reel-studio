@@ -1,125 +1,280 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Bell, ChevronRight, KeyRound, Lock, Mail, ShieldCheck, User } from 'lucide-react';
-import { useStaffAccess } from '../../hooks/useStaffAccess';
+import { api } from '@/lib/api';
+import { useAuth } from '@/context/AuthContext';
+import { useToast } from '@/context/ToastContext';
+import { useStaffAccess } from '@/hooks/useStaffAccess';
+import { usePref } from '@/lib/settingsPrefs';
+import { clearCachedMedia, formatBytes, getCachedMediaBytes, isCacheSupported } from '@/lib/storageCache';
+import { dailyAverageSeconds, formatDuration, readUsage, weekUsage } from '@/lib/screenTime';
+import ConfirmModal from '@/components/ConfirmModal';
+import {
+  Segmented,
+  SettingsBlock,
+  SettingsGroup,
+  SettingsPage,
+  SettingsRow,
+  ToggleRow,
+  VerifiedBadge,
+} from '@/components/settings/SettingsUI';
 
-const ROW =
-  'flex items-center justify-between p-4 bg-neutral-900 hover:bg-neutral-800/80 rounded-xl transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500';
+// Values match the backend enum on User.messagePrivacy / commentPrivacy.
+const AUDIENCE_OPTIONS = [
+  { value: 'everyone', label: 'Everyone' },
+  { value: 'followers', label: 'Followers' },
+  { value: 'none', label: 'Nobody' },
+];
 
-function IconBadge({ children, gold = false }) {
-  return (
-    <span
-      className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
-        gold ? 'bg-amber-500/15 text-amber-400' : 'bg-neutral-800 text-neutral-200'
-      }`}
-    >
-      {children}
-    </span>
-  );
-}
-
-// A tappable settings row. `subtitle` is optional secondary text.
-function SettingsLink({ href, icon, label, subtitle, gold = false }) {
-  return (
-    <a href={href} className={ROW}>
-      <span className="flex items-center gap-3 min-w-0">
-        <IconBadge gold={gold}>{icon}</IconBadge>
-        <span className="min-w-0">
-          <span className={`block text-base font-semibold ${gold ? 'text-amber-400' : 'text-white'}`}>{label}</span>
-          {subtitle && <span className="block text-xs text-neutral-400 mt-0.5 truncate">{subtitle}</span>}
-        </span>
-      </span>
-      <ChevronRight className="w-5 h-5 ml-3 text-neutral-500 shrink-0" strokeWidth={2.5} aria-hidden="true" />
-    </a>
-  );
-}
-
-function Section({ title, children }) {
-  return (
-    <section className="mb-7" aria-label={title}>
-      <h2 className="px-1 mb-2 text-xs font-bold uppercase tracking-wider text-neutral-500">{title}</h2>
-      <div className="space-y-2">{children}</div>
-    </section>
-  );
-}
-
-export default function SettingsPage() {
+export default function SettingsDashboardPage() {
   const router = useRouter();
-  const [user, setUser] = useState(null);
+  const toast = useToast();
+  const { user, ready, isAuthenticated, logout } = useAuth();
+  // Admin visibility is decided by the backend (GET /admin/me re-reads the role
+  // from the database), not by the role string cached in localStorage — which
+  // is also lowercase ('admin') in this codebase, not 'ADMIN'.
   const { isStaff } = useStaffAccess();
 
-  useEffect(() => {
-    const stored = localStorage.getItem('user');
-    if (!stored) {
-      router.push('/login');
-      return;
-    }
-    setUser(JSON.parse(stored));
-  }, [router]);
+  const [me, setMe] = useState(null);
 
-  function logout() {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    router.push('/login');
+  // Privacy (server-backed). `null` until loaded so controls don't flash defaults.
+  const [privacy, setPrivacy] = useState(null);
+  const [privacyError, setPrivacyError] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // Device-local preferences (see lib/settingsPrefs.js).
+  const [twoStep] = usePref('twoStep');
+  const [watermark, setWatermark] = usePref('watermark');
+  const [dataSaver, setDataSaver] = usePref('dataSaver');
+
+  // Storage & cache
+  const [cacheBytes, setCacheBytes] = useState(null);
+  const [clearing, setClearing] = useState(false);
+
+  // Screen-time summary for the Wellbeing row
+  const [avgSeconds, setAvgSeconds] = useState(null);
+
+  const [confirmLogout, setConfirmLogout] = useState(false);
+
+  useEffect(() => {
+    if (ready && !isAuthenticated) router.replace('/login');
+  }, [ready, isAuthenticated, router]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let cancelled = false;
+    api.getMe().then((d) => !cancelled && setMe(d)).catch(() => {});
+    api
+      .getPrivacySettings()
+      .then((d) => !cancelled && setPrivacy({
+        isPrivate: !!d.isPrivate,
+        messagePrivacy: d.messagePrivacy || 'followers',
+        commentPrivacy: d.commentPrivacy || 'everyone',
+      }))
+      .catch(() => !cancelled && setPrivacyError(true));
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated]);
+
+  const refreshCache = useCallback(() => {
+    if (!isCacheSupported()) return setCacheBytes(0);
+    getCachedMediaBytes().then(setCacheBytes).catch(() => setCacheBytes(0));
+  }, []);
+
+  useEffect(() => {
+    refreshCache();
+    setAvgSeconds(dailyAverageSeconds(weekUsage(readUsage())));
+  }, [refreshCache]);
+
+  // Optimistic save with rollback, so a failed PATCH never leaves the UI lying.
+  async function savePrivacy(partial) {
+    const previous = privacy;
+    setPrivacy({ ...privacy, ...partial });
+    setSaving(true);
+    try {
+      await api.updatePrivacySettings(partial);
+    } catch (err) {
+      setPrivacy(previous);
+      toast.error(err.message || "Couldn't save that setting — try again.");
+    } finally {
+      setSaving(false);
+    }
   }
 
-  if (!user) return null;
+  async function handleClearCache() {
+    setClearing(true);
+    try {
+      await clearCachedMedia();
+      toast.success('Cache cleared');
+    } catch {
+      toast.error("Couldn't clear the cache — try again.");
+    } finally {
+      setClearing(false);
+      refreshCache();
+    }
+  }
+
+  function handleLogout() {
+    setConfirmLogout(false);
+    // AuthContext.logout() clears localStorage, the auth cookies and live state
+    // in one go (a bare localStorage.removeItem leaves the middleware cookie behind).
+    logout();
+    toast.success('Logged out');
+    router.replace('/login');
+  }
+
+  if (!ready || !isAuthenticated || !user) return null;
+
+  const email = me?.email ?? user.email;
+  const verified = me?.emailVerified ?? user.emailVerified;
+  const phone = me?.phone ?? user.phone;
+  const privacyLocked = !privacy || saving;
 
   return (
-    <main className="min-h-screen font-sans px-4 pt-6 pb-24 max-w-2xl mx-auto">
-      <a href="/menu" className="inline-flex items-center gap-2 text-sm font-semibold text-neutral-400 hover:text-white transition-colors">
-        <ArrowLeft className="w-4 h-4" strokeWidth={2.5} aria-hidden="true" />
-        Back to menu
-      </a>
-
-      <h1 className="mt-6 mb-8 text-2xl font-extrabold tracking-tight text-white">Settings and privacy</h1>
-
-      <Section title="Account">
-        <SettingsLink href="/profile/edit" icon={<User className="w-5 h-5" strokeWidth={2.25} />} label="Edit profile" />
-        {/* There's no separate email page yet, so this row shows the address
-            without pretending to navigate anywhere. */}
-        <div className="flex items-center gap-3 p-4 bg-neutral-900 rounded-xl">
-          <IconBadge>
-            <Mail className="w-5 h-5" strokeWidth={2.25} />
-          </IconBadge>
-          <span className="min-w-0">
-            <span className="block text-base font-semibold text-white">Account &amp; Email</span>
-            <span className="block text-xs text-neutral-400 mt-0.5 truncate">{user.email}</span>
-          </span>
-        </div>
-        <SettingsLink
-          href="/settings/change-password"
-          icon={<KeyRound className="w-5 h-5" strokeWidth={2.25} />}
-          label="Change password"
+    <SettingsPage title="Settings and Privacy" backHref={user.id ? `/profile/${user.id}` : '/'} backLabel="Profile">
+      {/* ─── 1. Account & Security ─── */}
+      <SettingsGroup title="Account & Security">
+        <SettingsRow
+          href="/settings/account"
+          icon="👤"
+          title="Account Details"
+          subtitle={[email, phone].filter(Boolean).join(' · ') || 'Email, phone & verification'}
+          right={verified != null && <VerifiedBadge verified={verified} />}
         />
-      </Section>
-
-      <Section title="Preferences">
-        <SettingsLink href="/settings/privacy" icon={<Lock className="w-5 h-5" strokeWidth={2.25} />} label="Privacy" />
-        <SettingsLink href="/notifications" icon={<Bell className="w-5 h-5" strokeWidth={2.25} />} label="Notifications" />
-      </Section>
-
-      {isStaff && (
-        <Section title="Management">
-          <SettingsLink
+        <SettingsRow
+          href="/settings/security"
+          icon="🔐"
+          title="Security & Permissions"
+          subtitle={`2-Step Verification ${twoStep ? 'on' : 'off'} · Active devices`}
+        />
+        {isStaff && (
+          <SettingsRow
             href="/admin"
-            gold
-            icon={<ShieldCheck className="w-5 h-5" strokeWidth={2.25} />}
-            label="Admin Dashboard"
+            icon="🛡️"
+            title="Admin Console"
             subtitle="Moderation, users & reports"
+            tone="amber"
           />
-        </Section>
-      )}
+        )}
+      </SettingsGroup>
+
+      {/* ─── 2. Privacy & Interactions ─── */}
+      <SettingsGroup
+        title="Privacy & Interactions"
+        footer={privacyError ? "Couldn't load your privacy settings. Reload the page to try again." : undefined}
+      >
+        <ToggleRow
+          icon="🔒"
+          title="Private Profile"
+          subtitle="Only followers can see your videos"
+          checked={!!privacy?.isPrivate}
+          disabled={privacyLocked}
+          onChange={(next) => savePrivacy({ isPrivate: next })}
+        />
+        <SettingsBlock icon="💬" title="Comments & Direct Messages" subtitle="Choose who can interact with you">
+          <div className="space-y-3">
+            <div>
+              <p className="font-sans font-bold text-[11px] uppercase tracking-wide text-neutral-500 mb-1.5">
+                Who can comment
+              </p>
+              <Segmented
+                label="Who can comment on your videos"
+                options={AUDIENCE_OPTIONS}
+                value={privacy?.commentPrivacy}
+                disabled={privacyLocked}
+                onChange={(value) => savePrivacy({ commentPrivacy: value })}
+              />
+            </div>
+            <div>
+              <p className="font-sans font-bold text-[11px] uppercase tracking-wide text-neutral-500 mb-1.5">
+                Who can message you
+              </p>
+              <Segmented
+                label="Who can send you direct messages"
+                options={AUDIENCE_OPTIONS}
+                value={privacy?.messagePrivacy}
+                disabled={privacyLocked}
+                onChange={(value) => savePrivacy({ messagePrivacy: value })}
+              />
+            </div>
+          </div>
+        </SettingsBlock>
+        <ToggleRow
+          icon="💧"
+          title="Video Downloads & Watermarking"
+          subtitle={watermark ? 'Exported clips include the ClipPulse watermark' : 'Exported clips are saved without a watermark'}
+          checked={watermark}
+          onChange={setWatermark}
+        />
+        <SettingsRow href="/settings/privacy" icon="🚫" title="Blocked Accounts" subtitle="Manage who you've blocked" />
+      </SettingsGroup>
+
+      {/* ─── 3. App Preferences & Performance ─── */}
+      <SettingsGroup
+        title="App Preferences & Performance"
+        footer="Data Saver caps streaming quality on mobile data for adaptive (HLS) videos. These preferences are saved on this device."
+      >
+        <ToggleRow
+          icon="📶"
+          title="Data Saver Mode"
+          subtitle="Lower video resolution on mobile networks"
+          checked={dataSaver}
+          onChange={setDataSaver}
+        />
+        <SettingsRow
+          icon="🗂️"
+          title="Storage & Cache"
+          subtitle={cacheBytes == null ? 'Calculating…' : `${formatBytes(cacheBytes)} of cached media`}
+          chevron={false}
+          right={
+            <button
+              type="button"
+              onClick={handleClearCache}
+              disabled={clearing || !cacheBytes}
+              className="shrink-0 px-3 py-1.5 rounded-xl bg-neutral-800 text-white font-sans font-bold text-xs hover:bg-neutral-700 active:bg-neutral-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {clearing ? 'Clearing…' : 'Clear Cache'}
+            </button>
+          }
+        />
+      </SettingsGroup>
+
+      {/* ─── 4. Pulse Wellbeing ─── */}
+      <SettingsGroup title="Pulse Wellbeing">
+        <SettingsRow
+          href="/settings/wellbeing"
+          icon="⏱️"
+          title="Screen Time & Activity"
+          subtitle={avgSeconds == null ? 'Usage this week' : `Daily average ${formatDuration(avgSeconds)}`}
+        />
+      </SettingsGroup>
+
+      {/* ─── 5. Platform Information ─── */}
+      <SettingsGroup title="Platform Information">
+        <SettingsRow href="/legal/terms" icon="📄" title="Terms of Service" />
+        <SettingsRow href="/legal/privacy" icon="🛡️" title="Privacy Policy" />
+        <SettingsRow href="/legal/guidelines" icon="🤝" title="Community Guidelines" />
+      </SettingsGroup>
 
       <button
         type="button"
-        onClick={logout}
-        className="w-full bg-red-500/10 text-red-500 hover:bg-red-500/20 font-bold py-3.5 rounded-xl border border-red-500/20 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+        onClick={() => setConfirmLogout(true)}
+        className="w-full bg-red-500/10 text-red-500 font-sans font-bold text-sm border border-red-500/20 py-3.5 rounded-2xl hover:bg-red-500/15 active:bg-red-500/20 transition-colors"
       >
-        Log out
+        Log Out
       </button>
-    </main>
+
+      {confirmLogout && (
+        <ConfirmModal
+          title="Log out of ClipPulse?"
+          message="You'll need to sign in again to access your account."
+          confirmLabel="Log Out"
+          onConfirm={handleLogout}
+          onCancel={() => setConfirmLogout(false)}
+        />
+      )}
+    </SettingsPage>
   );
 }
