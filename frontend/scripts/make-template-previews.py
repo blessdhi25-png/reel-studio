@@ -30,6 +30,11 @@ LOOKS = [
     ("tp10", (3.0, 1.5, 4.8), (0.7, 1.9), 55),
     ("tp11", (2.6, 5.6, 0.8), (1.3, 1.2), 65),
     ("tp12", (1.8, 1.7, 1.6), (0.6, 0.9), 40),
+    # Generic loops used when a template has no preview of its own (see
+    # resolveTemplatePreview in src/lib/templates.js).
+    ("fallback-1", (0.4, 2.1, 3.9), (1.0, 1.1), 45),
+    ("fallback-2", (3.3, 0.8, 5.0), (0.8, 1.5), 50),
+    ("fallback-3", (5.2, 3.1, 1.2), (1.5, 0.9), 45),
 ]
 
 
