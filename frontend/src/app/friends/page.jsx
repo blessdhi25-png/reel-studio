@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { ArrowLeft } from 'lucide-react';
 import { api } from '../../lib/api';
 import { LoadingSpinner } from '../../components/LoadingScreen';
 
@@ -15,6 +16,57 @@ function abbreviate(n) {
   if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
   if (num >= 1_000) return `${(num / 1_000).toFixed(1).replace(/\.0$/, '')}K`;
   return String(num);
+}
+
+// "just now", "5m ago", "3h ago", "2d ago", then a short date. `now` comes from
+// a ticking clock in the page, so timestamps stay current while it's open.
+function timeAgo(iso, now) {
+  const t = new Date(iso).getTime();
+  if (!iso || Number.isNaN(t)) return '';
+  const sec = Math.max(0, Math.floor((now - t) / 1000));
+  if (sec < 45) return 'just now';
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${Math.max(1, min)}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.floor(hr / 24);
+  if (day < 7) return `${day}d ago`;
+  return new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+// Segmented control with a pill that slides to the active tab.
+function TabPills({ tabs, value, onChange }) {
+  const index = Math.max(0, tabs.findIndex((t) => t.value === value));
+  return (
+    <div
+      role="tablist"
+      aria-label="Friends sections"
+      className="relative grid grid-cols-3 w-full sm:w-96 bg-neutral-900 border border-neutral-800 rounded-full p-1"
+    >
+      <span
+        aria-hidden="true"
+        className="absolute top-1 bottom-1 left-1 rounded-full bg-amber-500 shadow-md transition-transform duration-300 ease-out motion-reduce:transition-none"
+        style={{ width: 'calc((100% - 0.5rem) / 3)', transform: `translateX(${index * 100}%)` }}
+      />
+      {tabs.map((t) => {
+        const active = t.value === value;
+        return (
+          <button
+            key={t.value}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => onChange(t.value)}
+            className={`relative z-10 py-2 rounded-full text-[13px] sm:text-sm whitespace-nowrap transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-white ${
+              active ? 'text-black font-bold' : 'text-neutral-400 font-semibold hover:text-white'
+            }`}
+          >
+            {t.label}
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 function HeartIcon({ filled }) {
@@ -47,73 +99,104 @@ function SearchIcon() {
   );
 }
 
-function FriendVideoCard({ video, onToast }) {
+function FriendVideoCard({ video, now, onToast }) {
   const [liked, setLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(Number(video.likeCount) || 0);
+  const creatorId = video.user?.id ?? video.userId;
+  const username = video.user?.username;
+  const watchHref = `/?video=${video.id}`;
 
-  async function toggleLike(e) {
-    e.preventDefault();
+  async function toggleLike() {
     if (!localStorage.getItem('token')) {
       window.location.href = '/login';
       return;
     }
-    setLiked((prev) => !prev);
-    setLikeCount((c) => (liked ? c - 1 : c + 1));
+    const was = liked;
+    setLiked(!was);
+    setLikeCount((c) => (was ? c - 1 : c + 1));
     try {
-      liked ? await api.unlikeVideo(video.id) : await api.likeVideo(video.id);
+      was ? await api.unlikeVideo(video.id) : await api.likeVideo(video.id);
     } catch {
-      setLiked((prev) => !prev);
-      setLikeCount((c) => (liked ? c + 1 : c - 1));
+      setLiked(was);
+      setLikeCount((c) => (was ? c + 1 : c - 1));
     }
   }
 
-  function share(e) {
-    e.preventDefault();
+  function share() {
     navigator.clipboard
-      .writeText(`${window.location.origin}/?video=${video.id}`)
+      .writeText(`${window.location.origin}${watchHref}`)
       .then(() => onToast('Link copied'))
       .catch(() => onToast('Could not copy link'));
   }
 
+  const posted = timeAgo(video.createdAt, now);
+
+  // Not one big link: avatar, caption and the action buttons are separate
+  // targets, so nothing interactive is nested inside another link.
   return (
-    <a
-      href={`/?video=${video.id}`}
-      className="flex gap-4 bg-zinc-900/80 border border-zinc-800 rounded-2xl p-4 hover:border-zinc-700 transition-all"
-    >
-      <span className="w-20 h-28 shrink-0 rounded-xl overflow-hidden bg-zinc-800 relative">
+    <article className="flex gap-4 bg-neutral-900/90 rounded-2xl p-4 border border-neutral-800 shadow-lg">
+      <a
+        href={watchHref}
+        aria-label="Watch video"
+        className="w-20 h-28 shrink-0 rounded-xl overflow-hidden bg-neutral-800"
+      >
         {video.thumbnailUrl ? (
           <img src={video.thumbnailUrl} alt="" className="w-full h-full object-cover" />
         ) : video.videoUrl ? (
           <video src={video.videoUrl} muted playsInline preload="metadata" className="w-full h-full object-cover" />
         ) : null}
-      </span>
+      </a>
 
       <div className="min-w-0 flex-1 flex flex-col">
-        <div className="flex items-center gap-2 mb-1">
-          <span className="w-6 h-6 rounded-full overflow-hidden bg-zinc-800 shrink-0 flex items-center justify-center font-display text-[10px] text-amber-400">
+        <div className="flex items-center gap-2 mb-1.5">
+          <a
+            href={`/profile/${creatorId}`}
+            aria-label={`View ${username ? `@${username}` : 'creator'}’s profile`}
+            className="w-8 h-8 rounded-full overflow-hidden bg-neutral-800 shrink-0 flex items-center justify-center text-xs font-bold text-amber-400 ring-1 ring-neutral-700 hover:ring-amber-500 transition-shadow"
+          >
             {video.user?.avatarUrl ? (
               <img src={video.user.avatarUrl} alt="" className="w-full h-full object-cover" />
             ) : (
-              video.user?.username?.[0]?.toUpperCase()
+              username?.[0]?.toUpperCase()
             )}
-          </span>
-          <span className="font-body text-xs text-zinc-300 truncate">@{video.user?.username}</span>
+          </a>
+          <a href={`/profile/${creatorId}`} className="min-w-0 flex-1 text-sm font-semibold text-white truncate hover:underline">
+            @{username}
+          </a>
+          {posted && (
+            <time
+              dateTime={new Date(video.createdAt).toISOString()}
+              title={new Date(video.createdAt).toLocaleString()}
+              className="text-xs text-neutral-500 shrink-0"
+            >
+              {posted}
+            </time>
+          )}
         </div>
-        <p className="font-body text-sm text-white line-clamp-2 flex-1">{video.caption || '(no caption)'}</p>
 
-        <div className="flex items-center gap-4 mt-2">
-          <button onClick={toggleLike} className={`flex items-center gap-1 text-xs font-semibold ${liked ? 'text-amber-400' : 'text-zinc-400'}`}>
+        <a href={watchHref} className="text-sm text-neutral-100 line-clamp-2 flex-1">
+          {video.caption || '(no caption)'}
+        </a>
+
+        <div className="flex items-center gap-5 mt-2">
+          <button
+            type="button"
+            onClick={toggleLike}
+            aria-pressed={liked}
+            aria-label={liked ? 'Unlike' : 'Like'}
+            className={`flex items-center gap-1.5 text-xs font-semibold transition-colors ${liked ? 'text-amber-400' : 'text-neutral-400 hover:text-white'}`}
+          >
             <HeartIcon filled={liked} /> {abbreviate(likeCount)}
           </button>
-          <span className="flex items-center gap-1 text-xs font-semibold text-zinc-400">
+          <a href={watchHref} aria-label="Comments" className="flex items-center gap-1.5 text-xs font-semibold text-neutral-400 hover:text-white">
             <CommentIcon /> {abbreviate(video.commentCount)}
-          </span>
-          <button onClick={share} className="flex items-center gap-1 text-xs font-semibold text-zinc-400 hover:text-white">
+          </a>
+          <button type="button" onClick={share} className="flex items-center gap-1.5 text-xs font-semibold text-neutral-400 hover:text-white">
             <ShareIcon /> Share
           </button>
         </div>
       </div>
-    </a>
+    </article>
   );
 }
 
@@ -186,6 +269,12 @@ export default function FriendsPage() {
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState(null);
   const [followBusy, setFollowBusy] = useState(new Set());
+  // Ticks once a minute so "5m ago" labels stay current while the page is open.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(t);
+  }, []);
 
   function flashToast(msg) {
     setToast(msg);
@@ -260,27 +349,17 @@ export default function FriendsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 max-w-6xl mx-auto p-6 md:p-8">
         {/* ── Header ── */}
         <div className="lg:col-span-12 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h1 className="font-display text-3xl text-white tracking-wide">Friends &amp; Activity Hub</h1>
-            <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-1 flex gap-1 w-fit mt-4">
-              {TABS.map((t) => (
-                <button
-                  key={t.value}
-                  onClick={() => setTab(t.value)}
-                  className={`font-mono text-[11px] uppercase tracking-widest px-3 py-1.5 rounded-lg transition-colors ${
-                    tab === t.value ? 'bg-amber-500 text-black font-bold' : 'text-zinc-400 hover:text-white'
-                  }`}
-                >
-                  {t.label}
-                </button>
-              ))}
+          <div className="min-w-0">
+            <h1 className="font-sans text-2xl font-extrabold tracking-tight text-white">Friends &amp; Activity Hub</h1>
+            <div className="mt-4">
+              <TabPills tabs={TABS} value={tab} onChange={setTab} />
             </div>
           </div>
           <a
             href="/"
-            className="flex items-center gap-2 text-xs font-semibold text-zinc-400 hover:text-white bg-zinc-900 border border-zinc-800 px-3 py-1.5 rounded-xl transition-all self-start"
+            className="flex items-center gap-2 text-sm font-semibold text-neutral-300 hover:text-white bg-neutral-900 border border-neutral-800 px-3.5 py-2 rounded-full transition-colors self-start"
           >
-            ← Back to feed
+            <ArrowLeft className="w-4 h-4" strokeWidth={2.5} aria-hidden="true" /> Back to feed
           </a>
         </div>
 
@@ -333,7 +412,7 @@ export default function FriendsPage() {
             feedForTab.length > 0 ? (
               <div className="space-y-3">
                 {feedForTab.map((v) => (
-                  <FriendVideoCard key={v.id} video={v} onToast={flashToast} />
+                  <FriendVideoCard key={v.id} video={v} now={now} onToast={flashToast} />
                 ))}
               </div>
             ) : (
