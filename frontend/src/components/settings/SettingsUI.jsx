@@ -5,11 +5,11 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 // Shared building blocks for the Settings & Privacy architecture. Every
 // settings screen uses these so spacing, typography (font-sans font-bold),
-// chevrons and the bottom-nav clearance (pb-28) stay identical.
+// chevrons and the bottom-nav clearance (pb-36) stay identical.
 
 export function SettingsPage({ title, backHref = '/settings', backLabel = 'Settings', children }) {
   return (
-    <div className="min-h-screen bg-[#0a090e] text-white font-sans pb-28">
+    <div className="min-h-screen bg-[#0a090e] text-white font-sans pb-36">
       <div className="max-w-md mx-auto px-4 pt-4">
         <Link
           href={backHref}
