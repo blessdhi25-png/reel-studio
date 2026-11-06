@@ -204,6 +204,11 @@ export const api = {
   createCommunity: (data) => request('/communities', { method: 'POST', body: data }),
   updateCommunity: (id, data) => request(`/communities/${id}`, { method: 'PATCH', body: data }),
   deleteCommunity: (id) => request(`/communities/${id}`, { method: 'DELETE' }),
+  // Image uploads — multipart field name is 'image'; each returns { bannerUrl } / { avatarUrl }.
+  uploadCommunityBanner: (id, formData) =>
+    request(`/communities/${id}/banner`, { method: 'POST', body: formData, isForm: true, timeoutMs: 60000 }),
+  uploadCommunityAvatar: (id, formData) =>
+    request(`/communities/${id}/avatar`, { method: 'POST', body: formData, isForm: true, timeoutMs: 60000 }),
   toggleCommunityJoin: (id) => request(`/communities/${id}/join`, { method: 'POST' }),
   setCommunityMemberRole: (id, userId, role) =>
     request(`/communities/${id}/members/${userId}`, { method: 'PATCH', body: { role } }),

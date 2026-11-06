@@ -364,7 +364,8 @@ export default function FeedPage() {
             onMuteToggle={() => setIsMuted((prev) => !prev)}
             onSearchClick={() => router.push('/search')}
           />
-          <div className="relative z-10" style={{ marginTop: '3.75rem' }}>
+          {/* TopHeaderNav is in normal flow now (sticky), so the stories bar simply follows it — no offset needed. */}
+          <div className="relative z-10">
             <StoriesBar />
           </div>
         </div>

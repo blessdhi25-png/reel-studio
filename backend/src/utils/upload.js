@@ -162,6 +162,27 @@ export const uploadBanner = multer({
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB cap
 });
 
+// Community banner / avatar images. One storage config for both: the route
+// (POST /communities/:id/banner | /avatar) decides which via req.params.kind-style
+// path suffix, so the avatar gets a square crop and the banner a wide limit.
+const communityImageStorage = cloudinaryStorage(async (req) => {
+  const isAvatar = req.path.endsWith('/avatar');
+  return {
+    folder: isAvatar ? 'reel/community-avatars' : 'reel/community-banners',
+    resource_type: 'image',
+    public_id: `${req.params.id}-${Date.now()}`,
+    transformation: isAvatar
+      ? [{ width: 512, height: 512, crop: 'fill', gravity: 'auto' }]
+      : [{ width: 1600, height: 900, crop: 'limit' }],
+  };
+});
+
+export const uploadCommunityImage = multer({
+  storage: communityImageStorage,
+  fileFilter: imageFileFilter,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB cap
+});
+
 // Audio tracks distributed by verified artists. Cloudinary has no distinct
 // "audio" resource type — 'video' covers audio-only files too.
 const trackStorage = cloudinaryStorage(async (req) => ({

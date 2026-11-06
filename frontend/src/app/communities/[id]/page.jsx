@@ -1,12 +1,14 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { api } from '../../../lib/api';
 import { useToast } from '../../../context/ToastContext';
 import { LoadingSpinner } from '../../../components/LoadingScreen';
 import VideoCard from '../../../components/VideoCard';
 import { COMMUNITY_CATEGORIES } from '../../../components/CreateCommunityModal';
+import { compressImage } from '../../../lib/imageCompression';
 
 const TABS = [
   { value: 'feed', label: 'Feed' },
@@ -27,6 +29,61 @@ function RoleBadge({ role }) {
     <span className={`font-mono text-[9px] uppercase tracking-widest px-2 py-0.5 rounded-full font-bold shrink-0 ${meta.cls}`}>
       {meta.label}
     </span>
+  );
+}
+
+// Image chooser used for the community banner and avatar in the Edit modal.
+// Picking a file only stages it (preview via an object URL) — nothing is
+// uploaded until "Save Changes", so Cancel really cancels.
+function ImagePicker({ label, shape, src, onPick, onRemove, disabled }) {
+  const inputRef = useRef(null);
+  const isAvatar = shape === 'avatar';
+  return (
+    <div>
+      <p className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 mb-1.5">{label}</p>
+      <div className={`flex gap-3 ${isAvatar ? 'items-center' : 'flex-col'}`}>
+        <div
+          className={`relative overflow-hidden bg-zinc-800 border border-zinc-700 flex items-center justify-center text-zinc-600 shrink-0 ${
+            isAvatar ? 'w-16 h-16 rounded-xl' : 'w-full h-24 rounded-xl'
+          }`}
+        >
+          {src ? <img src={src} alt="" className="w-full h-full object-cover" /> : <span className="text-xs">No image</span>}
+        </div>
+        <div className="flex items-center gap-2">
+          <input
+            ref={inputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            disabled={disabled}
+            aria-label={`Upload ${label.toLowerCase()}`}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = ''; // let the same file be re-picked after a removal
+              if (file) onPick(file);
+            }}
+          />
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => inputRef.current?.click()}
+            className="px-3.5 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-white text-xs font-bold disabled:opacity-50"
+          >
+            {src ? 'Change image' : 'Upload image'}
+          </button>
+          {src && (
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={onRemove}
+              className="px-3 py-2 rounded-xl text-xs font-bold text-rose-400 hover:bg-zinc-800 disabled:opacity-50"
+            >
+              Remove
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -59,7 +116,11 @@ export default function CommunityDetailPage({ params }) {
   const [editName, setEditName] = useState('');
   const [editDescription, setEditDescription] = useState('');
   const [editCategory, setEditCategory] = useState('');
-  const [editBannerUrl, setEditBannerUrl] = useState('');
+  // Staged image changes: { file, previewUrl } for a new pick, or null; the *Removed flags clear an existing image.
+  const [pendingBanner, setPendingBanner] = useState(null);
+  const [pendingAvatar, setPendingAvatar] = useState(null);
+  const [bannerRemoved, setBannerRemoved] = useState(false);
+  const [avatarRemoved, setAvatarRemoved] = useState(false);
   const [editRules, setEditRules] = useState('');
   const [editPrivacy, setEditPrivacy] = useState('public');
   const [editAnnouncement, setEditAnnouncement] = useState('');
@@ -75,7 +136,6 @@ export default function CommunityDetailPage({ params }) {
         setEditName(c.name);
         setEditDescription(c.description || '');
         setEditCategory(c.category || COMMUNITY_CATEGORIES[0]);
-        setEditBannerUrl(c.bannerUrl || '');
         setEditRules(c.rules || '');
         setEditPrivacy(c.privacy);
         setEditAnnouncement(c.pinnedAnnouncement || '');
@@ -130,23 +190,100 @@ export default function CommunityDetailPage({ params }) {
     }
   }
 
+  function pickImage(kind, file) {
+    if (!file.type?.startsWith('image/')) {
+      toast.error('Please choose an image file');
+      return;
+    }
+    const staged = { file, previewUrl: URL.createObjectURL(file) };
+    if (kind === 'banner') {
+      if (pendingBanner) URL.revokeObjectURL(pendingBanner.previewUrl);
+      setPendingBanner(staged);
+      setBannerRemoved(false);
+    } else {
+      if (pendingAvatar) URL.revokeObjectURL(pendingAvatar.previewUrl);
+      setPendingAvatar(staged);
+      setAvatarRemoved(false);
+    }
+  }
+
+  function removeImage(kind) {
+    if (kind === 'banner') {
+      if (pendingBanner) URL.revokeObjectURL(pendingBanner.previewUrl);
+      setPendingBanner(null);
+      setBannerRemoved(true);
+    } else {
+      if (pendingAvatar) URL.revokeObjectURL(pendingAvatar.previewUrl);
+      setPendingAvatar(null);
+      setAvatarRemoved(true);
+    }
+  }
+
+  // Discards every unsaved edit (text fields AND staged images).
+  function closeEditor() {
+    if (pendingBanner) URL.revokeObjectURL(pendingBanner.previewUrl);
+    if (pendingAvatar) URL.revokeObjectURL(pendingAvatar.previewUrl);
+    setPendingBanner(null);
+    setPendingAvatar(null);
+    setBannerRemoved(false);
+    setAvatarRemoved(false);
+    if (community) {
+      setEditName(community.name);
+      setEditDescription(community.description || '');
+      setEditCategory(community.category || COMMUNITY_CATEGORIES[0]);
+      setEditRules(community.rules || '');
+      setEditPrivacy(community.privacy);
+      setEditAnnouncement(community.pinnedAnnouncement || '');
+    }
+    setEditing(false);
+  }
+
+  function handleCreatePost() {
+    if (!localStorage.getItem('token')) {
+      router.push('/login');
+      return;
+    }
+    if (!community.isJoined) {
+      toast.error('Join this community to post in it');
+      return;
+    }
+    router.push(`/upload?community=${community.id}`);
+  }
+
   async function handleSaveEdit(e) {
     e.preventDefault();
     if (!editName.trim() || editBusy) return;
     setEditBusy(true);
     try {
+      // Upload staged images first (the endpoints persist the new URL themselves),
+      // so the PATCH below returns the final bannerUrl / avatarUrl.
+      if (pendingBanner) {
+        const fd = new FormData();
+        fd.append('image', await compressImage(pendingBanner.file, { maxDimension: 1600 }));
+        await api.uploadCommunityBanner(id, fd);
+      }
+      if (pendingAvatar) {
+        const fd = new FormData();
+        fd.append('image', await compressImage(pendingAvatar.file, { maxDimension: 512 }));
+        await api.uploadCommunityAvatar(id, fd);
+      }
       const payload = {
         name: editName.trim(),
         description: editDescription.trim(),
         category: editCategory,
-        bannerUrl: editBannerUrl.trim(),
         rules: editRules.trim(),
         pinnedAnnouncement: editAnnouncement.trim(),
       };
+      if (bannerRemoved && !pendingBanner) payload.bannerUrl = '';
+      if (avatarRemoved && !pendingAvatar) payload.avatarUrl = '';
       if (community.myRole === 'admin') payload.privacy = editPrivacy;
       const updated = await api.updateCommunity(id, payload);
       setCommunity((prev) => ({ ...prev, ...updated }));
       setEditing(false);
+      setPendingBanner(null);
+      setPendingAvatar(null);
+      setBannerRemoved(false);
+      setAvatarRemoved(false);
       toast.success('Community updated');
     } catch (err) {
       toast.error(err.message || 'Could not update community');
@@ -231,20 +368,24 @@ export default function CommunityDetailPage({ params }) {
           <div className="w-full h-full bg-gradient-to-br from-zinc-800 to-zinc-900" />
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-black/20 to-transparent" />
-        <a
+        <Link
           href="/communities"
-          className="absolute top-4 left-4 font-mono text-[10px] uppercase tracking-widest text-white/90 bg-black/40 px-2.5 py-1.5 rounded-full"
+          className="absolute top-4 left-4 z-10 font-extrabold text-white text-sm tracking-wider flex items-center gap-2 bg-neutral-800/60 hover:bg-neutral-800 backdrop-blur-sm px-3.5 py-2 rounded-xl"
         >
-          ← Communities
-        </a>
+          <span aria-hidden="true">←</span> Communities
+        </Link>
       </div>
 
       <div className="max-w-4xl mx-auto px-4 -mt-8 relative">
         <div className="bg-zinc-900 border border-zinc-800 text-white rounded-2xl p-5">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
-              <span className="w-12 h-12 rounded-xl bg-amber-500 flex items-center justify-center text-lg font-black text-black shrink-0">
-                {community.name?.[0]?.toUpperCase()}
+              <span className="w-12 h-12 rounded-xl bg-amber-500 flex items-center justify-center text-lg font-black text-black shrink-0 overflow-hidden">
+                {community.avatarUrl ? (
+                  <img src={community.avatarUrl} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  community.name?.[0]?.toUpperCase()
+                )}
               </span>
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
@@ -285,9 +426,12 @@ export default function CommunityDetailPage({ params }) {
 
           {canModerate && (
             <button
-              onClick={() => setEditing((v) => !v)}
-              className="mt-3 font-mono text-[10px] uppercase tracking-widest text-zinc-400 hover:text-white"
+              type="button"
+              onClick={() => (editing ? closeEditor() : setEditing(true))}
+              aria-expanded={editing}
+              className="mt-3 bg-neutral-800 hover:bg-neutral-700 text-amber-500 font-bold text-xs px-4 py-2 rounded-xl border border-neutral-700 inline-flex items-center gap-2 transition-colors"
             >
+              <span aria-hidden="true">{editing ? '✕' : '✎'}</span>
               {editing ? 'Cancel editing' : 'Edit Community'}
             </button>
           )}
@@ -321,11 +465,21 @@ export default function CommunityDetailPage({ params }) {
                   </button>
                 ))}
               </div>
-              <input
-                value={editBannerUrl}
-                onChange={(e) => setEditBannerUrl(e.target.value)}
-                placeholder="Banner image URL"
-                className="w-full bg-zinc-800/80 border border-zinc-700 text-white placeholder-zinc-500 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-amber-500/50"
+              <ImagePicker
+                label="Banner"
+                shape="banner"
+                disabled={editBusy}
+                src={pendingBanner ? pendingBanner.previewUrl : bannerRemoved ? null : community.bannerUrl}
+                onPick={(file) => pickImage('banner', file)}
+                onRemove={() => removeImage('banner')}
+              />
+              <ImagePicker
+                label="Profile avatar"
+                shape="avatar"
+                disabled={editBusy}
+                src={pendingAvatar ? pendingAvatar.previewUrl : avatarRemoved ? null : community.avatarUrl}
+                onPick={(file) => pickImage('avatar', file)}
+                onRemove={() => removeImage('avatar')}
               />
               <textarea
                 value={editRules}
@@ -405,10 +559,23 @@ export default function CommunityDetailPage({ params }) {
               </div>
             )}
 
+            {/* Posting into private communities isn't supported yet (see backend routes/videos.js). */}
+            {community.privacy === 'public' && (
+              <div className="flex justify-center mb-4">
+                <button
+                  type="button"
+                  onClick={handleCreatePost}
+                  className="bg-amber-500 hover:bg-amber-400 active:scale-95 transition text-black font-bold px-6 py-2.5 rounded-full shadow-lg"
+                >
+                  + Create Post
+                </button>
+              </div>
+            )}
+
             {postsLoading && <LoadingSpinner label="Loading posts…" />}
 
             {!postsLoading && posts.length === 0 && (
-              <div className="text-center py-16">
+              <div className="text-center py-10">
                 <p className="text-zinc-500 text-sm">No posts in this community yet.</p>
               </div>
             )}

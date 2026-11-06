@@ -12,9 +12,40 @@ const router = Router();
 
 // Step 1: client uploads the raw file directly to this endpoint (self-hosted MVP).
 // Later, swap this for a pre-signed S3/MediaConvert URL without changing the contract below.
+// Optional ?communityId= posts the video into that community's own feed.
+// Validated BEFORE multer (the id travels in the query string, not the multipart
+// body) so a rejected request never uploads a multi-hundred-MB file to Cloudinary.
+// Public communities only for now: community videos currently also appear on
+// global surfaces (feed, profiles, search), so posting into a private community
+// would expose it. Lift this once those surfaces filter by community privacy.
+async function resolveCommunityTarget(req, res, next) {
+  try {
+    const { communityId } = req.query;
+    if (!communityId) return next();
+    const community = await prisma.community.findUnique({
+      where: { id: String(communityId) },
+      select: { id: true, privacy: true },
+    });
+    if (!community) return res.status(404).json({ error: 'Community not found' });
+    if (community.privacy !== 'public') {
+      return res.status(403).json({ error: "Posting to private communities isn't supported yet" });
+    }
+    const membership = await prisma.communityMember.findUnique({
+      where: { communityId_userId: { communityId: community.id, userId: req.userId } },
+      select: { userId: true },
+    });
+    if (!membership) return res.status(403).json({ error: 'Join this community to post in it' });
+    req.communityTargetId = community.id;
+    next();
+  } catch (err) {
+    next(err);
+  }
+}
+
 router.post(
   '/',
   requireAuth,
+  resolveCommunityTarget,
   uploadVideoWithThumbnail.fields([
     { name: 'video', maxCount: 1 },
     { name: 'thumbnail', maxCount: 1 },
@@ -70,6 +101,7 @@ router.post(
         caption: caption || '',
         circle: normalizedCircle,
         trackId: validTrackId,
+        communityId: req.communityTargetId || null,
         rawPath: videoFile.path,
         videoUrl: rawUrl,
         thumbnailUrl: thumbnailFile?.path || null,
@@ -77,7 +109,7 @@ router.post(
       },
     });
 
-    res.status(201).json({ id: video.id, status: video.status, circle: video.circle, rawUrl });
+    res.status(201).json({ id: video.id, status: video.status, circle: video.circle, communityId: video.communityId, rawUrl });
   })
 );
 

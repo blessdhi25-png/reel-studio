@@ -255,6 +255,7 @@ model Community {
   category           String?
   privacy            String   @default("public") // 'public' | 'private'
   bannerUrl          String?
+  avatarUrl          String?
   rules              String?
   // A single highlighted box at the top of the community feed — deliberately
   // one field, not a separate announcements table, since the spec calls for

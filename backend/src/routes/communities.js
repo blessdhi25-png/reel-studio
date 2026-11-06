@@ -2,6 +2,7 @@ import { Router } from 'express';
 import prisma from '../config/db.js';
 import { requireAuth, optionalAuth } from '../middleware/auth.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
+import { uploadCommunityImage } from '../utils/upload.js';
 
 const router = Router();
 
@@ -97,6 +98,7 @@ router.get('/communities', optionalAuth, asyncHandler(async (req, res) => {
         category: c.category,
         privacy: c.privacy,
         bannerUrl: c.bannerUrl,
+        avatarUrl: c.avatarUrl,
         memberCount: c._count.members,
         isJoined: req.userId ? c.members?.length > 0 : false,
         createdAt: c.createdAt,
@@ -175,6 +177,7 @@ router.get('/communities/:id', optionalAuth, asyncHandler(async (req, res) => {
       category: community.category,
       privacy: community.privacy,
       bannerUrl: community.bannerUrl,
+      avatarUrl: community.avatarUrl,
       rules: community.rules,
       pinnedAnnouncement: community.pinnedAnnouncement,
       createdBy: community.createdBy,
@@ -198,7 +201,7 @@ router.patch('/communities/:id', requireAuth, asyncHandler(async (req, res) => {
       return res.status(403).json({ error: 'Only admins and moderators can edit this community' });
     }
 
-    const { name, description, category, privacy, bannerUrl, rules, pinnedAnnouncement } = req.body;
+    const { name, description, category, privacy, bannerUrl, avatarUrl, rules, pinnedAnnouncement } = req.body;
     const data = {};
     if (name !== undefined) {
       if (!name.trim()) return res.status(400).json({ error: 'name cannot be empty' });
@@ -207,6 +210,7 @@ router.patch('/communities/:id', requireAuth, asyncHandler(async (req, res) => {
     if (description !== undefined) data.description = description?.trim() || null;
     if (category !== undefined) data.category = category || null;
     if (bannerUrl !== undefined) data.bannerUrl = bannerUrl?.trim() || null;
+    if (avatarUrl !== undefined) data.avatarUrl = avatarUrl?.trim() || null;
     if (rules !== undefined) data.rules = rules?.trim() || null;
     if (pinnedAnnouncement !== undefined) data.pinnedAnnouncement = pinnedAnnouncement?.trim() || null;
     if (privacy !== undefined) {
@@ -229,6 +233,38 @@ router.patch('/communities/:id', requireAuth, asyncHandler(async (req, res) => {
     res.status(500).json({ error: 'Failed to update community' });
   }
 }));
+
+// Banner / avatar image upload. Admins and moderators only — the check runs
+// BEFORE multer so a non-editor can't push files to Cloudinary and then get a 403.
+async function requireCommunityEditor(req, res, next) {
+  try {
+    const membership = await getMembership(req.params.id, req.userId);
+    if (!membership || (membership.role !== 'admin' && membership.role !== 'moderator')) {
+      return res.status(403).json({ error: 'Only admins and moderators can edit this community' });
+    }
+    next();
+  } catch (err) {
+    next(err);
+  }
+}
+
+for (const [kind, field] of [['banner', 'bannerUrl'], ['avatar', 'avatarUrl']]) {
+  router.post(
+    `/communities/:id/${kind}`,
+    requireAuth,
+    requireCommunityEditor,
+    uploadCommunityImage.single('image'),
+    asyncHandler(async (req, res) => {
+      if (!req.file) return res.status(400).json({ error: 'No image uploaded' });
+      // req.file.path is Cloudinary's permanent secure CDN URL (see utils/upload.js).
+      const community = await prisma.community.update({
+        where: { id: req.params.id },
+        data: { [field]: req.file.path },
+      });
+      res.json({ [field]: community[field] });
+    })
+  );
+}
 
 router.delete('/communities/:id', requireAuth, asyncHandler(async (req, res) => {
   try {

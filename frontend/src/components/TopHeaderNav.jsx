@@ -1,5 +1,7 @@
 'use client';
 
+import { useEffect, useRef } from 'react';
+
 // Labels here must match `FILTERS` labels in app/page.jsx exactly
 // (case aside) for entries that should route via handleMobileTabSelect's
 // FILTERS lookup — 'DMs' is the one deliberate exception, handled as an
@@ -7,47 +9,47 @@
 const NAV_TABS = ['All', 'Shorts', 'Communities', 'Collections', 'LIVE', 'DMs'];
 
 export default function TopHeaderNav({ activeTab, setActiveTab, onSearchClick, onMuteToggle, isMuted }) {
+  const activeRef = useRef(null);
+
+  // Keep the selected tab visible when the strip is scrolled (small phones
+  // can't fit all six labels).
+  useEffect(() => {
+    activeRef.current?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+  }, [activeTab]);
+
   return (
-    <header className="fixed top-0 inset-x-0 z-50 flex items-center justify-between px-4 pt-3 pb-6 bg-gradient-to-b from-black/80 via-black/40 to-transparent select-none pointer-events-none">
-      
-      {/* 1. Left Action: App Logo or LIVE Button */}
-      <div className="flex items-center shrink-0 pointer-events-auto">
-        <button
-          onClick={() => setActiveTab('LIVE')}
-          className="flex items-center gap-1.5 min-h-[40px] text-white hover:text-white font-extrabold text-xs bg-black/40 backdrop-blur-md px-3 py-2 rounded-lg border border-white/20 transition-all active:scale-95 drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]"
-        >
-          <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-          <span className="tracking-wider uppercase text-xs">LIVE</span>
-        </button>
-      </div>
-      {/* 2. Center: TikTok-Style Navigation Tabs */}
-      <nav className="flex-1 max-w-[70%] mx-2 overflow-x-auto no-scrollbar pointer-events-auto">
-        <div className="flex items-center justify-center gap-5 px-2">
+    <header className="sticky top-0 z-40 w-full bg-black/90 backdrop-blur-md border-b border-neutral-800/80 px-4 py-3 flex items-center justify-between gap-4 select-none">
+      {/* Tabs — the ONLY scrolling region. min-w-0 lets the flex child shrink below its content
+          width so it scrolls instead of overlapping the search/mute buttons, and items start-align
+          so overflow is reachable (centering clips the first tabs off-screen). */}
+      <nav aria-label="Feed sections" className="flex-1 min-w-0 overflow-x-auto no-scrollbar">
+        <div className="flex items-center justify-start gap-6 w-max">
           {NAV_TABS.map((tab) => {
             const isActive = activeTab === tab;
             return (
               <button
                 key={tab}
+                ref={isActive ? activeRef : undefined}
                 onClick={() => setActiveTab(tab)}
-                className={`relative shrink-0 text-sm md:text-base transition-all duration-200 px-1 py-2 min-h-[40px] ${
-                  isActive
-                    ? 'text-white font-extrabold scale-105 drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]'
-                    : 'text-white/80 hover:text-white font-bold drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]'
+                aria-current={isActive ? 'page' : undefined}
+                className={`relative shrink-0 whitespace-nowrap flex items-center gap-1.5 font-bold text-white text-sm min-h-[40px] px-0.5 transition-opacity ${
+                  isActive ? 'opacity-100' : 'opacity-70 hover:opacity-100'
                 }`}
               >
+                {tab === 'LIVE' && <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" aria-hidden="true" />}
                 {tab}
-                
-                {/* Active Underline Bar */}
+                {/* Active underline */}
                 {isActive && (
-                  <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-6 h-[3px] bg-white rounded-full shadow-[0_1px_2px_rgba(0,0,0,0.6)]" />
+                  <span className="absolute bottom-0 inset-x-0 h-[3px] bg-amber-500 rounded-full" aria-hidden="true" />
                 )}
               </button>
             );
           })}
         </div>
       </nav>
+
       {/* 3. Right Actions: Search & Audio Controls */}
-      <div className="flex items-center gap-1 shrink-0 pointer-events-auto">
+      <div className="flex items-center gap-1 shrink-0">
         <button
           onClick={onSearchClick}
           className="text-white hover:text-white transition-all active:scale-90 p-2 drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]"

@@ -165,7 +165,7 @@ export default function CollectionsHubPage() {
   }, [collections, activeTab]);
 
   return (
-    <main className="min-h-screen bg-zinc-950 px-4 py-8">
+    <main className="min-h-screen bg-zinc-950 px-4 pt-8 pb-36">
       <div className="max-w-5xl mx-auto">
         <div className="flex items-center justify-between mb-5">
           <h1 className="font-display text-2xl text-white tracking-wide">Collections</h1>

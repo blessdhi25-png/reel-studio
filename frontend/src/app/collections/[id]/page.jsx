@@ -285,7 +285,7 @@ export default function CollectionDetailPage({ params }) {
   }
 
   return (
-    <main className="min-h-screen bg-zinc-950 px-4 py-8">
+    <main className="min-h-screen bg-zinc-950 px-4 pt-8 pb-36">
       <div className="max-w-4xl mx-auto">
         <a href="/collections" className="text-zinc-500 hover:text-zinc-300 text-xs font-semibold mb-4 inline-block">
           ← All Collections

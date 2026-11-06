@@ -8,7 +8,6 @@ import CameraRecorder from '@/components/CameraRecorder';
 import AICoPilotDrawer from '@/components/AICoPilotDrawer';
 import SoundPicker from '@/components/SoundPicker';
 import TemplatePicker from '@/components/TemplatePicker';
-import { templateSetup } from '@/lib/templates';
 import { FilterSheet, LensPreview, useLensPreviews } from '@/components/studio/LensPicker';
 import { DEFAULT_FILTER_ID, FILTERS } from '@/lib/cameraFilters';
 
@@ -214,6 +213,9 @@ function UploadPageInner() {
   const [isAiOpen, setIsAiOpen] = useState(false);
 
   const [videoType, setVideoType] = useState('short');
+  // Handoff from a community page's "+ Create Post" (/upload?community=<id>).
+  // Resolved once on mount; the server re-validates membership/privacy on upload.
+  const [communityTarget, setCommunityTarget] = useState(null); // { id, name }
   const [caption, setCaption] = useState('');
   const [circle, setCircle] = useState(null);
 
@@ -307,42 +309,61 @@ function UploadPageInner() {
     setFavoriteEffectIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   }
 
-  // --- Templates ---
+  // --- Templates hub ---
+  const templateFileInputRef = useRef(null);
   const [templateCategory, setTemplateCategory] = useState('For You');
   const [showTemplateSearch, setShowTemplateSearch] = useState(false);
   const [templateSearchQuery, setTemplateSearchQuery] = useState('');
-  // The template currently attached to the recorder: its timing, overlay
-  // effect and sound (see templateSetup in lib/templates.js).
-  const [activeTemplate, setActiveTemplate] = useState(null);
+  const [selectedTemplate, setSelectedTemplate] = useState(null);
+  const [templateClipError, setTemplateClipError] = useState(null);
 
-  // Choosing a template sets the studio up for it, then drops the person on
-  // the camera. Timing is applied by the effect below (the recorder isn't
-  // mounted while the templates tab is open).
-  //
-  // Not done: stitching a multi-clip template together. There's no
-  // composition pipeline behind POST /videos (single-file upload only, see
-  // backend/src/routes/videos.js), so a template's clips are recorded as one
-  // continuous take of the template's total length. The clip count is kept on
-  // activeTemplate for when a stitching step exists.
-  function applyTemplate(template) {
-    const setup = templateSetup(template);
-    setActiveTemplate(setup);
-    setErrorMsg(null);
-    if (EFFECTS.some((e) => e.id === setup.effectId)) setActiveEffectId(setup.effectId);
-    setDurationMode(setup.totalSeconds <= 15 ? '15s' : setup.totalSeconds <= 60 ? '60s' : '10m');
-    if (setup.trackId) {
-      api.getTrack(setup.trackId).then(setSelectedTrack).catch(() => {});
+  function handleTemplateClipsPicked(e) {
+    const files = Array.from(e.target.files || []);
+    e.target.value = ''; // allow re-picking the same file(s) next time
+    if (!files.length || !selectedTemplate) return;
+
+    if (files.length !== selectedTemplate.clipCount) {
+      setTemplateClipError({
+        message: `Select exactly ${selectedTemplate.clipCount} clip${selectedTemplate.clipCount === 1 ? '' : 's'} — you picked ${files.length}.`,
+      });
+      return;
     }
-    setShowTemplateSearch(false);
-    setTemplateSearchQuery('');
-    setPublishTab('post');
+    const first = files[0];
+    if (!first.type.startsWith('video/')) {
+      setTemplateClipError({ message: 'Please choose video files.' });
+      return;
+    }
+
+    if (selectedTemplate.clipCount > 1) {
+      // Stitching multiple clips together (with the template's own timing/
+      // transitions) needs a real video-composition pipeline this app
+      // doesn't have — there's no ffmpeg/concat step behind POST /videos
+      // (see backend/src/routes/videos.js, single-file upload only).
+      // Rather than silently proceed with only the first clip, this stops
+      // and asks explicitly, so nobody thinks their other N-1 clips got
+      // used when they didn't.
+      setTemplateClipError({
+        message: `Multi-clip templates aren't stitched together automatically yet. Continue with just your first clip? The other ${
+          files.length - 1
+        } won't be included.`,
+        pendingFile: first,
+      });
+      return;
+    }
+
+    setTemplateClipError(null);
+    proceedWithTemplateClip(first);
   }
 
-  useEffect(() => {
-    if (publishTab === 'post' && !file && activeTemplate) {
-      cameraRef.current?.setDurationSeconds(activeTemplate.totalSeconds);
-    }
-  }, [publishTab, file, activeTemplate]);
+  function proceedWithTemplateClip(clipFile) {
+    setFile(clipFile);
+    setLastPickedFile(clipFile);
+    setCapturedFromCamera(false);
+    setCaption((prev) => (prev.trim() ? prev : selectedTemplate?.title || ''));
+    setSelectedTemplate(null);
+    setTemplateClipError(null);
+    setPublishTab('post');
+  }
 
   useEffect(() => {
     if (!localStorage.getItem('token')) router.push('/login');
@@ -374,6 +395,20 @@ function UploadPageInner() {
         if (!cancelled) setSelectedTrack(track);
       })
       .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const communityId = searchParams.get('community');
+    if (!communityId) return;
+    let cancelled = false;
+    api
+      .getCommunity(communityId)
+      .then((c) => !cancelled && setCommunityTarget({ id: c.id, name: c.name }))
+      .catch(() => {}); // unknown/private community: fall back to a normal upload
     return () => {
       cancelled = true;
     };
@@ -516,7 +551,7 @@ function UploadPageInner() {
     formData.append('allowDownloads', String(allowDownloads));
 
     try {
-      const result = await uploadWithProgress(formData, setUploadProgress, xhrRef);
+      const result = await uploadWithProgress(formData, setUploadProgress, xhrRef, communityTarget?.id);
       setStatus('done');
 
       // Real processing (HLS transcode) happens async on the backend — the
@@ -525,7 +560,8 @@ function UploadPageInner() {
       // entry (using the raw file's own immediately-servable URL from the
       // upload response) lets the feed show it right away instead of
       // waiting; app/page.jsx reads and clears this on mount.
-      if (result?.rawUrl) {
+      // Community posts skip the optimistic main-feed entry — they belong to the community's own feed.
+      if (result?.rawUrl && !communityTarget) {
         const stored = localStorage.getItem('user');
         const me = stored ? JSON.parse(stored) : null;
         sessionStorage.setItem(
@@ -549,7 +585,7 @@ function UploadPageInner() {
           })
         );
       }
-      setTimeout(() => router.push('/'), 600);
+      setTimeout(() => router.push(communityTarget ? `/communities/${communityTarget.id}` : '/'), 600);
     } catch (err) {
       if (err.name === 'AbortError') {
         setStatus(null);
@@ -624,7 +660,6 @@ function UploadPageInner() {
     }
     setErrorMsg(null);
     cameraRef.current?.setDurationSeconds(DURATION_SECONDS[id]);
-    setActiveTemplate((t) => (t ? { ...t, totalSeconds: DURATION_SECONDS[id] } : t));
   }
 
   function handleShutterPress() {
@@ -740,23 +775,6 @@ function UploadPageInner() {
             <TextToolIcon />
           </button>
 
-          {activeTemplate && !isRecording && (
-            <div className="absolute top-[4.5rem] left-1/2 -translate-x-1/2 max-w-[55%] flex items-center gap-1 pl-3 pr-1 h-8 rounded-full bg-black/55 backdrop-blur-md text-white shadow-lg">
-              <span className="truncate text-xs font-bold">{activeTemplate.title}</span>
-              <span className="shrink-0 text-[11px] font-semibold text-white/70">
-                · {activeTemplate.clipCount} clip{activeTemplate.clipCount === 1 ? '' : 's'} · {activeTemplate.totalSeconds}s
-              </span>
-              <button
-                type="button"
-                onClick={() => setActiveTemplate(null)}
-                aria-label="Remove template"
-                className="shrink-0 w-6 h-6 flex items-center justify-center rounded-full text-white/80 hover:text-white"
-              >
-                <XIcon className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          )}
-
           {countdownValue !== null && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
               <span className="text-white text-8xl font-display drop-shadow-[0_4px_12px_rgba(0,0,0,0.8)]">
@@ -787,11 +805,10 @@ function UploadPageInner() {
             onOpenFavorites={() => setShowFavoritesDrawer(true)}
           />
 
-          {/* cameraError is shown by the recorder's own "Enable Camera Access" overlay. */}
-          {(errorMsg || cameraRecordError) && (
+          {(errorMsg || cameraError || cameraRecordError) && (
             <div className="absolute bottom-64 inset-x-0 flex justify-center px-6 pointer-events-none">
               <p className="bg-black/80 text-red-400 text-xs px-4 py-2 rounded-full text-center">
-                {errorMsg || cameraRecordError}
+                {errorMsg || cameraError || cameraRecordError}
               </p>
             </div>
           )}
@@ -819,16 +836,41 @@ function UploadPageInner() {
 
       {/* ---------------- Step 1b: Templates hub (bottom-tab alternative to the camera) ---------------- */}
       {!file && publishTab === 'templates' && (
-        <TemplatePicker
-          onClose={() => setPublishTab('post')}
-          category={templateCategory}
-          setCategory={setTemplateCategory}
-          showSearch={showTemplateSearch}
-          setShowSearch={setShowTemplateSearch}
-          query={templateSearchQuery}
-          setQuery={setTemplateSearchQuery}
-          onSelectTemplate={applyTemplate}
-        />
+        <>
+          <TemplatePicker
+            onClose={() => setPublishTab('post')}
+            category={templateCategory}
+            setCategory={setTemplateCategory}
+            showSearch={showTemplateSearch}
+            setShowSearch={setShowTemplateSearch}
+            query={templateSearchQuery}
+            setQuery={setTemplateSearchQuery}
+            onSelectTemplate={(t) => {
+              setSelectedTemplate(t);
+              setTemplateClipError(null);
+            }}
+          />
+          <input
+            ref={templateFileInputRef}
+            type="file"
+            accept="video/mp4,video/quicktime,video/webm"
+            multiple
+            className="hidden"
+            onChange={handleTemplateClipsPicked}
+          />
+          {selectedTemplate && (
+            <TemplateClipPicker
+              template={selectedTemplate}
+              error={templateClipError}
+              onPickClips={() => templateFileInputRef.current?.click()}
+              onConfirmSingleFallback={proceedWithTemplateClip}
+              onClose={() => {
+                setSelectedTemplate(null);
+                setTemplateClipError(null);
+              }}
+            />
+          )}
+        </>
       )}
 
       {/* ---------------- Step 2: captured/picked — full-screen review ---------------- */}
@@ -1143,6 +1185,47 @@ function FavoritesDrawer({ favoriteIds, activeEffectId, onSelect, onClose }) {
 /* ------------------------------------------------------------------ */
 /* Templates (hub UI lives in components/TemplatePicker.jsx)               */
 /* ------------------------------------------------------------------ */
+
+function TemplateClipPicker({ template, error, onPickClips, onConfirmSingleFallback, onClose }) {
+  return (
+    <div className="absolute inset-0 z-40 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center" onClick={onClose}>
+      <div
+        className="w-full sm:max-w-sm bg-zinc-900 border border-zinc-800 rounded-t-2xl sm:rounded-2xl p-5"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <p className="text-white font-semibold text-base mb-1">Use &quot;{template.title}&quot;</p>
+        <p className="text-zinc-400 text-sm mb-4">
+          Select {template.clipCount} clip{template.clipCount === 1 ? '' : 's'} to fill this template.
+        </p>
+
+        {error && (
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 mb-4">
+            <p className="text-amber-400 text-xs">{error.message}</p>
+            {error.pendingFile && (
+              <div className="flex gap-2 mt-3">
+                <button onClick={onClose} className="flex-1 py-2 rounded-lg text-xs font-semibold text-zinc-300 border border-zinc-700">
+                  Cancel
+                </button>
+                <button
+                  onClick={() => onConfirmSingleFallback(error.pendingFile)}
+                  className="flex-1 py-2 rounded-lg text-xs font-semibold bg-amber-500 text-black"
+                >
+                  Continue with 1 clip
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {!error?.pendingFile && (
+          <button onClick={onPickClips} className="w-full bg-amber-500 hover:bg-amber-400 text-black font-bold py-3 rounded-xl text-sm">
+            Select {template.clipCount} clip{template.clipCount === 1 ? '' : 's'}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function DraggableTextOverlay({ overlay, onPointerDownHandle }) {
   return (
@@ -1516,6 +1599,22 @@ function PublishDrawer({
                 onInsert={handleAiInsert}
                 initialTopic={caption}
               />
+
+              {/* Community target (set by /upload?community=<id>) */}
+              {communityTarget && (
+                <div className="flex items-center justify-between gap-3 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-2.5">
+                  <p className="text-sm text-white truncate">
+                    Posting to <span className="font-bold text-amber-400">{communityTarget.name}</span>
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setCommunityTarget(null)}
+                    className="text-xs font-semibold text-zinc-300 hover:text-white shrink-0"
+                  >
+                    Post normally
+                  </button>
+                </div>
+              )}
 
               {/* Topic circles */}
               <div>
@@ -1902,13 +2001,13 @@ function generateThumbnail(videoFile) {
   });
 }
 
-function uploadWithProgress(formData, onProgress, xhrRef) {
+function uploadWithProgress(formData, onProgress, xhrRef, communityId) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhrRef.current = xhr;
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
 
-    xhr.open('POST', `${API_BASE}/videos`);
+    xhr.open('POST', `${API_BASE}/videos${communityId ? `?communityId=${encodeURIComponent(communityId)}` : ''}`);
     if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
 
     xhr.upload.onprogress = (e) => {
