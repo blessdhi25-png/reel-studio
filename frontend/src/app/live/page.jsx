@@ -385,7 +385,7 @@ function GoLiveModal({ onClose, onStarted }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center md:justify-end bg-black/70 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[60] flex items-end md:items-center justify-center md:justify-end bg-black/70 backdrop-blur-sm">
       <div className="w-full md:w-[440px] md:h-full bg-zinc-950 md:border-l border-zinc-800 rounded-t-3xl md:rounded-none p-6 space-y-5 max-h-[92vh] md:max-h-none overflow-y-auto">
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-extrabold">Go Live</h2>

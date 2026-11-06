@@ -366,7 +366,7 @@ export default function AICoPilotDrawer({ open, onClose, onInsert, initialTopic 
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end">
+    <div className="fixed inset-0 z-[60] flex justify-end">
       {/* Backdrop */}
       <button
         type="button"

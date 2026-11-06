@@ -10,8 +10,7 @@ import {
   disposePreviewRenderer,
   drawLensPreview,
 } from '../lib/beautyRenderer';
-import { DEFAULT_FILTER_ID, getFilter, opsToCss, resolveLook } from '../lib/cameraFilters';
-import { describeCameraError, openCameraStream } from '../lib/cameraStream';
+import { DEFAULT_FILTER_ID, getFilter, resolveLook } from '../lib/cameraFilters';
 
 const DURATIONS = [
   { label: '15s', seconds: 15 },
@@ -170,64 +169,16 @@ function drawBase2D(ctx, video, r, w, h, mirror, look) {
   }
 }
 
-// Effects, text and watermark. Used both by the recording compositor (where
-// they're baked into the file) and by the lightweight preview overlay.
-function paintOverlays(ctx, kind, textOverlay, username, w, h, particles, frame) {
-  const next = drawEffectFrame(ctx, kind, w, h, particles, frame);
-  drawTextOverlay(ctx, textOverlay, w, h);
-  drawWatermark(ctx, username, w, h);
-  return next;
-}
-
-function CameraOffIcon() {
-  return (
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M2 2l20 20" />
-      <path d="M7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-1" />
-      <path d="M10.5 5H15a2 2 0 0 1 2 2v3.5l5-3v9" />
-    </svg>
-  );
-}
-
-// Shown in place of the preview when the camera can't start. The button is a
-// real user gesture, which some browsers need before they'll re-prompt.
-function CameraAccessOverlay({ info, onRetry }) {
-  const canRetry = ['denied', 'busy', 'unknown'].includes(info.kind);
-  return (
-    <div role="alert" className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 px-8 text-center bg-black">
-      <span className="w-14 h-14 rounded-full bg-neutral-800 text-white flex items-center justify-center">
-        <CameraOffIcon />
-      </span>
-      <p className="text-white font-bold text-lg">{info.message}</p>
-      <p className="text-neutral-400 text-sm max-w-xs">{info.hint}</p>
-      {canRetry && (
-        <button
-          type="button"
-          onClick={onRetry}
-          className="mt-2 bg-amber-500 hover:bg-amber-400 text-black font-bold text-sm px-6 py-3 rounded-full active:scale-95 transition-transform focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
-        >
-          Enable Camera Access
-        </button>
-      )}
-    </div>
-  );
-}
-
 const CameraRecorder = forwardRef(function CameraRecorder(
   {
     onCaptured,
     onCancel,
     embedded = false,
-    // `lens` is an id from lib/cameraFilters.js; `retouch` turns skin
-    // smoothing on. Beautify is the default look.
-    //
-    // Two paths, deliberately:
-    //   - Framing the shot: the camera <video> is shown directly with a CSS
-    //     filter (GPU-composited, no per-frame JS). That's the lens's colour
-    //     look only — CSS can't do edge-preserving skin smoothing.
-    //   - Recording: frames go through the WebGL pass (smoothing + look) onto
-    //     a canvas, and MediaRecorder captures that canvas, so the saved file
-    //     has everything baked in. The WebGL pass only runs while recording.
+    // Look applied in real time by the WebGL pass (see lib/beautyRenderer.js)
+    // and therefore baked into every recorded frame — NOT applied as CSS to
+    // a <video> element, which would only affect on-screen display. `lens` is
+    // an id from lib/cameraFilters.js; `retouch` turns skin smoothing on.
+    // Beautify is the default look.
     lens = DEFAULT_FILTER_ID,
     retouch = true,
     aspectFit = 'cover',
@@ -273,13 +224,6 @@ const CameraRecorder = forwardRef(function CameraRecorder(
   const [recording, setRecording] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState(duration);
   const [error, setError] = useState(null);
-  const [errorInfo, setErrorInfo] = useState(null);
-  const [starting, setStarting] = useState(false);
-  const [retryKey, setRetryKey] = useState(0);
-  const [micUnavailable, setMicUnavailable] = useState(false);
-  // True once the recording canvas is actually showing frames; until then the
-  // plain <video> stays on screen so there's never a blank flash.
-  const [canvasLive, setCanvasLive] = useState(false);
   // Separate from `error` (camera/mic access failures, which hide the
   // preview entirely) because this can happen even though the camera
   // preview is working fine — only recording itself is unsupported. Keeping
@@ -327,49 +271,36 @@ const CameraRecorder = forwardRef(function CameraRecorder(
     };
   }, []);
 
-  // --- Camera start-up -------------------------------------------------------
-  // openCameraStream walks a fallback chain (chosen device -> 1280x720 with
-  // mic -> without mic -> anything) so a blocked mic or an over-strict
-  // constraint never costs the person their camera. See lib/cameraStream.js.
   useEffect(() => {
-    if (!ready) return undefined; // wait for device enumeration before opening the real preview stream
+    if (!ready) return; // wait for device enumeration before opening the real preview stream
     let cancelled = false;
 
     async function start() {
       setError(null);
-      setErrorInfo(null);
-      setMicUnavailable(false);
-      setStarting(true);
       streamRef.current?.getTracks().forEach((t) => t.stop());
       try {
-        // Default to the exact selected device (the built-in camera, unless
-        // the person picked something else) so load never silently hands
-        // control to a connected phone/virtual camera. The front/back flip
-        // button is the one deliberate exception: once used, facingMode
-        // takes over until a device is explicitly picked again.
-        const { stream, audio } = await openCameraStream({
-          deviceId: !manualFacingFlip ? selectedDeviceId : '',
-          facingMode,
-        });
+        // Default to the exact selected device (the built-in camera,
+        // unless the person picked something else from the dropdown) so
+        // load never silently hands control to a connected phone/virtual
+        // camera. The front/back flip button is the one deliberate
+        // exception — once used, it takes over via facingMode until a
+        // device is explicitly picked again.
+        const constraints = {
+          video:
+            !manualFacingFlip && selectedDeviceId
+              ? { deviceId: { exact: selectedDeviceId } }
+              : { facingMode },
+          audio: true,
+        };
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
         if (cancelled) {
           stream.getTracks().forEach((t) => t.stop());
           return;
         }
         streamRef.current = stream;
-        setMicUnavailable(!audio);
-        const v = videoRef.current;
-        if (v) {
-          v.srcObject = stream;
-          v.play?.().catch(() => {});
-        }
+        if (videoRef.current) videoRef.current.srcObject = stream;
       } catch (err) {
-        if (cancelled) return;
-        console.warn('[CameraRecorder] camera unavailable:', err?.name, err?.message);
-        const info = describeCameraError(err);
-        setErrorInfo(info);
-        setError(info.message);
-      } finally {
-        if (!cancelled) setStarting(false);
+        setError('Camera access was denied or is unavailable. You can upload a file instead.');
       }
     }
 
@@ -379,22 +310,24 @@ const CameraRecorder = forwardRef(function CameraRecorder(
       streamRef.current?.getTracks().forEach((t) => t.stop());
       clearInterval(timerRef.current);
     };
-  }, [facingMode, manualFacingFlip, selectedDeviceId, ready, retryKey]);
+  }, [facingMode, manualFacingFlip, selectedDeviceId, ready]);
 
-  // If the stream arrived while the <video> wasn't mounted yet (it is
-  // unmounted behind the error overlay), attach it once it is.
-  useEffect(() => {
-    const v = videoRef.current;
-    const stream = streamRef.current;
-    if (v && stream && v.srcObject !== stream) {
-      v.srcObject = stream;
-      v.play?.().catch(() => {});
-    }
-  }, [error, starting, ready]);
-
-  // Values the render loops read each frame. They live in refs rather than
-  // effect dependencies: a dependency would tear the loop down and restart it
-  // (resetting particles and the GL context) on every text drag or keystroke.
+  // --- Canvas compositor: the single source of truth for both what's
+  // displayed AND what gets recorded (see startRecording below, which
+  // captures a stream directly off this canvas).
+  //
+  // Per frame: the camera frame goes through a WebGL pass (skin smoothing +
+  // colour look, see lib/beautyRenderer.js) into an offscreen canvas, which is
+  // copied onto this 2D canvas; effects, text and the watermark are then drawn
+  // on top in 2D. If WebGL is unavailable the base layer falls back to a
+  // plain 2D draw with a CSS filter.
+  //
+  // Frequently-changing props (look/effect/text) are read from refs each
+  // frame instead of being effect dependencies — putting them in the
+  // dependency array would tear down and restart the whole loop (resetting
+  // particle animation state and the GL context) on every keystroke of a text
+  // overlay or every drag move, instead of just picking up the new value on
+  // the next frame. ---
   const lensRef = useRef(lens);
   const retouchRef = useRef(retouch);
   const facingRef = useRef(facingMode);
@@ -403,9 +336,6 @@ const CameraRecorder = forwardRef(function CameraRecorder(
   const textOverlayRef = useRef(textOverlay);
   const aspectFitRef = useRef(aspectFit);
   const usernameRef = useRef('');
-  const compositorRef = useRef(null);
-  const overlayRef = useRef(null);
-  const overlayPaintRef = useRef(null);
   useEffect(() => {
     try {
       const me = JSON.parse(localStorage.getItem('user') || 'null');
@@ -425,7 +355,6 @@ const CameraRecorder = forwardRef(function CameraRecorder(
   }, [facingMode]);
   useEffect(() => {
     recordingRef.current = recording;
-    if (!recording) compositorRef.current?.deactivate();
   }, [recording]);
   useEffect(() => {
     effectKindRef.current = effectKind;
@@ -437,28 +366,22 @@ const CameraRecorder = forwardRef(function CameraRecorder(
     aspectFitRef.current = aspectFit;
   }, [aspectFit]);
 
-  // --- Recording compositor -------------------------------------------------
-  // Set up once the camera is ready but idle: it draws nothing until
-  // startRecording() activates it, so framing a shot costs no per-frame JS or
-  // GPU work. While active, per frame: camera frame -> WebGL pass (skin
-  // smoothing + colour look, lib/beautyRenderer.js) -> this 2D canvas, then
-  // effects/text/watermark on top. MediaRecorder captures this canvas, which
-  // is why every filter ends up in the saved file.
   useEffect(() => {
     if (!ready || error) return undefined;
     const canvas = canvasRef.current;
-    if (!canvas) return undefined;
+    const stage = canvas?.parentElement;
+    if (!canvas || !stage) return undefined;
 
-    // Opaque canvas lets the browser skip alpha compositing.
+    // Opaque canvas: lets the browser skip alpha compositing for the preview.
     const ctx = canvas.getContext('2d', { alpha: false });
-    let renderer = createBeautyRenderer(); // null => plain 2D fallback
+    const renderer = createBeautyRenderer(); // null => 2D fallback
 
-    // Sized from the canvas's own box (it fills the stage). Even dimensions
-    // keep H.264/VP9 encoders happy.
+    // Size follows the stage via ResizeObserver rather than measuring layout
+    // every frame. Even dimensions keep H.264/VP9 encoders happy.
     let w = 0;
     let h = 0;
     const measure = () => {
-      const rect = canvas.getBoundingClientRect();
+      const rect = stage.getBoundingClientRect();
       const nw = Math.max(2, Math.round(rect.width) & ~1);
       const nh = Math.max(2, Math.round(rect.height) & ~1);
       if (nw === w && nh === h) return;
@@ -470,23 +393,24 @@ const CameraRecorder = forwardRef(function CameraRecorder(
     };
     measure();
     const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
-    ro?.observe(canvas);
+    ro?.observe(stage);
 
+    let rafId;
     let particles = [];
     let lastEffectKind = null;
     let frame = 0;
 
     // Texture uploads are the expensive part on phones, and the camera
     // delivers ~30 frames/s while rAF runs at 60, so only re-upload when the
-    // video advanced. The 40ms floor covers browsers that don't update
-    // currentTime reliably for live streams.
+    // video actually advanced. The 40ms floor covers browsers that don't
+    // update currentTime reliably for live streams.
     let lastVideoTime = -1;
     let lastUploadAt = 0;
 
-    // If frames are consistently slow, step the shader down (17-tap -> 9-tap
-    // -> colour only) rather than let the recording stutter. Never steps back
-    // up. Measured from rAF spacing, so a 30Hz-throttled display (e.g. iOS Low
-    // Power Mode) steps down too.
+    // Adaptive quality: if frames are consistently slow, step the shader down
+    // (17-tap -> 9-tap -> grade only) rather than let the recording stutter.
+    // Never steps back up, to avoid flip-flopping. Measured from rAF spacing,
+    // so a 30Hz-throttled display (e.g. iOS Low Power Mode) will also step down.
     let quality = 2;
     let lastTs = 0;
     let slowAcc = 0;
@@ -496,27 +420,9 @@ const CameraRecorder = forwardRef(function CameraRecorder(
     let look = null;
     let lookKey = '';
 
-    // Black-frame safety net. Some GPU/driver combinations accept the WebGL
-    // pass but hand back black frames. Early in a recording we sample the
-    // canvas; if it is black while the camera feed is not, WebGL is switched
-    // off for good and the 2D path takes over, instead of recording black.
-    let glFrames = 0;
-    let probe = null;
-    const meanBrightness = (src) => {
-      if (!probe) {
-        const c = document.createElement('canvas');
-        c.width = 8;
-        c.height = 8;
-        probe = c.getContext('2d', { willReadFrequently: true });
-      }
-      probe.drawImage(src, 0, 0, 8, 8);
-      const d = probe.getImageData(0, 0, 8, 8).data;
-      let sum = 0;
-      for (let i = 0; i < d.length; i += 4) sum += d[i] + d[i + 1] + d[i + 2];
-      return sum / ((d.length / 4) * 3);
-    };
+    function tick(now) {
+      rafId = requestAnimationFrame(tick);
 
-    function draw(now) {
       if (renderer && lastTs && now - lastTs < 100 && document.visibilityState === 'visible') {
         if (warmup > 0) {
           warmup -= 1;
@@ -533,10 +439,10 @@ const CameraRecorder = forwardRef(function CameraRecorder(
       lastTs = now;
 
       const video = videoRef.current;
-      if (!video || video.readyState < 2 || w <= 2) return false;
+      if (!video || video.readyState < 2 || w <= 2) return;
       const vw = video.videoWidth;
       const vh = video.videoHeight;
-      if (!vw || !vh) return false;
+      if (!vw || !vh) return;
 
       const lensDef = getFilter(lensRef.current);
       const retouchOn = !!retouchRef.current;
@@ -556,150 +462,39 @@ const CameraRecorder = forwardRef(function CameraRecorder(
         lastUploadAt = now;
       }
 
-      // 1. Base camera frame: mirrored (selfie view), smoothed and graded.
+      // 1. Base camera frame — mirrored (selfie view), smoothed and graded.
       let drewBase = false;
       if (renderer && renderer.ready) {
         drewBase = renderer.render(video, vw, vh, r, look, { mirror, upload, time: (now / 1000) % 1000 });
-        if (drewBase) {
-          ctx.drawImage(renderer.canvas, 0, 0, w, h);
-          glFrames += 1;
-          if (glFrames === 20 || glFrames === 50 || glFrames === 80) {
-            try {
-              if (meanBrightness(canvas) < 2 && meanBrightness(video) > 8) {
-                console.warn('[CameraRecorder] WebGL produced black frames; falling back to 2D.');
-                renderer.dispose();
-                renderer = null;
-                drewBase = false;
-              }
-            } catch {
-              /* probe is best-effort */
-            }
-          }
-        }
+        if (drewBase) ctx.drawImage(renderer.canvas, 0, 0, w, h);
       }
       if (!drewBase) drawBase2D(ctx, video, r, w, h, mirror, look);
 
-      // 2. Effects, text, watermark — drawn in screen space on top.
+      // 2. Animated effect layer — never mirrored/filtered, drawn in
+      // normal screen space on top of the (already mirrored) frame.
       const currentKind = effectKindRef.current;
       if (currentKind !== lastEffectKind) {
-        particles = []; // switching effects shouldn't carry over stale particles
+        particles = []; // switching effects shouldn't carry over stale particles from the last one
         lastEffectKind = currentKind;
       }
-      particles = paintOverlays(ctx, currentKind, textOverlayRef.current, usernameRef.current, w, h, particles, frame);
+      particles = drawEffectFrame(ctx, currentKind, w, h, particles, frame);
+
+      // 3. Text overlay, topmost.
+      drawTextOverlay(ctx, textOverlayRef.current, w, h);
+
+      // 4. ClipPulse watermark — last, so nothing covers it.
+      drawWatermark(ctx, usernameRef.current, w, h);
+
       frame += 1;
-      return true;
     }
 
-    let rafId = 0;
-    let active = false;
-    let shown = false;
-    function loop(now) {
-      rafId = requestAnimationFrame(loop);
-      if (draw(now) && !shown) {
-        shown = true;
-        setCanvasLive(true);
-      }
-    }
-
-    compositorRef.current = {
-      activate() {
-        if (active) return;
-        active = true;
-        shown = false;
-        lastTs = 0;
-        rafId = requestAnimationFrame(loop);
-      },
-      deactivate() {
-        if (!active) return;
-        active = false;
-        cancelAnimationFrame(rafId);
-        rafId = 0;
-        shown = false;
-        setCanvasLive(false);
-      },
-      // Draws one frame immediately, so the canvas has content before
-      // captureStream() is called on it.
-      drawNow() {
-        measure();
-        return draw(performance.now());
-      },
-    };
-
+    rafId = requestAnimationFrame(tick);
     return () => {
-      compositorRef.current = null;
-      active = false;
       cancelAnimationFrame(rafId);
       ro?.disconnect();
       renderer?.dispose();
     };
   }, [ready, error]);
-
-  // --- Preview overlay --------------------------------------------------------
-  // While framing a shot the camera is the plain <video> (CSS filter). Effects,
-  // text and the watermark are drawn on a transparent canvas above it, so none
-  // of the video pixels pass through JavaScript. It animates only while an
-  // effect is active; otherwise it paints once per change. Hidden while
-  // recording (the recording canvas has all of this baked in already).
-  const animatedOverlay = effectKind !== 'none';
-  useEffect(() => {
-    if (!ready || error) return undefined;
-    const overlay = overlayRef.current;
-    if (!overlay) return undefined;
-    const octx = overlay.getContext('2d');
-
-    let w = 0;
-    let h = 0;
-    let rafId = 0;
-    let particles = [];
-    let frame = 0;
-    let lastKind = null;
-
-    const paint = () => {
-      if (!w || !h) return;
-      octx.clearRect(0, 0, w, h);
-      if (recordingRef.current) return;
-      const kind = effectKindRef.current;
-      if (kind !== lastKind) {
-        particles = [];
-        lastKind = kind;
-      }
-      particles = paintOverlays(octx, kind, textOverlayRef.current, usernameRef.current, w, h, particles, frame);
-      frame += 1;
-    };
-    const measure = () => {
-      const rect = overlay.getBoundingClientRect();
-      const nw = Math.max(2, Math.round(rect.width));
-      const nh = Math.max(2, Math.round(rect.height));
-      if (nw !== w || nh !== h) {
-        w = nw;
-        h = nh;
-        overlay.width = w;
-        overlay.height = h;
-      }
-      paint();
-    };
-    overlayPaintRef.current = paint;
-    measure();
-    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
-    ro?.observe(overlay);
-
-    const loop = () => {
-      rafId = requestAnimationFrame(loop);
-      paint();
-    };
-    if (animatedOverlay && !recording) rafId = requestAnimationFrame(loop);
-
-    return () => {
-      cancelAnimationFrame(rafId);
-      ro?.disconnect();
-      overlayPaintRef.current = null;
-    };
-  }, [ready, error, animatedOverlay, recording]);
-
-  // Repaint (without animating) when text or the effect changes.
-  useEffect(() => {
-    overlayPaintRef.current?.();
-  }, [textOverlay, effectKind, recording]);
 
   function flipCamera() {
     setManualFacingFlip(true); // hand control to the mobile front/back flip
@@ -763,10 +558,6 @@ const CameraRecorder = forwardRef(function CameraRecorder(
     // draws) instead of the raw camera MediaStream. Audio still comes
     // straight from the mic track — canvas.captureStream() only produces
     // video.
-    // Switch the compositor on and draw a frame first, so the canvas has
-    // content (and a size) by the time it's captured.
-    compositorRef.current?.activate();
-    compositorRef.current?.drawNow();
     const canvasStream = canvasRef.current.captureStream(30);
     const audioTrack = streamRef.current.getAudioTracks()[0];
     let audioTracksForRecording = audioTrack ? [audioTrack] : [];
@@ -820,7 +611,6 @@ const CameraRecorder = forwardRef(function CameraRecorder(
     try {
       recorder = new MediaRecorder(combinedStream, { mimeType });
     } catch {
-      compositorRef.current?.deactivate();
       setRecordError('Recording isn\u2019t supported in this browser. Please upload a video file instead.');
       return;
     }
@@ -853,16 +643,15 @@ const CameraRecorder = forwardRef(function CameraRecorder(
     setSecondsLeft(duration);
     onSecondsLeftChange?.(duration);
 
-    // A plain counter rather than doing this inside a setSecondsLeft updater:
-    // updaters run during render and must be pure, so calling the parent's
-    // callback (or stopRecording) from one triggers React's "update a
-    // component while rendering another" warning, and runs twice in StrictMode.
-    let left = duration;
     timerRef.current = setInterval(() => {
-      left = left <= 1 ? 0 : left - 1;
-      setSecondsLeft(left);
-      onSecondsLeftChange?.(left);
-      if (left === 0) stopRecording();
+      setSecondsLeft((s) => {
+        const next = s <= 1 ? 0 : s - 1;
+        onSecondsLeftChange?.(next);
+        if (s <= 1) {
+          stopRecording();
+        }
+        return next;
+      });
     }, 1000);
   }
 
@@ -916,10 +705,6 @@ const CameraRecorder = forwardRef(function CameraRecorder(
     },
   }));
 
-  const lensDef = getFilter(lens);
-  const previewFilter = opsToCss(lensDef.ops) || 'none';
-  const previewVignette = lensDef.vignette || 0;
-
   const recordControls = (
     <>
       <div className="flex justify-center gap-2 mb-6">
@@ -953,7 +738,7 @@ const CameraRecorder = forwardRef(function CameraRecorder(
   );
 
   return (
-    <div className={embedded ? 'relative w-full h-full flex flex-col' : 'fixed inset-0 z-50 bg-ink flex flex-col'}>
+    <div className={embedded ? 'relative w-full h-full flex flex-col' : 'fixed inset-0 z-[60] bg-ink flex flex-col'}>
       {!embedded && (
         <div className="flex items-center justify-between px-6 py-4">
           <button onClick={onCancel} className="text-bone text-2xl leading-none">✕</button>
@@ -979,85 +764,46 @@ const CameraRecorder = forwardRef(function CameraRecorder(
         </div>
       )}
 
-      <div className={embedded ? 'relative flex-1 bg-black overflow-hidden' : 'relative flex-1 bg-black mx-4 rounded-sprocket overflow-hidden'}>
+      <div className={embedded ? 'relative flex-1 bg-ink2 overflow-hidden' : 'relative flex-1 bg-ink2 mx-4 rounded-sprocket overflow-hidden'}>
         {error ? (
-          <CameraAccessOverlay
-            info={errorInfo || describeCameraError(null)}
-            onRetry={() => setRetryKey((k) => k + 1)}
-          />
+          <div className="w-full h-full flex items-center justify-center px-8 text-center">
+            <p className="font-body text-smoke text-sm">{error}</p>
+          </div>
         ) : (
           <>
-            {/* What you see while framing the shot: the camera itself, with
-                the lens's colour look as a CSS filter. That runs on the
-                compositor/GPU with no per-frame JavaScript. (CSS can't do
-                edge-preserving skin smoothing, so Retouch shows up once
-                recording starts and the WebGL canvas takes over.) Kept
-                visible rather than display:none, since some engines
-                throttle decoding of hidden video. */}
-            <video
-              ref={videoRef}
-              autoPlay
-              muted
-              playsInline
-              className={`absolute inset-0 w-full h-full ${aspectFit === 'contain' ? 'object-contain' : 'object-cover'}`}
-              style={{
-                filter: previewFilter,
-                transform: facingMode === 'user' ? 'scaleX(-1)' : undefined,
-                willChange: 'transform, filter',
-                opacity: canvasLive ? 0 : 1,
-              }}
-            />
-            {!canvasLive && previewVignette > 0 && (
-              <div
-                className="absolute inset-0 pointer-events-none"
-                style={{
-                  background: `radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(0,0,0,${previewVignette}) 100%)`,
-                }}
-              />
-            )}
-            {/* Recording canvas: only drawn to while recording; it's what
-                MediaRecorder captures. */}
-            <canvas
-              ref={canvasRef}
-              className="absolute inset-0 block w-full h-full pointer-events-none"
-              style={{ opacity: canvasLive ? 1 : 0 }}
-            />
-            {/* Preview overlay: effects, text and watermark only. */}
-            <canvas
-              ref={overlayRef}
-              className="absolute inset-0 block w-full h-full pointer-events-none"
-              style={{ opacity: canvasLive ? 0 : 1 }}
-            />
-            {/* Selected background track — not display:none, same decode-
-                throttling reason as the video above. loop covers a short
-                track under a longer recording. crossOrigin is required for
-                createMediaElementSource() to read actual samples from a
-                cross-origin URL (Cloudinary); without it the audio graph
-                silently produces zeros and the track never reaches the
-                recording. */}
+            {/* Real source of truth for pixels, kept truly visible (not
+                display:none) rather than just invisible — some engines
+                throttle frame decoding on fully display:none video, which
+                would starve the canvas compositor of fresh frames. 1x1 and
+                clipped is enough to avoid any layout footprint. */}
             <div className="absolute w-px h-px overflow-hidden opacity-0 pointer-events-none">
+              <video ref={videoRef} autoPlay muted playsInline />
+              {/* Selected background track — not display:none for the same
+                  frame-throttling reason as the video above, though audio
+                  playback is far less sensitive to it than video decode is.
+                  loop covers a short track under a longer recording. */}
+              {/* crossOrigin is required for createMediaElementSource() to
+                  read actual audio samples from a cross-origin URL
+                  (Cloudinary). Without it, the browser doesn't throw or
+                  error — the resulting audio graph node just silently
+                  produces zeros, so the mixing code above runs successfully
+                  and the recording completes, but the background track
+                  never actually makes it into the recorded audio. Cloudinary
+                  serves delivered assets with Access-Control-Allow-Origin: *
+                  by default, so this is safe to request. */}
               <audio ref={bgAudioRef} loop crossOrigin="anonymous" />
             </div>
+            <canvas ref={canvasRef} className="block w-full h-full pointer-events-none" />
             {/* Invisible hit-target for dragging the text overlay — the
-                overlay's actual pixels are drawn onto a canvas (and so end
-                up in the recording); this just captures the drag gesture at
-                the same on-screen position. */}
+                overlay's actual pixels are drawn onto the canvas above (and
+                therefore end up in the recording), this just captures the
+                drag gesture at the same on-screen position. */}
             {textOverlay?.content && onTextOverlayPointerDown && (
               <div
                 onPointerDown={onTextOverlayPointerDown}
                 className="absolute -translate-x-1/2 -translate-y-1/2 w-32 h-10 cursor-grab active:cursor-grabbing touch-none"
                 style={{ left: `${textOverlay.x}%`, top: `${textOverlay.y}%` }}
               />
-            )}
-            {starting && (
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <p className="text-white/70 text-sm font-semibold">Starting camera…</p>
-              </div>
-            )}
-            {micUnavailable && !starting && (
-              <p className="absolute top-3 left-1/2 -translate-x-1/2 bg-black/60 text-white/90 text-[11px] font-semibold px-3 py-1 rounded-full pointer-events-none">
-                Mic unavailable. Recording without sound.
-              </p>
             )}
           </>
         )}

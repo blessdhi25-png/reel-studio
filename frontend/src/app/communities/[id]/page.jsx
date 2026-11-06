@@ -359,7 +359,7 @@ export default function CommunityDetailPage({ params }) {
   const isAdmin = community.myRole === 'admin';
 
   return (
-    <main className="min-h-screen bg-zinc-950 pb-36">
+    <main className="min-h-screen bg-zinc-950 pb-40" style={{ paddingBottom: '160px' }}>
       {/* Banner header */}
       <div className="relative w-full h-40 sm:h-56">
         {community.bannerUrl ? (
@@ -429,9 +429,8 @@ export default function CommunityDetailPage({ params }) {
               type="button"
               onClick={() => (editing ? closeEditor() : setEditing(true))}
               aria-expanded={editing}
-              className="mt-3 bg-neutral-800 hover:bg-neutral-700 text-amber-500 font-bold text-xs px-4 py-2 rounded-xl border border-neutral-700 inline-flex items-center gap-2 transition-colors"
+              className="mt-3 px-4 py-2 bg-neutral-800 border border-neutral-700 text-amber-500 font-bold text-xs rounded-xl hover:bg-neutral-700"
             >
-              <span aria-hidden="true">{editing ? '✕' : '✎'}</span>
               {editing ? 'Cancel editing' : 'Edit Community'}
             </button>
           )}
@@ -561,15 +560,13 @@ export default function CommunityDetailPage({ params }) {
 
             {/* Posting into private communities isn't supported yet (see backend routes/videos.js). */}
             {community.privacy === 'public' && (
-              <div className="flex justify-center mb-4">
-                <button
-                  type="button"
-                  onClick={handleCreatePost}
-                  className="bg-amber-500 hover:bg-amber-400 active:scale-95 transition text-black font-bold px-6 py-2.5 rounded-full shadow-lg"
-                >
-                  + Create Post
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={handleCreatePost}
+                className="w-full py-3 my-4 bg-amber-500 hover:bg-amber-400 text-black font-extrabold rounded-xl shadow-lg flex items-center justify-center gap-2"
+              >
+                + Create Post
+              </button>
             )}
 
             {postsLoading && <LoadingSpinner label="Loading posts…" />}

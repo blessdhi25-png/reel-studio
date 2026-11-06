@@ -113,7 +113,7 @@ export default function ProfileDrawer({ open, onClose, user }) {
   const qrSrc = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=0&data=${encodeURIComponent(profileUrl)}`;
 
   return (
-    <div className="fixed inset-0 z-50">
+    <div className="fixed inset-0 z-[60]">
       <div
         className={`absolute inset-0 bg-black/70 transition-opacity duration-300 motion-reduce:transition-none ${
           shown ? 'opacity-100' : 'opacity-0'

@@ -91,17 +91,14 @@ export default function BottomNav() {
   const isActive = (path) => (path === '/' ? pathname === '/' : pathname.startsWith(path));
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-40 pointer-events-none">
-      {/* gradient scrim so icons stay legible over video */}
-      <div className="absolute inset-0 bg-gradient-to-t from-ink via-ink/90 to-transparent h-24 -top-4" />
-      {/* pb combines a base gap with the device's home-indicator/gesture-bar
-          inset, so no button (especially the centered + post button, which
-          sits right where iOS's swipe-up-home gesture lives) ends up in that
-          dead zone where taps get eaten by the OS instead of us. */}
-      <div
-        className="relative pointer-events-auto flex items-end justify-between px-3 pt-2 max-w-md mx-auto"
-        style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
-      >
+    // Solid black bar with a hard top border — no gradient scrim or shadow. The inline
+    // paddingBottom overrides py-2's bottom padding so the bar still grows by the device's
+    // home-indicator inset (otherwise the centred + button sits in the iOS swipe-up dead zone).
+    <nav
+      className="fixed bottom-0 inset-x-0 z-50 bg-black border-t border-neutral-800 py-2"
+      style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}
+    >
+      <div className="flex items-end justify-between px-3 max-w-md mx-auto">
         <NavItem
           label="Home"
           active={isActive('/')}
@@ -148,7 +145,7 @@ function NavItem({ label, icon, active, onClick, badge }) {
       aria-current={active ? 'page' : undefined}
       // w-16 / min-h-[52px] gives a comfortable thumb-sized tap target (the
       // old w-12 was ~48px wide with only the icon+label as the hit area).
-      className={`relative flex flex-col items-center justify-center gap-1 w-16 min-h-[52px] py-1 active:scale-95 transition-transform drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)] ${
+      className={`relative flex flex-col items-center justify-center gap-1 w-16 min-h-[52px] py-1 active:scale-95 transition-transform ${
         active ? 'text-white' : 'text-white/80'
       }`}
     >
@@ -163,7 +160,7 @@ function NavItem({ label, icon, active, onClick, badge }) {
         className={`absolute bottom-0 h-[3px] w-6 rounded-full bg-white ${active ? 'opacity-100' : 'opacity-0'}`}
       />
       {!!badge && (
-        <span className="absolute top-0 right-2 bg-reel text-ink rounded-full min-w-[16px] h-[16px] px-[3px] flex items-center justify-center text-[10px] font-bold drop-shadow-none">
+        <span className="absolute top-0 right-2 bg-reel text-ink rounded-full min-w-[16px] h-[16px] px-[3px] flex items-center justify-center text-[10px] font-bold">
           {badge > 9 ? '9+' : badge}
         </span>
       )}

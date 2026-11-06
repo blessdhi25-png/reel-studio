@@ -337,7 +337,7 @@ export default function SoundPicker({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col items-stretch justify-end">
+    <div className="fixed inset-0 z-[60] flex flex-col items-stretch justify-end">
       <div className="absolute inset-0 bg-black/90 backdrop-blur-lg" onClick={onClose} />
       {/* Hidden shared preview player — reused across rows so starting a new
           preview always stops whatever was playing before. */}

@@ -83,7 +83,7 @@ function CollaboratorDrawer({ collectionId, collaborators, isOwner, onClose, onC
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center" onClick={onClose}>
+    <div className="fixed inset-0 z-[60] bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center" onClick={onClose}>
       <div
         className="w-full sm:max-w-sm max-h-[80vh] bg-zinc-900 border border-zinc-800 text-white rounded-t-2xl sm:rounded-2xl flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}

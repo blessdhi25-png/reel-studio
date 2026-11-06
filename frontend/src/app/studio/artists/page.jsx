@@ -177,7 +177,7 @@ export default function ArtistHubPage() {
       </div>
 
       {showUpload && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-6">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm px-6">
           <form
             onSubmit={handleUpload}
             className="w-full max-w-sm bg-zinc-950 border border-zinc-800 rounded-2xl p-6 space-y-4"

@@ -1243,7 +1243,7 @@ function DraggableTextOverlay({ overlay, onPointerDownHandle }) {
 
 function TextEditorModal({ value, onChange, onSubmit, onClose, hasExisting }) {
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center" onClick={onClose}>
+    <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center" onClick={onClose}>
       <form
         onSubmit={onSubmit}
         onClick={(e) => e.stopPropagation()}

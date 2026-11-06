@@ -242,7 +242,7 @@ export default function StoryViewer({ groups, initialGroupIndex, currentUserId, 
   if (!group || !story) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-2xl text-white select-none">
+    <div className="fixed inset-0 z-[60] bg-black/95 backdrop-blur-2xl text-white select-none">
       {/* Media layer — the only thing that responds to tap/hold. */}
       <div
         className="absolute inset-0"
