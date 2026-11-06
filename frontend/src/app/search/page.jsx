@@ -640,7 +640,7 @@ export default function SearchPage() {
 
   // --- layout -----------------------------------------------------------------------------------------
   return (
-    <main className="min-h-screen px-4 pt-3 pb-24 max-w-2xl mx-auto">
+    <main className="min-h-screen px-4 pt-3 pb-36 max-w-2xl mx-auto">
       <header className="flex items-center justify-between h-11">
         <button
           type="button"
