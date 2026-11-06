@@ -7,10 +7,16 @@ import AppShell from '@/components/AppShell';
 export const metadata = {
   title: 'ClipPulse — Create & Share Short Videos',
   description: 'Watch, post, and get tipped — short clips and long videos in one place.',
+  // Served from /public. Required for installability and for Bubblewrap (TWA) to
+  // generate the Android wrapper from this URL.
+  manifest: '/manifest.json',
   icons: {
-    icon: '/logo.svg',
+    icon: [
+      { url: '/logo.svg', type: 'image/svg+xml' },
+      { url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+    ],
     shortcut: '/logo.svg',
-    apple: '/logo.svg',
+    apple: '/icons/apple-touch-icon.png',
   },
 };
 
@@ -21,6 +27,7 @@ export const viewport = {
   width: 'device-width',
   initialScale: 1,
   viewportFit: 'cover',
+  themeColor: '#000000', // matches manifest.json; colours the Android status bar / TWA splash
 };
 
 export default function RootLayout({ children }) {
