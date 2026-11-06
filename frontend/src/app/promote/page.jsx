@@ -30,7 +30,7 @@ export default function PromotePage() {
   }, [router]);
 
   return (
-    <main className="min-h-screen px-6 py-10 max-w-2xl mx-auto pb-20">
+    <main className="min-h-screen px-6 py-10 max-w-2xl mx-auto pb-36">
       <a href="/menu" className="font-mono text-xs text-smoke uppercase tracking-widest">
         ← Back to menu
       </a>
