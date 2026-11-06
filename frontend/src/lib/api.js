@@ -214,6 +214,8 @@ export const api = {
     request(`/communities/${id}/members/${userId}`, { method: 'PATCH', body: { role } }),
   removeCommunityMember: (id, userId) =>
     request(`/communities/${id}/members/${userId}`, { method: 'DELETE' }),
+  // body: { caption?, videoId } or { caption?, mediaUrl } — exactly one media source.
+  createCommunityPost: (id, body) => request(`/communities/${id}/posts`, { method: 'POST', body }),
   getCommunityPosts: (id, cursor) =>
     request(`/communities/${id}/posts${cursor ? `?cursor=${cursor}` : ''}`),
 

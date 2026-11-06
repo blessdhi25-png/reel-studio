@@ -9,6 +9,7 @@ import { LoadingSpinner } from '../../../components/LoadingScreen';
 import VideoCard from '../../../components/VideoCard';
 import { COMMUNITY_CATEGORIES } from '../../../components/CreateCommunityModal';
 import { compressImage } from '../../../lib/imageCompression';
+import CommunityPostModal from '../../../components/CommunityPostModal';
 
 const TABS = [
   { value: 'feed', label: 'Feed' },
@@ -107,6 +108,7 @@ export default function CommunityDetailPage({ params }) {
   const [joinBusy, setJoinBusy] = useState(false);
 
   const [posts, setPosts] = useState([]);
+  const [isCreatePostOpen, setIsCreatePostOpen] = useState(false);
   const [postsCursor, setPostsCursor] = useState(null);
   const [postsLoading, setPostsLoading] = useState(true);
   const [postsLoadingMore, setPostsLoadingMore] = useState(false);
@@ -238,18 +240,6 @@ export default function CommunityDetailPage({ params }) {
     setEditing(false);
   }
 
-  function handleCreatePost() {
-    if (!localStorage.getItem('token')) {
-      router.push('/login');
-      return;
-    }
-    if (!community.isJoined) {
-      toast.error('Join this community to post in it');
-      return;
-    }
-    router.push(`/upload?community=${community.id}`);
-  }
-
   async function handleSaveEdit(e) {
     e.preventDefault();
     if (!editName.trim() || editBusy) return;
@@ -357,6 +347,9 @@ export default function CommunityDetailPage({ params }) {
 
   const canModerate = community.myRole === 'admin' || community.myRole === 'moderator';
   const isAdmin = community.myRole === 'admin';
+
+  const isMember = community?.isJoined === true;
+  const canPost = isMember && community?.privacy === 'public';
 
   return (
     <main className="min-h-screen bg-zinc-950 pb-40" style={{ paddingBottom: '160px' }}>
@@ -558,14 +551,15 @@ export default function CommunityDetailPage({ params }) {
               </div>
             )}
 
-            {/* Posting into private communities isn't supported yet (see backend routes/videos.js). */}
-            {community.privacy === 'public' && (
+            {/* Members of public communities only — the server rejects posts to private communities
+                (see backend routes/communities.js), so the trigger is hidden there too. */}
+            {canPost && (
               <button
                 type="button"
-                onClick={handleCreatePost}
-                className="w-full py-3 my-4 bg-amber-500 hover:bg-amber-400 text-black font-extrabold rounded-xl shadow-lg flex items-center justify-center gap-2"
+                onClick={() => setIsCreatePostOpen(true)}
+                className="w-full py-3 my-4 bg-amber-500 hover:bg-amber-400 text-black font-extrabold rounded-xl shadow-lg flex items-center justify-center gap-2 transition-transform active:scale-[0.99]"
               >
-                + Create Post
+                + Create Post in Community
               </button>
             )}
 
@@ -712,6 +706,30 @@ export default function CommunityDetailPage({ params }) {
           </div>
         )}
       </div>
+
+      {/* Always-reachable trigger while scrolling. bottom-24 clears the fixed bottom nav; hidden while the composer is open. */}
+      {canPost && !isCreatePostOpen && (
+        <button
+          type="button"
+          onClick={() => setIsCreatePostOpen(true)}
+          aria-label="Create a post in this community"
+          className="fixed bottom-24 right-5 z-40 bg-amber-500 text-black p-4 rounded-full shadow-2xl font-bold leading-none"
+        >
+          + Post
+        </button>
+      )}
+
+      {isCreatePostOpen && (
+        <CommunityPostModal
+          communityId={community.id}
+          communityName={community.name}
+          onClose={() => setIsCreatePostOpen(false)}
+          onPosted={(post) => {
+            setPosts((prev) => [post, ...prev]);
+            setActiveTab('feed');
+          }}
+        />
+      )}
     </main>
   );
 }

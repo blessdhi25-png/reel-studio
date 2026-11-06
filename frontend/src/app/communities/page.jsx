@@ -13,20 +13,43 @@ const TABS = [
 ];
 
 function CommunityCard({ community, onToggleJoin, busy }) {
+  // A broken/expired image URL falls back to the gradient / letter box instead of a blank hole.
+  const [bannerFailed, setBannerFailed] = useState(false);
+  const [avatarFailed, setAvatarFailed] = useState(false);
+  const bannerSrc = !bannerFailed ? community.bannerUrl : null;
+  const avatarSrc = !avatarFailed ? community.avatarUrl || community.imageUrl : null;
+
   return (
     <div className="bg-zinc-900 border border-zinc-800 text-white rounded-2xl overflow-hidden hover:border-zinc-700 transition-colors">
       <a href={`/communities/${community.id}`} className="block">
+        {/* Banner header; the avatar overlaps its bottom edge and spills into the text area below (still inside the card, so overflow-hidden doesn't clip it). */}
         <div className="relative w-full h-24">
-          {community.bannerUrl ? (
-            <img src={community.bannerUrl} alt="" className="w-full h-full object-cover" />
+          {bannerSrc ? (
+            <img
+              src={bannerSrc}
+              alt=""
+              loading="lazy"
+              onError={() => setBannerFailed(true)}
+              className="h-24 w-full object-cover rounded-t-2xl bg-cover bg-center"
+            />
           ) : (
-            <div className="w-full h-full bg-gradient-to-br from-zinc-800 to-zinc-900" />
+            <div className="w-full h-full rounded-t-2xl bg-gradient-to-br from-zinc-800 to-zinc-900" />
           )}
-          <span className="absolute -bottom-4 left-3 w-10 h-10 rounded-xl bg-amber-500 border-2 border-zinc-900 flex items-center justify-center text-sm font-black text-black">
-            {community.name?.[0]?.toUpperCase()}
-          </span>
+          {avatarSrc ? (
+            <img
+              src={avatarSrc}
+              alt=""
+              loading="lazy"
+              onError={() => setAvatarFailed(true)}
+              className="absolute -bottom-6 left-3 w-12 h-12 rounded-full object-cover bg-zinc-800 border-2 border-zinc-900"
+            />
+          ) : (
+            <span className="absolute -bottom-6 left-3 w-12 h-12 rounded-xl bg-amber-500 border-2 border-zinc-900 flex items-center justify-center text-base font-black text-black">
+              {community.name?.[0]?.toUpperCase()}
+            </span>
+          )}
         </div>
-        <div className="pt-6 px-3 pb-1">
+        <div className="pt-8 px-3 pb-1">
           <p className="font-body text-sm font-semibold text-white truncate">{community.name}</p>
           <p className="font-body text-xs text-zinc-500 line-clamp-2 mt-0.5 min-h-[2rem]">
             {community.description || ' '}

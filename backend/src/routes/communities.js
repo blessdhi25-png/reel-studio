@@ -396,6 +396,87 @@ router.delete('/communities/:id/members/:userId', requireAuth, asyncHandler(asyn
 }));
 
 // ---------------------------------------------------------------------------
+// POST /communities/:id/posts — a member publishes a post into the community.
+// Community posts are Video rows (the feed renders <VideoCard>), so a post is a
+// caption plus exactly ONE media source:
+//   • videoId  — one of the caller's own published videos (moved into this community), or
+//   • mediaUrl — an https link to a direct video file (.mp4/.webm/.mov/.m3u8).
+// Public communities only, matching POST /videos?communityId= (see routes/videos.js).
+// ---------------------------------------------------------------------------
+const MEDIA_URL_EXT = /\.(mp4|webm|mov|m3u8)$/i;
+
+router.post('/communities/:id/posts', requireAuth, asyncHandler(async (req, res) => {
+  const community = await prisma.community.findUnique({
+    where: { id: req.params.id },
+    select: { id: true, privacy: true },
+  });
+  if (!community) return res.status(404).json({ error: 'Community not found' });
+  if (community.privacy !== 'public') {
+    return res.status(403).json({ error: "Posting to private communities isn't supported yet" });
+  }
+  if (!(await getMembership(community.id, req.userId))) {
+    return res.status(403).json({ error: 'Join this community to post in it' });
+  }
+
+  const str = (v) => (typeof v === 'string' ? v.trim() : '');
+  const caption = str(req.body.caption).slice(0, 2200);
+  const videoId = str(req.body.videoId);
+  const mediaUrl = str(req.body.mediaUrl);
+  if (Boolean(videoId) === Boolean(mediaUrl)) {
+    return res.status(400).json({ error: 'Attach either a video ID or a media URL' });
+  }
+
+  const include = { user: { select: { id: true, username: true, avatarUrl: true, stripeOnboarded: true } } };
+  let video;
+
+  if (videoId) {
+    const existing = await prisma.video.findUnique({ where: { id: videoId } });
+    if (!existing || existing.userId !== req.userId || existing.status !== 'published') {
+      return res.status(404).json({ error: "We couldn't find a published video with that ID on your account" });
+    }
+    if (existing.communityId && existing.communityId !== community.id) {
+      return res.status(409).json({ error: 'That video is already posted in another community' });
+    }
+    video = await prisma.video.update({
+      where: { id: existing.id },
+      data: { communityId: community.id, ...(caption ? { caption } : {}) },
+      include,
+    });
+  } else {
+    let url;
+    try {
+      url = new URL(mediaUrl);
+    } catch {
+      return res.status(400).json({ error: 'Media URL is not a valid link' });
+    }
+    if (mediaUrl.length > 2048 || url.protocol !== 'https:' || !MEDIA_URL_EXT.test(url.pathname)) {
+      return res.status(400).json({ error: 'Media URL must be an https link to a .mp4, .webm, .mov or .m3u8 file' });
+    }
+    video = await prisma.video.create({
+      data: {
+        userId: req.userId,
+        videoType: 'short',
+        caption,
+        rawPath: mediaUrl,
+        videoUrl: mediaUrl,
+        status: 'published',
+        communityId: community.id,
+      },
+      include,
+    });
+  }
+
+  // Same shape as GET /communities/:id/posts items so the client can prepend it directly.
+  res.status(201).json({
+    ...video,
+    isLiked: false,
+    isBookmarked: false,
+    user: { ...video.user, isFollowing: false },
+    track: null,
+  });
+}));
+
+// ---------------------------------------------------------------------------
 // GET /communities/:id/posts — this community's own video feed. Mirrors
 // GET /videos/feed's cursor pagination and isLiked/isBookmarked/track
 // shaping (see routes/videos.js) so the exact same <VideoCard> component
