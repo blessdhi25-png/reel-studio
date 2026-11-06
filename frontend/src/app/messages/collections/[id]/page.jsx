@@ -3,10 +3,10 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '../../../lib/api';
-import { useToast } from '../../../context/ToastContext';
-import { LoadingSpinner } from '../../../components/LoadingScreen';
-import ConfirmModal from '../../../components/ConfirmModal';
-import VideoCard from '../../../components/VideoCard';
+import { useToast } from '@/context/ToastContext';
+import { LoadingSpinner } from '@/components/LoadingScreen';
+import ConfirmModal from '@/components/ConfirmModal';
+import VideoCard from '@/components/VideoCard';
 
 const PRIVACY_OPTIONS = [
   { value: 'private', label: 'Private', icon: '🔒' },
