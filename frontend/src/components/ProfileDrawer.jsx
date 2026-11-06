@@ -153,6 +153,15 @@ export default function ProfileDrawer({ open, onClose, user }) {
               onClick={() => setView('qr')} />
             <DrawerLink href="/settings" icon="⚙️" title="Settings and Privacy" onClick={onClose}
               subtitle="Account, privacy, wellbeing" />
+            {/* The profile's old Menu button led to this hub (Circles, Offline, Promote…);
+                now that Menu opens this drawer, keep the hub one tap away. */}
+            <Link
+              href="/menu"
+              onClick={onClose}
+              className="block pt-3 text-center text-xs font-bold text-neutral-400 hover:text-white transition-colors"
+            >
+              More from ClipPulse
+            </Link>
           </nav>
         ) : (
           <div>
