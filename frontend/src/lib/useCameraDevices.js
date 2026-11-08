@@ -11,6 +11,8 @@ const BUILT_IN_PATTERN = /built-?in|integrated|facetime hd|internal|webcam/i;
 // camera app, or capture card riding in alongside the real webcam — these
 // should never be auto-selected even though some (e.g. "HD Webcam" from a
 // capture card) can otherwise slip past a loose built-in match.
+const FRONT_PATTERN = /facing front|front camera|front-facing|\bfront\b|selfie|\buser\b/i;
+
 const EXTERNAL_OR_VIRTUAL_PATTERN =
   /continuity|iphone|ipad|android|droidcam|epoccam|ivcam|obs virtual camera|virtual cam|capture card|elgato|cam ?link|snap camera|manycam/i;
 
@@ -41,6 +43,15 @@ export function pickBuiltInCamera(videoInputs) {
     (d) => BUILT_IN_PATTERN.test(d.label) && !EXTERNAL_OR_VIRTUAL_PATTERN.test(d.label)
   );
   if (builtIn) return builtIn;
+
+  // Phones: labels read "camera2 1, facing front" (Android) or "Front Camera" (iOS)
+  // and never match the desktop patterns above. Without this, the fallthrough below
+  // picks whichever camera is listed first — the BACK camera on Android — so the
+  // selfie view shows the room instead of the person's face.
+  const front = videoInputs.find(
+    (d) => FRONT_PATTERN.test(d.label) && !EXTERNAL_OR_VIRTUAL_PATTERN.test(d.label)
+  );
+  if (front) return front;
 
   const nonExternal = videoInputs.find((d) => !EXTERNAL_OR_VIRTUAL_PATTERN.test(d.label));
   if (nonExternal) return nonExternal;
@@ -91,6 +102,9 @@ export function useCameraDevices() {
       try {
         const temp = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
         temp.getTracks().forEach((t) => t.stop());
+        // Phones release the camera asynchronously; opening it again straight away
+        // (the real preview stream does exactly that) can fail with NotReadableError.
+        await new Promise((r) => setTimeout(r, 250));
 
         const all = await navigator.mediaDevices.enumerateDevices();
         if (cancelled) return;
