@@ -8,6 +8,7 @@ import CameraRecorder from '@/components/CameraRecorder';
 import AICoPilotDrawer from '@/components/AICoPilotDrawer';
 import SoundPicker from '@/components/SoundPicker';
 import TemplatePicker from '@/components/TemplatePicker';
+import AiGenerationModal from '@/components/AiGenerationModal';
 import { FilterSheet, LensPreview, useLensPreviews } from '@/components/studio/LensPicker';
 import { DEFAULT_FILTER_ID, FILTERS } from '@/lib/cameraFilters';
 
@@ -315,6 +316,7 @@ function UploadPageInner() {
   const [showTemplateSearch, setShowTemplateSearch] = useState(false);
   const [templateSearchQuery, setTemplateSearchQuery] = useState('');
   const [selectedTemplate, setSelectedTemplate] = useState(null);
+  const [aiTemplate, setAiTemplate] = useState(null); // AI template awaiting a selfie
   const [templateClipError, setTemplateClipError] = useState(null);
 
   function handleTemplateClipsPicked(e) {
@@ -846,6 +848,10 @@ function UploadPageInner() {
             query={templateSearchQuery}
             setQuery={setTemplateSearchQuery}
             onSelectTemplate={(t) => {
+              if (t.category === 'AI') {
+                setAiTemplate(t);
+                return;
+              }
               setSelectedTemplate(t);
               setTemplateClipError(null);
             }}
@@ -858,6 +864,20 @@ function UploadPageInner() {
             className="hidden"
             onChange={handleTemplateClipsPicked}
           />
+          {aiTemplate && (
+            <AiGenerationModal
+              template={aiTemplate}
+              onClose={() => setAiTemplate(null)}
+              onUseInStudio={(f) => {
+                setFile(f);
+                setLastPickedFile(f);
+                setCapturedFromCamera(false);
+                setCaption((prev) => (prev.trim() ? prev : aiTemplate.title));
+                setAiTemplate(null);
+                setPublishTab('post');
+              }}
+            />
+          )}
           {selectedTemplate && (
             <TemplateClipPicker
               template={selectedTemplate}

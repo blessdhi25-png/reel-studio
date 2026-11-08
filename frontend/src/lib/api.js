@@ -165,6 +165,8 @@ export function pingServer() {
 export const api = {
   register: (data) => request('/auth/register', { method: 'POST', body: data, timeoutMs: AUTH_TIMEOUT_MS }),
   getMe: () => request('/auth/me'),
+  getAiTemplates: () => request('/ai/templates'),
+  getAiCredits: () => request('/ai/credits'),
   // For Google Identity Services / One-Tap: pass the credential GSI hands
   // back after sign-in, get { token, user } directly (no redirect).
   googleOneTapLogin: (credential) =>

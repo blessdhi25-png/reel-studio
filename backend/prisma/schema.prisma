@@ -146,6 +146,9 @@ model User {
   // recipient has.
   resetPasswordToken   String?
   resetPasswordExpires DateTime?
+  // Prepaid balance spent by AI template generations (routes/aiTemplates.js).
+  // New accounts start with a small free allowance; top-ups are not built yet.
+  aiCredits       Int            @default(3)
   isPrivate       Boolean        @default(false)
   messagePrivacy  MessagePrivacy @default(followers)
   commentPrivacy  CommentPrivacy @default(everyone)
@@ -641,4 +644,23 @@ model StoryInteraction {
   createdAt DateTime @default(now())
 
   @@unique([storyId, userId, type])
+}
+
+// AI-generated video templates (selfie in -> short MP4 out). `modelEndpoint`
+// names the pipeline in routes/aiTemplates.js: a Replicate "owner/model" (or
+// "owner/model:version") slug, passed through to the GPU provider.
+model AiTemplate {
+  id            String   @id @default(cuid())
+  title         String
+  category      String   // e.g. "AI", "Trending", "Fantasy"
+  previewUrl    String   // Loopable WebP or MP4 preview
+  modelEndpoint String   // Identifier for the backend AI pipeline
+  creditsCost   Int      @default(1)
+  createdAt     DateTime @default(now())
+  // Display extras for the picker cards (not part of the generation contract).
+  uses          Int      @default(0)
+  soundTitle    String?
+  isActive      Boolean  @default(true)
+
+  @@index([category, isActive])
 }

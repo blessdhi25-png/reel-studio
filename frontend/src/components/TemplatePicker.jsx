@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Film, Music2, Search, X } from 'lucide-react';
-import { TEMPLATES, TEMPLATE_CATEGORIES, fallbackPreviewFor, resolveTemplatePreview } from '@/lib/templates';
+import { TEMPLATES, TEMPLATE_CATEGORIES } from '@/lib/templates';
+import AiTemplatePicker from '@/components/AiTemplatePicker';
 
 const compact = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 });
 
@@ -39,9 +40,6 @@ function TemplateCard({ template, onClick }) {
   const [near, setNear] = useState(false);
   const [visible, setVisible] = useState(false);
   const [failed, setFailed] = useState(false);
-  // The template's own preview, or a generic loop if it has none (or its file
-  // fails to load). Only if the fallback fails too do we settle for a poster.
-  const [source, setSource] = useState(() => resolveTemplatePreview(template));
 
   useEffect(() => {
     const el = cardRef.current;
@@ -70,7 +68,7 @@ function TemplateCard({ template, onClick }) {
     else v.pause();
   }, [visible, near, reduceMotion]);
 
-  const showVideo = !!source.src && !failed;
+  const showVideo = template.previewUrl && !failed;
   const playing = visible && !reduceMotion && showVideo;
   const usesLabel = `${compact.format(template.uses)} videos`;
   const clipsLabel = `${template.clipCount} clip${template.clipCount === 1 ? '' : 's'}`;
@@ -86,22 +84,19 @@ function TemplateCard({ template, onClick }) {
       {showVideo ? (
         <video
           ref={videoRef}
-          src={near ? source.src : undefined}
-          poster={source.poster}
+          src={near ? template.previewUrl : undefined}
+          poster={template.posterUrl}
           autoPlay={!reduceMotion}
           loop
           muted
           playsInline
           preload="none"
-          onError={() => {
-            if (!source.fallback) setSource(fallbackPreviewFor(template));
-            else setFailed(true);
-          }}
+          onError={() => setFailed(true)}
           aria-hidden="true"
-          className="absolute inset-0 w-full h-full object-cover rounded-2xl"
+          className="absolute inset-0 w-full h-full object-cover"
         />
-      ) : source.poster ? (
-        <img src={source.poster} alt="" className="absolute inset-0 w-full h-full object-cover" />
+      ) : template.posterUrl ? (
+        <img src={template.posterUrl} alt="" className="absolute inset-0 w-full h-full object-cover" />
       ) : (
         <span className="absolute inset-0 flex items-center justify-center text-zinc-600">
           <Film className="w-8 h-8" aria-hidden="true" />
@@ -218,8 +213,10 @@ export default function TemplatePicker({
         ))}
       </div>
 
-      <div className="flex-1 overflow-y-auto px-3 pb-6">
-        {filtered.length === 0 ? (
+      <div className="flex-1 overflow-y-auto px-3 pb-32">
+        {category === 'AI' ? (
+          <AiTemplatePicker query={query} onSelectTemplate={onSelectTemplate} />
+        ) : filtered.length === 0 ? (
           <p className="text-zinc-500 text-sm text-center py-12">No templates match &quot;{query}&quot;.</p>
         ) : (
           <div className="grid grid-cols-2 gap-3">

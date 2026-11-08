@@ -74,6 +74,7 @@ import privacyRoutes from './routes/privacy.js';
 import artistRoutes from './routes/artists.js';
 import storiesRoutes from './routes/stories.js';
 import aiRoutes from './routes/ai.js';
+import aiTemplatesRoutes from './routes/aiTemplates.js';
 import communitiesRoutes from './routes/communities.js';
 import collectionsRoutes from './routes/collections.js';
 import analyticsRoutes from './routes/analytics.js';
@@ -193,6 +194,7 @@ app.use('/api/v1', studioRoutes); // /studio/overview, /videos/:id/boost/checkou
 app.use('/api/v1', privacyRoutes); // /users/me/privacy, /users/:id/block
 app.use('/api/v1/artists', artistRoutes); // artist registration, track catalog & analytics
 app.use('/api/v1', storiesRoutes); // /stories, /stories/feed, /stories/:id/view|like|poll-vote|qa-response
+app.use('/api/v1/ai', aiTemplatesRoutes); // /ai/templates, /ai/credits, /ai/generate-template (GPU pipeline, credit-metered)
 app.use('/api/v1/ai', aiRoutes); // /ai/generate-captions, /ai/refine-draft (AI Co-Pilot — real Claude calls, rate-limited)
 app.use('/api/v1', communitiesRoutes); // /communities, /communities/:id, /communities/:id/join, /communities/:id/posts
 app.use('/api/v1', collectionsRoutes); // /collections, /collections/:id, /collections/:id/save|collaborators
