@@ -1,9 +1,15 @@
 'use client';
 
+import { useEffect, useRef } from 'react';
+
 // Generic replacement for window.confirm() — styled to match the app's own
-// dark zinc/amber theme instead of the browser's native (unstyled, and on
-// mobile often ugly/inconsistent) confirm dialog. Not tied to logout
-// specifically; any "are you sure?" action can reuse this.
+// dark theme instead of the browser's native dialog. Used for log out, deleting
+// posts / stories / collections, etc.
+//
+// Layout: a full-screen dimmed + blurred backdrop (which also swallows taps and
+// locks page scroll) with the card floating ABOVE the fixed BottomNav — 7rem plus
+// the device's home-indicator inset from the bottom edge — so the nav bar can never
+// cover the buttons. On sm+ screens the card is centred instead.
 export default function ConfirmModal({
   title,
   message,
@@ -13,21 +19,48 @@ export default function ConfirmModal({
   onCancel,
   danger = true,
 }) {
+  const cancelRef = useRef(null);
+  // Callers pass inline handlers; keep the latest in a ref so the effect below runs once on mount
+  // (re-running it would re-steal focus on every parent render).
+  const onCancelRef = useRef(onCancel);
+  onCancelRef.current = onCancel;
+
+  useEffect(() => {
+    cancelRef.current?.focus();
+    const onKey = (e) => e.key === 'Escape' && onCancelRef.current?.();
+    document.addEventListener('keydown', onKey);
+    // Lock background scrolling while open.
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, []);
+
   return (
-    <div
-      className="fixed inset-0 bg-black/70 flex items-end sm:items-center justify-center z-50 px-4 pb-6 sm:pb-0"
-      onClick={onCancel}
-    >
+    // z-[60] sits above the BottomNav (z-50), so the backdrop dims and blocks the nav too.
+    <div className="fixed inset-0 z-[60]">
       <div
-        className="w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-2xl p-5 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
+        className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+        onClick={onCancel}
+        aria-hidden="true"
+      />
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="confirm-modal-title"
+        className="fixed inset-x-4 bottom-28 bottom-[calc(7rem+env(safe-area-inset-bottom))] sm:bottom-auto sm:top-1/2 sm:-translate-y-1/2 mx-auto max-w-sm bg-neutral-900 border border-neutral-800 shadow-2xl rounded-2xl p-5"
       >
-        <h2 className="text-base font-bold text-white mb-1.5">{title}</h2>
-        {message && <p className="text-sm text-zinc-400 mb-5">{message}</p>}
+        <h2 id="confirm-modal-title" className="text-base font-bold text-white mb-1.5">
+          {title}
+        </h2>
+        {message && <p className="text-sm text-neutral-400 mb-5">{message}</p>}
         <div className="flex gap-2">
           <button
+            ref={cancelRef}
             onClick={onCancel}
-            className="flex-1 py-2.5 rounded-xl bg-zinc-800 text-zinc-200 text-sm font-semibold hover:bg-zinc-700 transition-colors"
+            className="flex-1 py-2.5 rounded-xl bg-neutral-800 text-neutral-200 text-sm font-semibold hover:bg-neutral-700 transition-colors"
           >
             {cancelLabel}
           </button>
