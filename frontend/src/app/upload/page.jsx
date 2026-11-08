@@ -979,6 +979,8 @@ function UploadPageInner() {
           status={status}
           uploadProgress={uploadProgress}
           errorMsg={errorMsg}
+          communityTarget={communityTarget}
+          setCommunityTarget={setCommunityTarget}
           handleCancel={handleCancel}
         />
       )}
@@ -1508,6 +1510,8 @@ function PublishDrawer({
   uploadProgress,
   errorMsg,
   handleCancel,
+  communityTarget,
+  setCommunityTarget,
 }) {
   return (
     <div className="absolute inset-0 z-10 flex flex-col bg-black animate-sheet-up">
