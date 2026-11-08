@@ -2,6 +2,7 @@
 
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { useCameraDevices } from '../lib/useCameraDevices';
+import { describeCameraError, openCameraStream } from '../lib/cameraStream';
 import CameraDeviceSelect from './CameraDeviceSelect';
 import { drawWatermark } from '../lib/watermark';
 import {
@@ -285,22 +286,35 @@ const CameraRecorder = forwardRef(function CameraRecorder(
         // camera. The front/back flip button is the one deliberate
         // exception — once used, it takes over via facingMode until a
         // device is explicitly picked again.
-        const constraints = {
-          video:
-            !manualFacingFlip && selectedDeviceId
-              ? { deviceId: { exact: selectedDeviceId } }
-              : { facingMode },
-          audio: true,
-        };
-        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        // openCameraStream degrades gracefully (exact device -> facingMode -> no mic ->
+        // any camera), so a blocked mic or a stale device id never costs the preview.
+        let opened;
+        try {
+          opened = await openCameraStream({
+            deviceId: !manualFacingFlip ? selectedDeviceId : '',
+            facingMode,
+          });
+        } catch (firstErr) {
+          // Phones can still be releasing the camera from the permission probe.
+          if (!['NotReadableError', 'TrackStartError', 'AbortError'].includes(firstErr?.name)) throw firstErr;
+          await new Promise((r) => setTimeout(r, 600));
+          opened = await openCameraStream({ deviceId: '', facingMode });
+        }
+        const stream = opened.stream;
         if (cancelled) {
           stream.getTracks().forEach((t) => t.stop());
           return;
         }
         streamRef.current = stream;
-        if (videoRef.current) videoRef.current.srcObject = stream;
+        const v = videoRef.current;
+        if (v) {
+          v.srcObject = stream;
+          // iOS/Android won't always autoplay a MediaStream on its own.
+          v.play().catch(() => {});
+        }
       } catch (err) {
-        setError('Camera access was denied or is unavailable. You can upload a file instead.');
+        const d = describeCameraError(err);
+        setError(`${d.message} ${d.hint}`);
       }
     }
 
@@ -776,8 +790,16 @@ const CameraRecorder = forwardRef(function CameraRecorder(
                 throttle frame decoding on fully display:none video, which
                 would starve the canvas compositor of fresh frames. 1x1 and
                 clipped is enough to avoid any layout footprint. */}
+            <video
+              ref={videoRef}
+              autoPlay
+              muted
+              playsInline
+              onLoadedMetadata={(e) => e.currentTarget.play().catch(() => {})}
+              className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+              style={{ transform: facingMode === 'user' ? 'scaleX(-1)' : undefined }}
+            />
             <div className="absolute w-px h-px overflow-hidden opacity-0 pointer-events-none">
-              <video ref={videoRef} autoPlay muted playsInline />
               {/* Selected background track — not display:none for the same
                   frame-throttling reason as the video above, though audio
                   playback is far less sensitive to it than video decode is.
@@ -793,7 +815,7 @@ const CameraRecorder = forwardRef(function CameraRecorder(
                   by default, so this is safe to request. */}
               <audio ref={bgAudioRef} loop crossOrigin="anonymous" />
             </div>
-            <canvas ref={canvasRef} className="block w-full h-full pointer-events-none" />
+            <canvas ref={canvasRef} className="relative z-[1] block w-full h-full pointer-events-none" />
             {/* Invisible hit-target for dragging the text overlay — the
                 overlay's actual pixels are drawn onto the canvas above (and
                 therefore end up in the recording), this just captures the
