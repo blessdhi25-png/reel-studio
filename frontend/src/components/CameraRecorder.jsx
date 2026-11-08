@@ -815,7 +815,7 @@ const CameraRecorder = forwardRef(function CameraRecorder(
                   by default, so this is safe to request. */}
               <audio ref={bgAudioRef} loop crossOrigin="anonymous" />
             </div>
-            <canvas ref={canvasRef} className="relative z-[1] block w-full h-full pointer-events-none" />
+            <canvas ref={canvasRef} className="relative block w-full h-full pointer-events-none" />
             {/* Invisible hit-target for dragging the text overlay — the
                 overlay's actual pixels are drawn onto the canvas above (and
                 therefore end up in the recording), this just captures the
