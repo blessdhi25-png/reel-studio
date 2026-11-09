@@ -1,8 +1,8 @@
 'use client';
 
+import BackButton from '@/components/BackButton';
 import { useState } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, Lock, Shield, CheckCircle2, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import { Lock, Shield, CheckCircle2, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { api } from '../../lib/api';
 
 function PasswordField({ label, value, onChange, show, onToggleShow }) {
@@ -78,13 +78,7 @@ export default function ChangePasswordPage() {
 
   return (
     <div className="min-h-screen bg-[#0d0b14] text-white p-4 font-sans max-w-md mx-auto">
-      <Link
-        href="/settings"
-        className="inline-flex items-center gap-1.5 text-xs font-mono text-zinc-400 hover:text-white uppercase tracking-widest mb-6 pt-2"
-      >
-        <ArrowLeft size={14} />
-        <span>Back to Settings</span>
-      </Link>
+      <BackButton href="/settings" label="Back to Settings" className="mb-6" />
 
       <div className="flex items-center gap-2.5 mb-1">
         <Shield size={20} className="text-amber-500" />

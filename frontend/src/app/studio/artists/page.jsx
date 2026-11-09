@@ -1,5 +1,6 @@
 'use client';
 
+import BackButton from '@/components/BackButton';
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '../../../lib/api';
@@ -99,9 +100,7 @@ export default function ArtistHubPage() {
   return (
     <main className="min-h-screen bg-zinc-950 text-white px-6 py-10">
       <div className="max-w-3xl mx-auto">
-        <a href="/studio" className="text-xs text-zinc-500 uppercase tracking-widest hover:text-zinc-300">
-          ← Back to Studio
-        </a>
+        <BackButton href="/studio" label="Back to Studio" />
 
         <div className="flex items-start justify-between mt-6 mb-8 gap-4 flex-wrap">
           <div>

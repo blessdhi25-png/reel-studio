@@ -1,5 +1,6 @@
 'use client';
 
+import BackButton from '@/components/BackButton';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '../../lib/api';
@@ -122,9 +123,7 @@ export default function StudioPage() {
 
   return (
     <main className="bg-zinc-950 text-white min-h-screen p-6 max-w-6xl mx-auto space-y-8">
-      <a href="/menu" className="font-mono text-xs text-zinc-500 uppercase tracking-widest">
-        ← Back to menu
-      </a>
+      <BackButton href="/menu" label="Back to menu" />
 
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4">

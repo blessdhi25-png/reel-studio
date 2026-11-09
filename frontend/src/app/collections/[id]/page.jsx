@@ -1,5 +1,6 @@
 'use client';
 
+import BackButton from '@/components/BackButton';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '../../../lib/api';
@@ -249,9 +250,7 @@ export default function CollectionDetailPage({ params }) {
     return (
       <main className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center gap-3">
         <p className="text-zinc-400 text-sm">This collection doesn't exist, or isn't visible to you.</p>
-        <a href="/collections" className="text-amber-400 text-sm font-semibold">
-          ← Back to Collections
-        </a>
+        <BackButton href="/collections" label="Back to Collections" />
       </main>
     );
   }

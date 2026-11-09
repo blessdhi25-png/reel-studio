@@ -78,9 +78,9 @@ function FriendVideoCard({ video, onToast }) {
   return (
     <a
       href={`/?video=${video.id}`}
-      className="flex gap-4 bg-zinc-900/80 border border-zinc-800 rounded-2xl p-4 hover:border-zinc-700 transition-all"
+      className="flex gap-4 bg-white border border-neutral-200 shadow-sm dark:shadow-none dark:bg-zinc-900/80 dark:border-zinc-800 rounded-2xl p-4 hover:border-neutral-300 dark:hover:border-zinc-700 transition-all"
     >
-      <span className="w-20 h-28 shrink-0 rounded-xl overflow-hidden bg-zinc-800 relative">
+      <span className="w-20 h-28 shrink-0 rounded-xl overflow-hidden bg-neutral-200 dark:bg-neutral-200 dark:bg-zinc-800 relative">
         {video.thumbnailUrl ? (
           <img src={video.thumbnailUrl} alt="" className="w-full h-full object-cover" />
         ) : video.videoUrl ? (
@@ -90,25 +90,25 @@ function FriendVideoCard({ video, onToast }) {
 
       <div className="min-w-0 flex-1 flex flex-col">
         <div className="flex items-center gap-2 mb-1">
-          <span className="w-6 h-6 rounded-full overflow-hidden bg-zinc-800 shrink-0 flex items-center justify-center font-display text-[10px] text-amber-400">
+          <span className="w-6 h-6 rounded-full overflow-hidden bg-neutral-200 dark:bg-neutral-200 dark:bg-zinc-800 shrink-0 flex items-center justify-center font-display text-[10px] text-amber-600 dark:text-amber-400">
             {video.user?.avatarUrl ? (
               <img src={video.user.avatarUrl} alt="" className="w-full h-full object-cover" />
             ) : (
               video.user?.username?.[0]?.toUpperCase()
             )}
           </span>
-          <span className="font-body text-xs text-zinc-300 truncate">@{video.user?.username}</span>
+          <span className="font-body text-xs font-semibold text-neutral-800 dark:text-neutral-200 truncate">@{video.user?.username}</span>
         </div>
-        <p className="font-body text-sm text-white line-clamp-2 flex-1">{video.caption || '(no caption)'}</p>
+        <p className="font-body text-sm font-semibold text-black dark:text-white line-clamp-2 flex-1">{video.caption || '(no caption)'}</p>
 
         <div className="flex items-center gap-4 mt-2">
-          <button onClick={toggleLike} className={`flex items-center gap-1 text-xs font-semibold ${liked ? 'text-amber-400' : 'text-zinc-400'}`}>
+          <button onClick={toggleLike} className={`flex items-center gap-1 text-xs font-semibold ${liked ? 'text-amber-600 dark:text-amber-400' : 'text-neutral-800 dark:text-neutral-200'}`}>
             <HeartIcon filled={liked} /> {abbreviate(likeCount)}
           </button>
-          <span className="flex items-center gap-1 text-xs font-semibold text-zinc-400">
+          <span className="flex items-center gap-1 text-xs font-semibold text-neutral-800 dark:text-neutral-200">
             <CommentIcon /> {abbreviate(video.commentCount)}
           </span>
-          <button onClick={share} className="flex items-center gap-1 text-xs font-semibold text-zinc-400 hover:text-white">
+          <button onClick={share} className="flex items-center gap-1 text-xs font-semibold text-neutral-800 dark:text-neutral-200 hover:text-black dark:hover:text-white">
             <ShareIcon /> Share
           </button>
         </div>
@@ -119,19 +119,19 @@ function FriendVideoCard({ video, onToast }) {
 
 function SuggestedCard({ person, following, onToggleFollow }) {
   return (
-    <div className="bg-zinc-900/80 border border-zinc-800 rounded-2xl p-5 flex flex-col items-center text-center hover:border-zinc-700 transition-all">
-      <a href={`/profile/${person.id}`} className="w-16 h-16 rounded-full overflow-hidden bg-zinc-800 flex items-center justify-center font-display text-xl text-amber-400 mb-3">
+    <div className="bg-white border border-neutral-200 shadow-sm dark:shadow-none dark:bg-zinc-900/80 dark:border-zinc-800 rounded-2xl p-5 flex flex-col items-center text-center hover:border-neutral-300 dark:hover:border-zinc-700 transition-all">
+      <a href={`/profile/${person.id}`} className="w-16 h-16 rounded-full overflow-hidden bg-neutral-200 dark:bg-zinc-800 flex items-center justify-center font-display text-xl text-amber-600 dark:text-amber-400 mb-3">
         {person.avatarUrl ? (
           <img src={person.avatarUrl} alt="" className="w-full h-full object-cover" />
         ) : (
           person.username?.[0]?.toUpperCase()
         )}
       </a>
-      <a href={`/profile/${person.id}`} className="font-body text-sm font-semibold text-white truncate max-w-full">
+      <a href={`/profile/${person.id}`} className="font-body text-sm font-extrabold text-black dark:text-white truncate max-w-full">
         @{person.username}
       </a>
-      {person.bio && <p className="font-body text-xs text-zinc-500 mt-1 line-clamp-2">{person.bio}</p>}
-      <p className="font-mono text-[10px] text-zinc-500 uppercase tracking-widest mt-2">
+      {person.bio && <p className="font-body text-xs font-semibold text-neutral-800 dark:text-neutral-200 mt-1 line-clamp-2">{person.bio}</p>}
+      <p className="font-mono text-[10px] font-semibold text-neutral-800 dark:text-neutral-200 uppercase tracking-widest mt-2">
         {person.mutualCount > 0
           ? `Followed by @${person.mutualSample}${person.mutualCount > 1 ? ` + ${person.mutualCount - 1} others` : ''}`
           : `${abbreviate(person._count?.followers)} followers`}
@@ -140,7 +140,7 @@ function SuggestedCard({ person, following, onToggleFollow }) {
         onClick={() => onToggleFollow(person.id)}
         className={
           following
-            ? 'w-full mt-4 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 font-semibold py-2 px-4 rounded-xl transition-all'
+            ? 'w-full mt-4 bg-neutral-200 hover:bg-neutral-300 text-neutral-800 border border-neutral-300 dark:bg-zinc-800 dark:hover:bg-zinc-700 dark:text-zinc-300 dark:border-zinc-700 font-semibold py-2 px-4 rounded-xl transition-all'
             : 'w-full mt-4 bg-amber-500 hover:bg-amber-400 text-black font-bold py-2 px-4 rounded-xl transition-all'
         }
       >
@@ -153,11 +153,11 @@ function SuggestedCard({ person, following, onToggleFollow }) {
 function SuggestedGrid({ people, followingIds, onToggleFollow, heading }) {
   if (people.length === 0) return null;
   return (
-    <div className="bg-zinc-900/70 border border-zinc-800 rounded-3xl p-8 text-center shadow-2xl space-y-6">
+    <div className="bg-white border border-neutral-200 dark:bg-zinc-900/70 dark:border-zinc-800 rounded-3xl p-8 text-center shadow-xl dark:shadow-2xl space-y-6">
       <div>
         <p className="text-3xl mb-2">🌐</p>
-        <h2 className="font-display text-xl text-white tracking-wide">{heading}</h2>
-        <p className="font-body text-zinc-500 text-sm mt-1">
+        <h2 className="font-extrabold tracking-tight text-lg uppercase text-black dark:text-white">{heading}</h2>
+        <p className="font-body font-semibold text-neutral-800 dark:text-neutral-200 text-sm mt-1">
           Follow a few creators to start seeing their videos here.
         </p>
       </div>
@@ -261,14 +261,14 @@ export default function FriendsPage() {
         {/* ── Header ── */}
         <div className="lg:col-span-12 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="font-display text-3xl text-white tracking-wide">Friends &amp; Activity Hub</h1>
-            <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-1 flex gap-1 w-fit mt-4">
+            <h1 className="font-extrabold tracking-tight text-lg uppercase text-black dark:text-white">Friends &amp; Activity Hub</h1>
+            <div className="bg-neutral-100 border border-neutral-200 dark:bg-zinc-900 dark:border-zinc-800 rounded-xl p-1 flex gap-1 w-fit mt-4">
               {TABS.map((t) => (
                 <button
                   key={t.value}
                   onClick={() => setTab(t.value)}
                   className={`font-mono text-[11px] uppercase tracking-widest px-3 py-1.5 rounded-lg transition-colors ${
-                    tab === t.value ? 'bg-amber-500 text-black font-bold' : 'text-zinc-400 hover:text-white'
+                    tab === t.value ? 'bg-amber-500 text-black font-bold' : 'font-semibold text-neutral-800 dark:text-neutral-200 hover:text-black dark:hover:text-white'
                   }`}
                 >
                   {t.label}
@@ -278,7 +278,7 @@ export default function FriendsPage() {
           </div>
           <a
             href="/"
-            className="flex items-center gap-2 text-xs font-semibold text-zinc-400 hover:text-white bg-zinc-900 border border-zinc-800 px-3 py-1.5 rounded-xl transition-all self-start"
+            className="font-extrabold text-sm px-4 py-2 bg-neutral-200 dark:bg-neutral-800 text-black dark:text-white hover:bg-neutral-300 dark:hover:bg-neutral-700 rounded-full transition-all active:scale-95 self-start"
           >
             ← Back to feed
           </a>
@@ -289,28 +289,28 @@ export default function FriendsPage() {
           {/* Active friends tray */}
           <div className="flex gap-4 overflow-x-auto pb-4" style={{ scrollbarWidth: 'none' }}>
             <a href="/upload" className="flex flex-col items-center gap-1.5 shrink-0">
-              <span className="relative w-16 h-16 rounded-full border-2 border-zinc-700 p-0.5">
-                <span className="w-full h-full rounded-full bg-zinc-800 flex items-center justify-center overflow-hidden font-display text-lg text-zinc-400">
+              <span className="relative w-16 h-16 rounded-full border-2 border-neutral-300 dark:border-zinc-700 p-0.5">
+                <span className="w-full h-full rounded-full bg-neutral-200 dark:bg-zinc-800 flex items-center justify-center overflow-hidden font-display text-lg text-neutral-800 dark:text-zinc-400">
                   {me?.avatarUrl ? <img src={me.avatarUrl} alt="" className="w-full h-full object-cover" /> : 'Y'}
                 </span>
-                <span className="absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full bg-amber-500 text-black flex items-center justify-center text-xs font-bold border-2 border-zinc-950">
+                <span className="absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full bg-amber-500 text-black flex items-center justify-center text-xs font-bold border-2 border-white dark:border-zinc-950">
                   +
                 </span>
               </span>
-              <span className="font-mono text-[10px] text-zinc-400 uppercase tracking-widest">Your story</span>
+              <span className="font-mono text-[10px] font-semibold text-neutral-800 dark:text-neutral-200 uppercase tracking-widest">Your story</span>
             </a>
 
             {trayPeople.slice(0, 15).map((p) => (
               <a key={p.id} href={`/profile/${p.id}`} className="flex flex-col items-center gap-1.5 shrink-0 group cursor-pointer">
                 <span className="w-16 h-16 rounded-full border-2 border-amber-500 p-0.5 relative">
-                  <span className="w-full h-full rounded-full overflow-hidden bg-zinc-800 flex items-center justify-center font-display text-lg text-amber-400">
+                  <span className="w-full h-full rounded-full overflow-hidden bg-neutral-200 dark:bg-zinc-800 flex items-center justify-center font-display text-lg text-amber-600 dark:text-amber-400">
                     {p.avatarUrl ? <img src={p.avatarUrl} alt="" className="w-full h-full object-cover" /> : p.username?.[0]?.toUpperCase()}
                   </span>
                   {onlineIds.has(p.id) && (
-                    <span className="absolute bottom-0.5 right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-400 border-2 border-zinc-950" />
+                    <span className="absolute bottom-0.5 right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-400 border-2 border-white dark:border-zinc-950" />
                   )}
                 </span>
-                <span className="font-mono text-[10px] text-zinc-400 uppercase tracking-widest group-hover:text-white truncate max-w-[4.5rem]">
+                <span className="font-mono text-[10px] font-semibold text-neutral-800 dark:text-neutral-200 uppercase tracking-widest group-hover:text-black dark:group-hover:text-white truncate max-w-[4.5rem]">
                   @{p.username}
                 </span>
               </a>
@@ -349,26 +349,26 @@ export default function FriendsPage() {
 
         {/* ── Right sidebar ── */}
         <div className="lg:col-span-4 space-y-6">
-          <div className="bg-zinc-900/70 border border-zinc-800 rounded-2xl p-4">
-            <p className="font-display text-sm text-white tracking-wide mb-3">People You May Know</p>
-            {suggested.length === 0 && <p className="font-body text-xs text-zinc-500">Nothing to show yet.</p>}
+          <div className="bg-white border border-neutral-200 shadow-sm dark:shadow-none dark:bg-zinc-900/70 dark:border-zinc-800 rounded-2xl p-4">
+            <p className="font-extrabold tracking-tight text-lg uppercase text-black dark:text-white mb-3">People You May Know</p>
+            {suggested.length === 0 && <p className="font-body text-xs font-semibold text-neutral-800 dark:text-neutral-200">Nothing to show yet.</p>}
             <div className="space-y-3">
               {suggested.slice(6, 12).map((p) => (
                 <div key={p.id} className="flex items-center gap-3">
-                  <a href={`/profile/${p.id}`} className="w-9 h-9 rounded-full overflow-hidden bg-zinc-800 shrink-0 flex items-center justify-center font-display text-xs text-amber-400">
+                  <a href={`/profile/${p.id}`} className="w-9 h-9 rounded-full overflow-hidden bg-neutral-200 dark:bg-neutral-200 dark:bg-zinc-800 shrink-0 flex items-center justify-center font-display text-xs text-amber-600 dark:text-amber-400">
                     {p.avatarUrl ? <img src={p.avatarUrl} alt="" className="w-full h-full object-cover" /> : p.username?.[0]?.toUpperCase()}
                   </a>
                   <div className="min-w-0 flex-1">
-                    <a href={`/profile/${p.id}`} className="font-body text-xs font-semibold text-white truncate block">
+                    <a href={`/profile/${p.id}`} className="font-body text-xs font-extrabold text-black dark:text-white truncate block">
                       @{p.username}
                     </a>
                     {p.mutualCount > 0 && (
-                      <p className="font-mono text-[10px] text-zinc-500 truncate">{p.mutualCount} mutual</p>
+                      <p className="font-mono text-[10px] font-semibold text-neutral-800 dark:text-neutral-200 truncate">{p.mutualCount} mutual</p>
                     )}
                   </div>
                   <button
                     onClick={() => handleToggleFollow(p.id)}
-                    className="font-mono text-[10px] uppercase tracking-widest px-2.5 py-1 rounded-lg bg-amber-500/15 text-amber-400 border border-amber-500/40 shrink-0"
+                    className="font-mono text-[10px] uppercase tracking-widest px-2.5 py-1 rounded-lg bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/40 font-bold shrink-0"
                   >
                     Follow
                   </button>
@@ -380,15 +380,15 @@ export default function FriendsPage() {
           {/* Real, functional alternative to a fake "contact sync" — searches actual accounts */}
           <a
             href="/search"
-            className="bg-zinc-800/50 border border-zinc-700/60 p-4 rounded-2xl flex items-center justify-between hover:border-zinc-600 transition-colors"
+            className="bg-neutral-100 border border-neutral-200 dark:bg-zinc-800/50 dark:border-zinc-700/60 p-4 rounded-2xl flex items-center justify-between hover:border-neutral-300 dark:hover:border-zinc-600 transition-colors"
           >
             <div>
-              <p className="font-body text-sm font-semibold text-white">Find people</p>
-              <p className="font-mono text-[10px] text-zinc-500 uppercase tracking-widest mt-0.5">
+              <p className="font-body text-sm font-extrabold text-black dark:text-white">Find people</p>
+              <p className="font-mono text-[10px] font-semibold text-neutral-800 dark:text-neutral-200 uppercase tracking-widest mt-0.5">
                 Search creators &amp; captions
               </p>
             </div>
-            <span className="text-zinc-400"><SearchIcon /></span>
+            <span className="text-neutral-800 dark:text-neutral-200"><SearchIcon /></span>
           </a>
         </div>
       </div>

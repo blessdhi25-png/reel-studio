@@ -1,5 +1,6 @@
 'use client';
 
+import BackButton from '@/components/BackButton';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '../../lib/api';
@@ -16,9 +17,7 @@ export default function CirclesPage() {
 
   return (
     <main className="min-h-screen px-6 py-10 max-w-2xl mx-auto pb-36">
-      <a href="/menu" className="font-mono text-xs text-smoke uppercase tracking-widest">
-        ← Back to menu
-      </a>
+      <BackButton href="/menu" label="Back to menu" />
 
       <h1 className="font-display text-4xl text-bone tracking-wide mt-8 mb-2">Topic circles</h1>
       <p className="font-body text-smoke text-sm mb-8">

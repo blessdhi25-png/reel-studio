@@ -1,5 +1,6 @@
 'use client';
 
+import BackButton from '@/components/BackButton';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '../../lib/api';
@@ -46,9 +47,7 @@ export default function AnalyticsPage() {
 
   return (
     <main className="bg-zinc-950 text-white min-h-screen p-6 max-w-5xl mx-auto space-y-8">
-      <a href="/studio" className="font-mono text-xs text-zinc-500 uppercase tracking-widest">
-        ← Back to Studio
-      </a>
+      <BackButton href="/studio" label="Back to Studio" />
 
       <h1 className="text-3xl font-extrabold">Analytics</h1>
 

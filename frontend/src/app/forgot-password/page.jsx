@@ -1,5 +1,6 @@
 'use client';
 
+import BackButton from '@/components/BackButton';
 import { useState } from 'react';
 import { api } from '../../lib/api';
 import AuthHero from '../../components/AuthHero';
@@ -45,12 +46,9 @@ export default function ForgotPasswordPage() {
               If an account with that email exists, a password reset link has been sent. Check your inbox
               (and spam folder) — the link expires in 1 hour.
             </p>
-            <a
-              href="/login"
-              className="block text-center mt-6 text-sm font-semibold text-amber-400 hover:text-amber-300"
-            >
-              ← Back to login
-            </a>
+            <div className="flex justify-center mt-6">
+              <BackButton href="/login" label="Back to login" />
+            </div>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -73,12 +71,9 @@ export default function ForgotPasswordPage() {
               {loading ? 'Sending…' : 'Send reset link'}
             </button>
 
-            <a
-              href="/login"
-              className="block text-center text-sm font-semibold text-amber-400 hover:text-amber-300"
-            >
-              ← Back to login
-            </a>
+            <div className="flex justify-center">
+              <BackButton href="/login" label="Back to login" />
+            </div>
           </form>
         )}
       </div>

@@ -1,8 +1,9 @@
 'use client';
 
+import BackButton from '@/components/BackButton';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Clock, Search, X } from 'lucide-react';
+import { Clock, Search, X } from 'lucide-react';
 import { api } from '../../lib/api';
 import { ALLOWED_CIRCLES } from '../../lib/circles';
 import { useAuth } from '../../context/AuthContext';
@@ -642,18 +643,10 @@ export default function SearchPage() {
   return (
     <main className="min-h-screen px-4 pt-3 pb-36 max-w-2xl mx-auto">
       <header className="flex items-center justify-between h-11">
-        <button
-          type="button"
-          onClick={goBack}
-          aria-label="Go back"
-          className="flex items-center gap-1.5 -ml-2 pl-2 pr-3 h-11 font-bold text-base text-white hover:text-amber-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 rounded-full"
-        >
-          <ArrowLeft className="w-5 h-5" strokeWidth={2.5} />
-          Back
-        </button>
+        <BackButton onClick={goBack} />
         <h1 className="text-base font-bold text-white">Search</h1>
         {/* spacer keeps the title centred against the back button */}
-        <span className="w-[72px]" aria-hidden="true" />
+        <span className="w-10" aria-hidden="true" />
       </header>
 
       {/* Search bar + tabs stay pinned while results scroll */}

@@ -9,6 +9,9 @@ import AICoPilotDrawer from '@/components/AICoPilotDrawer';
 import SoundPicker from '@/components/SoundPicker';
 import TemplatePicker from '@/components/TemplatePicker';
 import AiGenerationModal from '@/components/AiGenerationModal';
+import TemplateClipSheet from '@/components/TemplateClipSheet';
+import { stitchClips } from '@/lib/stitchClips';
+import { templateSetup } from '@/lib/templates';
 import { FilterSheet, LensPreview, useLensPreviews } from '@/components/studio/LensPicker';
 import { DEFAULT_FILTER_ID, FILTERS } from '@/lib/cameraFilters';
 
@@ -311,7 +314,6 @@ function UploadPageInner() {
   }
 
   // --- Templates hub ---
-  const templateFileInputRef = useRef(null);
   const [templateCategory, setTemplateCategory] = useState('For You');
   const [showTemplateSearch, setShowTemplateSearch] = useState(false);
   const [templateSearchQuery, setTemplateSearchQuery] = useState('');
@@ -319,53 +321,115 @@ function UploadPageInner() {
   const [aiTemplate, setAiTemplate] = useState(null); // AI template awaiting a selfie
   const [templateClipError, setTemplateClipError] = useState(null);
 
-  function handleTemplateClipsPicked(e) {
-    const files = Array.from(e.target.files || []);
-    e.target.value = ''; // allow re-picking the same file(s) next time
-    if (!files.length || !selectedTemplate) return;
+  // Clips that make up the template currently being built (gallery picks, or the
+  // clips recorded in a guided session). Kept so a failed combine can be retried.
+  const [videoClips, setVideoClips] = useState([]);
+  // Guided recording session: { template, setup, clips: File[] } | null. The camera
+  // opens with the template's effect, records one clip at a time with each clip's own
+  // length, and the finished set is combined into the single file the publisher takes.
+  const [guided, setGuided] = useState(null);
+  const guidedRef = useRef(null);
+  guidedRef.current = guided; // the recorder's onCaptured closure must see the latest session
+  const [cameraKey, setCameraKey] = useState(0); // remounting reopens the camera between clips
+  const [stitch, setStitch] = useState(null); // null | { index, count, elapsed, total } | { error, retry }
+  const stitchAbortRef = useRef(null);
 
-    if (files.length !== selectedTemplate.clipCount) {
-      setTemplateClipError({
-        message: `Select exactly ${selectedTemplate.clipCount} clip${selectedTemplate.clipCount === 1 ? '' : 's'} — you picked ${files.length}.`,
-      });
-      return;
-    }
-    const first = files[0];
-    if (!first.type.startsWith('video/')) {
-      setTemplateClipError({ message: 'Please choose video files.' });
-      return;
-    }
-
-    if (selectedTemplate.clipCount > 1) {
-      // Stitching multiple clips together (with the template's own timing/
-      // transitions) needs a real video-composition pipeline this app
-      // doesn't have — there's no ffmpeg/concat step behind POST /videos
-      // (see backend/src/routes/videos.js, single-file upload only).
-      // Rather than silently proceed with only the first clip, this stops
-      // and asks explicitly, so nobody thinks their other N-1 clips got
-      // used when they didn't.
-      setTemplateClipError({
-        message: `Multi-clip templates aren't stitched together automatically yet. Continue with just your first clip? The other ${
-          files.length - 1
-        } won't be included.`,
-        pendingFile: first,
-      });
-      return;
-    }
-
-    setTemplateClipError(null);
-    proceedWithTemplateClip(first);
-  }
-
-  function proceedWithTemplateClip(clipFile) {
-    setFile(clipFile);
-    setLastPickedFile(clipFile);
-    setCapturedFromCamera(false);
-    setCaption((prev) => (prev.trim() ? prev : selectedTemplate?.title || ''));
+  function finishTemplate(f, template, fromCamera) {
+    setFile(f);
+    setLastPickedFile(f);
+    setCapturedFromCamera(fromCamera);
+    setCaption((prev) => (prev.trim() ? prev : template?.title || ''));
     setSelectedTemplate(null);
     setTemplateClipError(null);
+    setGuided(null);
     setPublishTab('post');
   }
+
+  // videoClips[] -> one file. A single clip goes straight through; several are played
+  // back in order and recorded into one video (see lib/stitchClips.js).
+  async function buildFromClips(clips, template, { fromCamera = false } = {}) {
+    setVideoClips(clips);
+    if (clips.length === 1) {
+      finishTemplate(clips[0], template, fromCamera);
+      return;
+    }
+    const setup = templateSetup(template);
+    const ctrl = new AbortController();
+    stitchAbortRef.current = ctrl;
+    setStitch({ index: 0, count: clips.length, elapsed: 0, total: setup.totalSeconds });
+    try {
+      const out = await stitchClips(clips, {
+        clipSeconds: setup.clipSeconds,
+        signal: ctrl.signal,
+        onProgress: (p) => setStitch((cur) => (cur && !cur.error ? { ...cur, ...p } : cur)),
+      });
+      setStitch(null);
+      finishTemplate(out, template, fromCamera);
+    } catch (err) {
+      if (err?.name === 'AbortError') {
+        setStitch(null);
+        return;
+      }
+      setStitch({ error: err?.message || "Couldn't combine the clips.", retry: () => buildFromClips(clips, template, { fromCamera }) });
+    }
+  }
+
+  function cancelStitch() {
+    stitchAbortRef.current?.abort();
+    setStitch(null);
+    if (guidedRef.current) {
+      setGuided(null);
+      setCameraKey((k) => k + 1);
+    }
+  }
+
+  function startGuided(template) {
+    const setup = templateSetup(template);
+    setActiveEffectId(EFFECTS.some((f) => f.id === setup.effectId) ? setup.effectId : 'none');
+    setGuided({ template, setup, clips: [] });
+    setVideoClips([]);
+    setFile(null);
+    setTextOverlay(null);
+    setErrorMsg(null);
+    setSelectedTemplate(null);
+    setTemplateClipError(null);
+    setCameraKey((k) => k + 1);
+    setPublishTab('post');
+    // Sound: templates carry a trackId once real tracks are chosen (null until then).
+    if (setup.trackId) {
+      api
+        .getTrack(setup.trackId)
+        .then(setSelectedTrack)
+        .catch(() => {});
+    }
+  }
+
+  function exitGuided() {
+    if (isRecording) return;
+    setGuided(null);
+    setCameraKey((k) => k + 1);
+  }
+
+  function redoLastGuidedClip() {
+    if (isRecording) return;
+    setGuided((g) => (g && g.clips.length ? { ...g, clips: g.clips.slice(0, -1) } : g));
+  }
+
+  // Each clip stops itself at its own length (the recorder's own countdown only has whole-second
+  // resolution), and the recorder is told the rounded-up length so its on-screen counter matches.
+  const guidedClipIndex = guided ? guided.clips.length : -1;
+  useEffect(() => {
+    if (!guided) return;
+    const secs = guided.setup.clipSeconds[guided.clips.length];
+    if (secs) cameraRef.current?.setDurationSeconds(Math.ceil(secs));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cameraKey, guidedClipIndex]);
+  useEffect(() => {
+    if (!guided || !isRecording) return undefined;
+    const secs = guided.setup.clipSeconds[guided.clips.length];
+    const t = setTimeout(() => cameraRef.current?.stopRecording(), Math.round(secs * 1000));
+    return () => clearTimeout(t);
+  }, [guided, isRecording]);
 
   useEffect(() => {
     if (!localStorage.getItem('token')) router.push('/login');
@@ -459,6 +523,17 @@ function UploadPageInner() {
   }
 
   function handleCaptured(capturedFile) {
+    const g = guidedRef.current;
+    if (g) {
+      const clips = [...g.clips, capturedFile];
+      if (clips.length < g.setup.clipSeconds.length) {
+        setGuided({ ...g, clips });
+        setCameraKey((k) => k + 1); // the recorder released the camera; reopen it for the next clip
+        return;
+      }
+      buildFromClips(clips, g.template, { fromCamera: true });
+      return;
+    }
     setFile(capturedFile);
     setCapturedFromCamera(true);
     // Already baked into the recorded pixels by CameraRecorder's canvas
@@ -720,6 +795,7 @@ function UploadPageInner() {
           onPointerLeave={endOverlayDrag}
         >
           <CameraRecorder
+            key={cameraKey}
             ref={cameraRef}
             embedded
             hideOwnControls
@@ -752,6 +828,16 @@ function UploadPageInner() {
             onClearSound={() => setSelectedTrack(null)}
             disabled={isRecording}
           />
+
+          {guided && (
+            <GuidedHud
+              guided={guided}
+              isRecording={isRecording}
+              secondsLeft={recordingSecondsLeft}
+              onExit={exitGuided}
+              onRedo={redoLastGuidedClip}
+            />
+          )}
 
           <RightToolColumn
             onFlip={handleFlipCamera}
@@ -856,14 +942,6 @@ function UploadPageInner() {
               setTemplateClipError(null);
             }}
           />
-          <input
-            ref={templateFileInputRef}
-            type="file"
-            accept="video/mp4,video/quicktime,video/webm"
-            multiple
-            className="hidden"
-            onChange={handleTemplateClipsPicked}
-          />
           {aiTemplate && (
             <AiGenerationModal
               template={aiTemplate}
@@ -879,19 +957,17 @@ function UploadPageInner() {
             />
           )}
           {selectedTemplate && (
-            <TemplateClipPicker
+            <TemplateClipSheet
               template={selectedTemplate}
-              error={templateClipError}
-              onPickClips={() => templateFileInputRef.current?.click()}
-              onConfirmSingleFallback={proceedWithTemplateClip}
-              onClose={() => {
-                setSelectedTemplate(null);
-                setTemplateClipError(null);
-              }}
+              onRecord={() => startGuided(selectedTemplate)}
+              onUseClips={(clips) => buildFromClips(clips, selectedTemplate)}
+              onClose={() => setSelectedTemplate(null)}
             />
           )}
         </>
       )}
+
+      {stitch && <StitchOverlay stitch={stitch} onCancel={cancelStitch} />}
 
       {/* ---------------- Step 2: captured/picked — full-screen review ---------------- */}
       {file && !showPublishDrawer && (
@@ -1208,41 +1284,74 @@ function FavoritesDrawer({ favoriteIds, activeEffectId, onSelect, onClose }) {
 /* Templates (hub UI lives in components/TemplatePicker.jsx)               */
 /* ------------------------------------------------------------------ */
 
-function TemplateClipPicker({ template, error, onPickClips, onConfirmSingleFallback, onClose }) {
+function GuidedHud({ guided, isRecording, secondsLeft, onExit, onRedo }) {
+  const total = guided.setup.clipSeconds.length;
+  const done = guided.clips.length;
+  const secs = guided.setup.clipSeconds[done];
   return (
-    <div className="absolute inset-0 z-40 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center" onClick={onClose}>
-      <div
-        className="w-full sm:max-w-sm bg-zinc-900 border border-zinc-800 rounded-t-2xl sm:rounded-2xl p-5"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <p className="text-white font-semibold text-base mb-1">Use &quot;{template.title}&quot;</p>
-        <p className="text-zinc-400 text-sm mb-4">
-          Select {template.clipCount} clip{template.clipCount === 1 ? '' : 's'} to fill this template.
-        </p>
-
-        {error && (
-          <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 mb-4">
-            <p className="text-amber-400 text-xs">{error.message}</p>
-            {error.pendingFile && (
-              <div className="flex gap-2 mt-3">
-                <button onClick={onClose} className="flex-1 py-2 rounded-lg text-xs font-semibold text-zinc-300 border border-zinc-700">
-                  Cancel
-                </button>
-                <button
-                  onClick={() => onConfirmSingleFallback(error.pendingFile)}
-                  className="flex-1 py-2 rounded-lg text-xs font-semibold bg-amber-500 text-black"
-                >
-                  Continue with 1 clip
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-
-        {!error?.pendingFile && (
-          <button onClick={onPickClips} className="w-full bg-amber-500 hover:bg-amber-400 text-black font-bold py-3 rounded-xl text-sm">
-            Select {template.clipCount} clip{template.clipCount === 1 ? '' : 's'}
+    <div className="absolute top-[4.5rem] left-14 right-16 flex flex-col items-center gap-1.5 pointer-events-none">
+      <div className="pointer-events-auto flex items-center gap-2 bg-black/60 backdrop-blur-sm rounded-full pl-3 pr-1.5 py-1.5 max-w-full">
+        <div className="flex items-center gap-1" aria-hidden="true">
+          {Array.from({ length: total }, (_, i) => (
+            <span
+              key={i}
+              className={`h-1.5 rounded-full transition-all ${
+                i < done ? 'w-3 bg-amber-400' : i === done ? 'w-5 bg-white' : 'w-1.5 bg-white/35'
+              }`}
+            />
+          ))}
+        </div>
+        <span className="text-white text-xs font-extrabold whitespace-nowrap" aria-live="polite">
+          {isRecording ? `Recording · ${secondsLeft}s` : `Clip ${done + 1} of ${total} · ${secs}s`}
+        </span>
+        {!isRecording && done > 0 && (
+          <button onClick={onRedo} className="text-[11px] font-bold text-amber-300 px-2 py-1 rounded-full hover:bg-white/10 whitespace-nowrap">
+            Redo
           </button>
+        )}
+        {!isRecording && (
+          <button onClick={onExit} aria-label="Leave template recording" className="w-6 h-6 rounded-full bg-white/15 text-white flex items-center justify-center">
+            <XIcon />
+          </button>
+        )}
+      </div>
+      <p className="text-white/90 text-[11px] font-semibold drop-shadow truncate max-w-full">
+        {guided.template.title}
+        {guided.setup.soundTitle ? ` · \u266A ${guided.setup.soundTitle}` : ''}
+      </p>
+    </div>
+  );
+}
+
+function StitchOverlay({ stitch, onCancel }) {
+  const pct = stitch.total ? Math.min(100, Math.round((stitch.elapsed / stitch.total) * 100)) : 0;
+  return (
+    <div className="absolute inset-0 z-[70] bg-black/85 backdrop-blur-sm flex items-center justify-center px-8" role="alertdialog" aria-modal="true" aria-live="polite">
+      <div className="w-full max-w-xs text-center">
+        {stitch.error ? (
+          <>
+            <p className="text-white font-extrabold text-base mb-2">Couldn&apos;t combine your clips</p>
+            <p className="text-zinc-400 text-sm mb-5">{stitch.error}</p>
+            <button onClick={stitch.retry} className="w-full bg-amber-500 text-black font-extrabold py-3 rounded-xl mb-2">
+              Try again
+            </button>
+            <button onClick={onCancel} className="w-full bg-zinc-800 text-white font-bold py-3 rounded-xl">
+              Discard
+            </button>
+          </>
+        ) : (
+          <>
+            <p className="text-white font-extrabold text-base mb-1">Putting your video together…</p>
+            <p className="text-zinc-400 text-sm mb-4">
+              Clip {Math.min(stitch.index + 1, stitch.count)} of {stitch.count} · keep this tab open
+            </p>
+            <div className="h-2 rounded-full bg-zinc-800 overflow-hidden mb-5" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+              <div className="h-full bg-amber-500 transition-all duration-150" style={{ width: `${pct}%` }} />
+            </div>
+            <button onClick={onCancel} className="text-sm font-bold text-zinc-300 px-4 py-2 rounded-full bg-zinc-800">
+              Cancel
+            </button>
+          </>
         )}
       </div>
     </div>

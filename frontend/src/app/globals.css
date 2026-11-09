@@ -4,10 +4,17 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Light is the default theme (next-themes, attribute="class"); html.dark restores the
+   original ink/bone palette. Pages not yet converted to dark: variants are wrapped in a
+   forced-dark surface by components/ThemeSurface.jsx, so they look unchanged. */
 body {
+  background-color: #ffffff;
+  color: #0f172a;
+  font-family: 'Work Sans', sans-serif;
+}
+.dark body {
   background-color: #1A1423;
   color: #F2EBE2;
-  font-family: 'Work Sans', sans-serif;
 }
 
 /* Hide scrollbar on the snap feed while keeping it scrollable */

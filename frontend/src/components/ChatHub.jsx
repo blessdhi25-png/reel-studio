@@ -302,8 +302,7 @@ export default function ChatHub() {
         // it. z-50 also fixes a separate issue: this and BottomNav
         // (z-40) were tied, so which one visually won any overlap came
         // down to DOM paint order rather than anything intentional.
-        className="fixed left-4 z-50 p-3 rounded-full bg-zinc-900/90 border border-zinc-700 text-yellow-400 shadow-xl hover:scale-105 transition"
-        style={{ bottom: 'calc(6rem + env(safe-area-inset-bottom))' }}
+        className="fixed bottom-28 right-6 z-40 bottom-[calc(7rem+env(safe-area-inset-bottom))] p-3 rounded-full bg-zinc-900/90 border border-zinc-700 text-yellow-400 shadow-xl hover:scale-105 transition"
       >
         <ChatBubbleIcon />
         {!open && totalBadge > 0 && (
@@ -314,10 +313,10 @@ export default function ChatHub() {
       </button>
 
       <div
-        className={`fixed z-50 left-4 w-[92vw] max-w-sm h-[70vh] max-h-[560px] bg-zinc-900/95 backdrop-blur-xl border border-zinc-800 text-white rounded-3xl shadow-2xl flex flex-col overflow-hidden origin-bottom-left transition-all duration-250 ease-out ${
+        className={`fixed z-[45] right-6 w-[calc(100vw-3rem)] max-w-sm h-[70vh] max-h-[560px] bg-zinc-900/95 backdrop-blur-xl border border-zinc-800 text-white rounded-3xl shadow-2xl flex flex-col overflow-hidden origin-bottom-right transition-all duration-250 ease-out ${
           open ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-95 translate-y-4 pointer-events-none'
         }`}
-        style={{ bottom: 'calc(9rem + env(safe-area-inset-bottom))' }}
+        style={{ bottom: 'calc(11rem + env(safe-area-inset-bottom))' }}
       >
         <div className="flex items-center justify-between px-3 pt-3 pb-2 border-b border-zinc-800/80 shrink-0">
           <div className="flex items-center gap-1 bg-zinc-800/60 rounded-xl p-1">
@@ -395,7 +394,7 @@ export default function ChatHub() {
         {tab === 'messages' && selectedId && (
           <>
             <div className="px-3 py-2.5 border-b border-zinc-800/80 flex items-center gap-2 shrink-0">
-              <button onClick={() => setSelectedId(null)} aria-label="Back to conversations" className="text-zinc-400 hover:text-white">
+              <button onClick={() => setSelectedId(null)} aria-label="Back to conversations" className="p-1.5 rounded-full bg-neutral-200 dark:bg-neutral-800 text-black dark:text-white hover:bg-neutral-300 active:scale-95 transition-all shrink-0">
                 <BackIcon />
               </button>
               <Avatar user={otherUser} size={8} online={onlineUsers.has(selectedId)} />

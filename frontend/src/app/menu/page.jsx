@@ -1,5 +1,7 @@
 'use client';
 
+import { useTheme } from 'next-themes';
+import BackButton from '@/components/BackButton';
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -117,7 +119,9 @@ export default function MenuPage() {
   const [user, setUser] = useState(null);
   const [query, setQuery] = useState('');
   const [balanceCents, setBalanceCents] = useState(null);
-  const [dark, setDark] = useState(true);
+  const { resolvedTheme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+  const dark = mounted && resolvedTheme === 'dark';
   const { isStaff } = useStaffAccess();
 
   useEffect(() => {
@@ -133,24 +137,19 @@ export default function MenuPage() {
     api.getEarnings().then((d) => setBalanceCents(d.totalCents)).catch(() => {});
   }, []);
 
-  // Scoped to this page only — flips a class on <html> that only the
-  // dark:-prefixed utilities below respond to, so nothing elsewhere in the
-  // app (which doesn't use dark: classes) is affected.
+  // Theme is app-wide now (next-themes, light by default). One-time migration of the
+  // old Menu-only 'menuTheme' choice into next-themes' own 'theme' key.
   useEffect(() => {
-    const stored = localStorage.getItem('menuTheme');
-    const isDark = stored ? stored === 'dark' : true;
-    setDark(isDark);
-    document.documentElement.classList.toggle('dark', isDark);
-    return () => document.documentElement.classList.remove('dark');
-  }, []);
+    setMounted(true);
+    try {
+      const legacy = localStorage.getItem('menuTheme');
+      if (legacy && !localStorage.getItem('theme')) setTheme(legacy === 'dark' ? 'dark' : 'light');
+      if (legacy) localStorage.removeItem('menuTheme');
+    } catch {}
+  }, [setTheme]);
 
   function toggleTheme() {
-    setDark((prev) => {
-      const next = !prev;
-      document.documentElement.classList.toggle('dark', next);
-      localStorage.setItem('menuTheme', next ? 'dark' : 'light');
-      return next;
-    });
+    setTheme(dark ? 'light' : 'dark');
   }
 
   const filteredCategories = useMemo(() => {
@@ -195,13 +194,7 @@ export default function MenuPage() {
       <div className="dark:bg-zinc-950/90 dark:border-zinc-800 bg-white/90 border-zinc-200 border-b backdrop-blur-md sticky top-0 z-10">
         <div className="max-w-6xl mx-auto px-6 md:px-10 py-5 flex flex-col md:flex-row md:items-center gap-4">
           <div className="flex items-center gap-4 flex-1 min-w-0">
-            <Link
-              href={`/profile/${user.id}`}
-              aria-label="Back to profile"
-              className="dark:bg-zinc-900 dark:border-zinc-800 dark:text-zinc-300 bg-zinc-100 border-zinc-200 text-zinc-600 border rounded-xl w-9 h-9 flex items-center justify-center shrink-0 hover:border-amber-500/60 hover:text-amber-500 transition-colors"
-            >
-              <BackIcon />
-            </Link>
+            <BackButton href={`/profile/${user.id}`} label="Back to profile" className="shrink-0" />
             <div className="min-w-0">
               <h1 className="font-display text-2xl md:text-3xl tracking-wide truncate">Menu & Settings</h1>
               <p className="dark:text-zinc-500 text-zinc-500 text-xs font-mono uppercase tracking-widest">
@@ -317,15 +310,6 @@ function ThemeToggle({ dark, onToggle }) {
 }
 
 // ── Icons ────────────────────────────────────────────────────────────────
-
-function BackIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
-      <path d="m15 18-6-6 6-6" />
-    </svg>
-  );
-}
 
 function SearchIcon() {
   return (

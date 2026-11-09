@@ -1,5 +1,6 @@
 'use client';
 
+import BackButton from '@/components/BackButton';
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -338,9 +339,7 @@ export default function CommunityDetailPage({ params }) {
       <main className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center px-6 text-center">
         <p className="font-body text-zinc-300 text-sm mb-1">Community not found</p>
         <p className="font-body text-zinc-600 text-xs mb-5">It may be private, or no longer exists.</p>
-        <a href="/communities" className="text-amber-400 text-sm font-semibold hover:text-amber-300">
-          ← Back to Communities
-        </a>
+        <BackButton href="/communities" label="Back to Communities" />
       </main>
     );
   }
@@ -713,7 +712,7 @@ export default function CommunityDetailPage({ params }) {
           type="button"
           onClick={() => setIsCreatePostOpen(true)}
           aria-label="Create a post in this community"
-          className="fixed bottom-24 right-5 z-40 bg-amber-500 text-black p-4 rounded-full shadow-2xl font-bold leading-none"
+          className="fixed bottom-44 right-6 z-40 bg-amber-500 text-black p-4 rounded-full shadow-2xl font-bold leading-none"
         >
           + Post
         </button>

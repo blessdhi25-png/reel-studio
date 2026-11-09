@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useTheme } from 'next-themes';
 import { api } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
@@ -56,6 +57,11 @@ export default function SettingsDashboardPage() {
   const [avgSeconds, setAvgSeconds] = useState(null);
 
   const [confirmLogout, setConfirmLogout] = useState(false);
+
+  // Appearance (next-themes). Read only after mount to avoid a hydration mismatch.
+  const { theme, setTheme } = useTheme();
+  const [themeMounted, setThemeMounted] = useState(false);
+  useEffect(() => setThemeMounted(true), []);
 
   useEffect(() => {
     if (ready && !isAuthenticated) router.replace('/login');
@@ -216,6 +222,18 @@ export default function SettingsDashboardPage() {
         title="App Preferences & Performance"
         footer="Data Saver caps streaming quality on mobile data for adaptive (HLS) videos. These preferences are saved on this device."
       >
+        <SettingsBlock icon="🌓" title="Appearance" subtitle="Light is the default">
+          <Segmented
+            label="App theme"
+            options={[
+              { value: 'light', label: 'Light' },
+              { value: 'dark', label: 'Dark' },
+            ]}
+            value={themeMounted ? (theme === 'dark' ? 'dark' : 'light') : undefined}
+            disabled={!themeMounted}
+            onChange={setTheme}
+          />
+        </SettingsBlock>
         <ToggleRow
           icon="📶"
           title="Data Saver Mode"

@@ -1,5 +1,6 @@
 'use client';
 
+import BackButton from '@/components/BackButton';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
@@ -27,9 +28,7 @@ export default function QrCodePage() {
 
   return (
     <main className="min-h-screen px-6 py-10 max-w-md mx-auto flex flex-col items-center pb-20">
-      <a href="/menu" className="font-mono text-xs text-smoke uppercase tracking-widest self-start">
-        ← Back to menu
-      </a>
+      <BackButton href="/menu" label="Back to menu" className="self-start" />
 
       <h1 className="font-display text-3xl text-bone tracking-wide mt-8 mb-2">Your QR code</h1>
       <p className="font-body text-smoke text-sm mb-8 text-center">

@@ -1,8 +1,9 @@
 'use client';
 
+import BackButton from '@/components/BackButton';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ChevronLeft, Phone, Video, MoreVertical, Paperclip, Smile, Send, X } from 'lucide-react';
+import { Phone, Video, MoreVertical, Paperclip, Smile, Send, X } from 'lucide-react';
 import { api } from '../lib/api';
 import { getSocket } from '../lib/socket';
 import { useSocketContext } from '../context/SocketContext';
@@ -173,9 +174,7 @@ export default function ChatThreadView({ otherUserId }) {
       {/* Header */}
       <div className="p-3 border-b border-zinc-800 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3 min-w-0">
-          <button onClick={() => router.push('/messages')} aria-label="Back" className="text-zinc-300 hover:text-white shrink-0">
-            <ChevronLeft size={22} />
-          </button>
+          <BackButton href="/messages" label="Back to messages" className="shrink-0" />
           <span className="relative shrink-0">
             <Avatar user={otherUser} />
             {isOnline && <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-black" />}

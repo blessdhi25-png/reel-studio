@@ -1,7 +1,8 @@
 'use client';
 
+import BackButton from '@/components/BackButton';
 import Link from 'next/link';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 
 // Shared building blocks for the Settings & Privacy architecture. Every
 // settings screen uses these so spacing, typography (font-sans font-bold),
@@ -11,13 +12,7 @@ export function SettingsPage({ title, backHref = '/settings', backLabel = 'Setti
   return (
     <div className="min-h-screen bg-[#0a090e] text-white font-sans pb-36">
       <div className="max-w-md mx-auto px-4 pt-4">
-        <Link
-          href={backHref}
-          className="inline-flex items-center gap-0.5 -ml-1 py-1 pr-2 text-sm font-bold text-amber-500 hover:text-amber-400"
-        >
-          <ChevronLeft size={18} aria-hidden="true" />
-          {backLabel}
-        </Link>
+        <BackButton href={backHref} label={`Back to ${backLabel}`} />
         <h1 className="font-sans font-bold text-2xl tracking-tight mt-3 mb-6">{title}</h1>
         {children}
       </div>

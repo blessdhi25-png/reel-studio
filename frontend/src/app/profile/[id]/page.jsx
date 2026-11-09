@@ -1,9 +1,10 @@
 'use client';
 
+import BackButton from '@/components/BackButton';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, MoreHorizontal, Menu as MenuIcon, Share2, Home, Lock } from 'lucide-react';
+import { MoreHorizontal, Menu as MenuIcon, Share2, Home, Lock } from 'lucide-react';
 import { api, getStoredUser } from '@/lib/api';
 import { useToast } from '@/context/ToastContext';
 import ReportModal from '@/components/ReportModal';
@@ -133,13 +134,7 @@ export default function ProfilePage({ params }) {
           <img src={user.bannerUrl} alt="" className="w-full h-full object-cover" />
         )}
         <div className="absolute inset-x-0 top-0 px-4 pt-3 flex items-center justify-between">
-          <Link
-            href="/"
-            className="flex items-center gap-1 text-[11px] font-mono tracking-widest text-emerald-400 hover:text-emerald-300 uppercase bg-black/40 rounded-lg px-2 py-1"
-          >
-            <ArrowLeft size={12} />
-            <span>Feed</span>
-          </Link>
+          <BackButton href="/" label="Back to feed" />
 
           <div className="flex items-center gap-2 relative" ref={menuRef}>
             {isSelf ? (

@@ -1,8 +1,9 @@
 'use client';
 
+import BackButton from '@/components/BackButton';
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Camera, ImagePlus } from 'lucide-react';
+import { Camera, ImagePlus } from 'lucide-react';
 import { api, getStoredUser } from '@/lib/api';
 
 export default function EditProfilePage() {
@@ -115,9 +116,7 @@ export default function EditProfilePage() {
   return (
     <div className="min-h-screen bg-[#0a090e] text-white pb-24 font-sans max-w-md mx-auto">
       <div className="flex items-center gap-3 px-4 py-4 border-b border-zinc-900">
-        <button onClick={() => router.back()} className="text-zinc-300 hover:text-white">
-          <ArrowLeft size={20} />
-        </button>
+        <BackButton />
         <h1 className="text-base font-bold">Edit profile</h1>
       </div>
 
