@@ -4,6 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import { Suspense, useEffect, useRef, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
+import { hasSeenWelcome, hasToken, isGuest } from '@/lib/onboarding';
 import { api } from '../lib/api';
 import { getSocket } from '../lib/socket';
 import VideoCard from '../components/VideoCard';
@@ -37,6 +38,17 @@ function CircleParamSync({ onCircle }) {
 
 export default function FeedPage() {
   const router = useRouter();
+  const [guest, setGuest] = useState(false);
+
+  // Welcome gate: a brand-new install (no session, welcome never seen) is sent to the intro before
+  // any feed content. Keys: the session token is stored as 'token' (not 'auth_token').
+  useEffect(() => {
+    if (!hasToken() && !hasSeenWelcome()) {
+      router.replace('/welcome');
+      return;
+    }
+    setGuest(!hasToken() && isGuest());
+  }, [router]);
 
   // Audio & Header state
   const [activeTab, setActiveTab] = useState('All');
@@ -345,6 +357,18 @@ export default function FeedPage() {
       <Suspense fallback={null}>
         <CircleParamSync onCircle={setCircle} />
       </Suspense>
+
+      {/* Guest browsing (chose "Continue as Guest" on /welcome): a slim, tappable nudge. */}
+      {guest && !focusMode && (
+        <div className="fixed bottom-[calc(5.5rem+env(safe-area-inset-bottom))] inset-x-0 z-30 flex justify-center pointer-events-none px-4">
+          <a
+            href="/signup"
+            className="pointer-events-auto flex items-center gap-2 bg-black/75 backdrop-blur-sm text-white text-xs font-extrabold px-4 py-2 rounded-full shadow-lg border border-white/15"
+          >
+            Browsing as a guest <span className="text-amber-400">Sign up to join in</span>
+          </a>
+        </div>
+      )}
 
       {/* Desktop Header */}
       {!focusMode && isDesktop && (

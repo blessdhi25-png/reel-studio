@@ -75,6 +75,7 @@ export function AuthProvider({ children }) {
   const login = useCallback((newToken, newUser) => {
     window.localStorage.setItem(TOKEN_KEY, newToken);
     window.localStorage.setItem(USER_KEY, JSON.stringify(newUser));
+    window.localStorage.removeItem('guest_mode'); // a real account replaces guest browsing (lib/onboarding.js)
     // Cookie mirror for middleware.js's /admin/* route guard — see
     // lib/cookies.js for why this exists alongside localStorage rather than
     // instead of it. newUser.role may be undefined for the very first

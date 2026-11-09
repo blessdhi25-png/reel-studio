@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 // Add a route here once its page is converted. Everything else was built dark-only
 // (hardcoded text-white / zinc-* on an implicit dark body), so it is wrapped in a
 // forced-dark surface and renders exactly as it did before light became the default.
-const THEMED_ROUTES = ['/friends', '/menu'];
+const THEMED_ROUTES = ['/friends', '/menu', '/welcome'];
 
 export function isThemedRoute(pathname) {
   return THEMED_ROUTES.some((r) => pathname === r || pathname.startsWith(`${r}/`));

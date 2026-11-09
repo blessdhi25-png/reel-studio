@@ -4,7 +4,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '../context/AuthContext';
 import { useSocketContext } from '../context/SocketContext';
 
-const HIDDEN_ON = ['/login', '/signup', '/verify-email', '/upload'];
+const HIDDEN_ON = ['/welcome', '/login', '/signup', '/verify-email', '/upload'];
 // Prefix-matched separately from HIDDEN_ON above: /admin has many
 // sub-routes (users, videos, fraud-signals, audit-log, ...) and the admin
 // portal has its own dedicated layout/nav (see app/admin/layout.jsx) — the
