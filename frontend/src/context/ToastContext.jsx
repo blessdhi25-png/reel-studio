@@ -89,9 +89,10 @@ function ToastContainer({ toasts, onDismiss }) {
 
   return (
     <div
-      className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[100] flex flex-col items-center gap-2 px-4 w-full max-w-sm pointer-events-none"
-      // bottom-24 clears the bottom nav bar (h-24 gradient scrim + safe
-      // area) rather than sitting on top of/behind it.
+      className="fixed top-[calc(1rem+env(safe-area-inset-top))] left-1/2 -translate-x-1/2 z-[100] flex flex-col items-center gap-2 px-4 w-full max-w-sm pointer-events-none"
+      // Top of the screen: bottom-anchored modals/sheets (ConfirmModal,
+      // PublishDrawer) put their action buttons there, and a toast on top
+      // of them hid Cancel/Delete.
       aria-live="polite"
       aria-atomic="false"
     >

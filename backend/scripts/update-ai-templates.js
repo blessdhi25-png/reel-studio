@@ -18,15 +18,19 @@ async function main() {
   ];
 
   for (const t of templates) {
-    await prisma.aiTemplate.updateMany({
+    const { count } = await prisma.aiTemplate.updateMany({
       where: { title: t.title },
       data: { modelEndpoint: t.modelEndpoint },
     });
+    console.log(`${count ? 'Updated' : 'NO MATCH for'} "${t.title}"${count ? ` (${count} row${count === 1 ? '' : 's'})` : ''}`);
   }
 
   console.log("Updated AI Template endpoints successfully.");
 }
 
 main()
-  .catch((e) => console.error(e))
+  .catch((e) => {
+    console.error(e);
+    process.exitCode = 1;
+  })
   .finally(async () => await prisma.$disconnect());
