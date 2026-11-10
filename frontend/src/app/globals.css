@@ -149,3 +149,15 @@ body {
   0%, 100% { transform: scaleY(0.35); }
   50% { transform: scaleY(1); }
 }
+
+/* Share sheet: backdrop fades in while the sheet itself slides up from the bottom edge. */
+@keyframes share-sheet-in {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+@keyframes share-backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.animate-share-sheet { animation: share-sheet-in 0.3s cubic-bezier(0.32, 0.72, 0, 1) both; }
+.animate-share-backdrop { animation: share-backdrop-in 0.2s ease-out both; }

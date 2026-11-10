@@ -33,7 +33,7 @@ export const viewport = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning className="bg-white dark:bg-ink">
       <body className="bg-white text-slate-900 dark:bg-ink dark:text-bone">
         {/* AuthProvider/ToastProvider/SocketProvider/AppShell are Client
             Components; Next.js's App Router allows a Server Component

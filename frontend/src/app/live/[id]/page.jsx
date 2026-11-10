@@ -416,7 +416,7 @@ export default function LiveRoomPage({ params }) {
 
       {/* ---------- Join CTA ---------- */}
       {!joined && !hasEnded && (
-        <div className="relative z-20 px-4 pb-6 flex flex-col items-center gap-3">
+        <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 z-20 px-4 flex flex-col items-center gap-3">
           {devices.length > 1 && (
             <CameraDeviceSelect
               devices={devices}
@@ -436,7 +436,11 @@ export default function LiveRoomPage({ params }) {
       )}
 
       {/* ---------- Bottom bar ---------- */}
-      <div className="relative z-20 flex items-end justify-between gap-3 p-4">
+      {/* Pinned above the BottomNav (fixed bottom-0 z-50) so the chat card,
+          input and floating action buttons never sit beneath the tabs.
+          calc() = bottom-24 plus the device's home-indicator inset, matching
+          how far the nav itself grows. */}
+      <div className="fixed inset-x-4 bottom-[calc(6rem+env(safe-area-inset-bottom))] z-40 flex items-end justify-between gap-3">
         <div className="w-full max-w-sm bg-zinc-900/95 backdrop-blur-xl border border-zinc-800 rounded-2xl flex flex-col overflow-hidden shadow-2xl">
           <div ref={chatScrollRef} className="max-h-52 overflow-y-auto px-3.5 pt-3 pb-2 space-y-1.5">
             {chatMessages.length === 0 && (
