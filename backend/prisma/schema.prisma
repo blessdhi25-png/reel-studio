@@ -13,6 +13,11 @@ enum VideoType {
   long
 }
 
+enum MediaType {
+  video
+  photo
+}
+
 enum VideoStatus {
   processing
   published
@@ -88,6 +93,7 @@ enum NotificationType {
   moderation
   live_started
   system
+  repost
 }
 
 enum LiveStreamStatus {
@@ -130,6 +136,10 @@ model User {
   avatarUrl     String?
   bannerUrl     String?
   bio           String?
+  phone         String?
+  whatsapp      String?
+  // [{ label, url }] — up to 5 external links shown on the profile.
+  externalLinks Json?
   creatorStatus Boolean  @default(false)
   stripeAccountId       String?  @unique
   stripeOnboarded       Boolean  @default(false)
@@ -189,6 +199,7 @@ model User {
 
   watchLogs WatchLog[]
   interests UserInterest[]
+  reposts   Repost[]
 }
 
 model Block {
@@ -219,6 +230,11 @@ model Video {
   commentCount    BigInt      @default(0)
   bookmarkCount   BigInt      @default(0)
   rankingScore    Float       @default(0)
+  // 'photo' posts reuse videoUrl for the image URL (and thumbnailUrl too), so
+  // every existing query that returns a Video row keeps working unchanged.
+  mediaType       MediaType   @default(video)
+  // Validated [{ id, text, x, y, size, font, color, pill, pillColor }] — see utils/textOverlays.js.
+  textOverlays    Json?
   status          VideoStatus @default(processing)
   boostedUntil    DateTime?
   createdAt       DateTime    @default(now())
@@ -233,6 +249,7 @@ model Video {
   feedEvents   FeedEvent[]
   collectionEntries CollectionVideo[]
   watchLogs    WatchLog[]
+  reposts      Repost[]
 
   // Optional — a video can be posted directly to a community's own feed.
   // This is deliberately separate from the pre-existing `circle` field
@@ -663,4 +680,16 @@ model AiTemplate {
   isActive      Boolean  @default(true)
 
   @@index([category, isActive])
+}
+
+model Repost {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  videoId   String
+  video     Video    @relation(fields: [videoId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@unique([userId, videoId])
+  @@index([videoId])
 }

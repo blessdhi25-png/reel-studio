@@ -18,6 +18,8 @@ export default function ShareSheet({ video, onClose, onReport }) {
   const [conversations, setConversations] = useState([]);
   const [sentTo, setSentTo] = useState(new Set());
   const [showWhy, setShowWhy] = useState(false);
+  const [reposted, setReposted] = useState(false);
+  const [reposting, setReposting] = useState(false);
   const loggedIn = typeof window !== 'undefined' && !!localStorage.getItem('token');
   const toast = useToast();
 
@@ -78,6 +80,33 @@ export default function ShareSheet({ video, onClose, onReport }) {
     logShare();
   }
 
+  // Optimistic: the confirmation toast and the "Reposted" state show the instant
+  // you tap; if the server says no (own post, private account, network), both
+  // roll back with the server's reason.
+  async function repost() {
+    if (!loggedIn) {
+      toast.error('Log in to repost');
+      return;
+    }
+    if (reposting) return;
+    if (reposted) {
+      toast('Already reposted');
+      return;
+    }
+    setReposting(true);
+    setReposted(true);
+    toast.success('Reposted to your profile');
+    try {
+      await api.repost(video.id);
+      logShare();
+    } catch (err) {
+      setReposted(false);
+      toast.error(err.message || "Couldn't repost — try again");
+    } finally {
+      setReposting(false);
+    }
+  }
+
   function notInterested() {
     api.logEvent(video.id, 'skip', 0).catch(() => {});
     toast("Got it — we'll show you less like this");
@@ -95,7 +124,7 @@ export default function ShareSheet({ video, onClose, onReport }) {
     { label: 'Telegram', Icon: Send, onClick: () => openExternal(`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${text}`) },
     { label: 'Download', Icon: Download, onClick: download },
     { label: 'Report', Icon: Flag, onClick: () => { onReport(); onClose(); } },
-    { label: 'Repost', Icon: Repeat2, onClick: () => toast('Repost is coming soon') },
+    { label: reposted ? 'Reposted' : 'Repost', Icon: reposted ? Check : Repeat2, onClick: repost, active: reposted },
     { label: 'SMS', Icon: MessageSquare, onClick: shareSMS },
     { label: 'Facebook', Icon: Facebook, onClick: () => openExternal(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`) },
     { label: 'Caption', Icon: Type, onClick: copyCaption },
@@ -174,11 +203,11 @@ export default function ShareSheet({ video, onClose, onReport }) {
         {/* Bottom tier: action grid */}
         <div className="flex-1 overflow-y-auto px-5 pt-4 pb-5 border-t border-neutral-100 dark:border-neutral-800">
           <div className="grid grid-cols-4 gap-2.5">
-            {actions.map(({ label, Icon, onClick }) => (
+            {actions.map(({ label, Icon, onClick, active }) => (
               <button
                 key={label}
                 onClick={onClick}
-                className="bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 p-3.5 rounded-2xl flex flex-col items-center gap-1.5 transition-all text-xs font-bold text-neutral-800 dark:text-neutral-200 active:scale-95"
+                className={`${active ? 'bg-amber-500 text-black hover:bg-amber-400' : 'bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200'} p-3.5 rounded-2xl flex flex-col items-center gap-1.5 transition-all text-xs font-bold active:scale-95`}
               >
                 <Icon className="w-5 h-5" strokeWidth={2.5} />
                 <span className="leading-tight text-center text-[11px]">{label}</span>

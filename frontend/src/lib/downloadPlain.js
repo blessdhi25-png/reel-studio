@@ -25,7 +25,7 @@ export async function downloadPlain({ url, baseName = 'clippulse' }) {
   if (/\.m3u8(\?|$)/i.test(url)) {
     throw new PlainDownloadUnsupportedError("Streamed (HLS) videos can't be saved directly.");
   }
-  const ext = (url.split('?')[0].match(/\.(mp4|webm|mov)$/i) || [, 'mp4'])[1].toLowerCase();
+  const ext = (url.split('?')[0].match(/\.(mp4|webm|mov|jpe?g|png|webp|gif)$/i) || [, 'mp4'])[1].toLowerCase();
   const filename = `${baseName}.${ext}`;
   try {
     const res = await fetch(url);

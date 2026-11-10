@@ -25,7 +25,9 @@ export function useAutoPlayOnScroll(containerRef, videoRef, { threshold = 0.6, e
   useEffect(() => {
     const container = containerRef.current;
     const video = videoRef.current;
-    if (!container || !video || !enabled) {
+    // video is null for photo posts — they still need the in-view signal (view
+    // logging, impressions), just nothing to play/pause.
+    if (!container || !enabled) {
       setInView(false);
       return;
     }
@@ -35,7 +37,7 @@ export function useAutoPlayOnScroll(containerRef, videoRef, { threshold = 0.6, e
     // permanently paused with no way to ever start.
     if (typeof IntersectionObserver === 'undefined') {
       setInView(true);
-      video.play().catch(() => {});
+      video?.play().catch(() => {});
       return;
     }
 
@@ -44,13 +46,13 @@ export function useAutoPlayOnScroll(containerRef, videoRef, { threshold = 0.6, e
         const visible = entry.isIntersecting && entry.intersectionRatio >= threshold;
         setInView(visible);
         if (visible) {
-          video.play().catch(() => {
+          video?.play().catch(() => {
             // Autoplay can still be rejected (e.g. a browser that requires
             // an explicit gesture even for muted video) — the tap-to-play
             // handler already on the video element covers that case.
           });
         } else {
-          video.pause();
+          video?.pause();
         }
       },
       { threshold }

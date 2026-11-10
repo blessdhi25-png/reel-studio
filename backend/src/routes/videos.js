@@ -2,7 +2,8 @@ import { Router } from 'express';
 import prisma from '../config/db.js';
 import cloudinary from '../config/cloudinary.js';
 import { requireAuth, optionalAuth } from '../middleware/auth.js';
-import { uploadVideoWithThumbnail } from '../utils/upload.js';
+import { uploadVideoWithThumbnail, uploadPhoto } from '../utils/upload.js';
+import { sanitizeTextOverlays } from '../utils/textOverlays.js';
 import { deleteVideoCascade } from '../utils/deleteVideoCascade.js';
 import { applyFeedTuning } from '../utils/feedTuning.js';
 import { ALLOWED_CIRCLES, normalizeCircle } from '../utils/circles.js';
@@ -105,11 +106,46 @@ router.post(
         rawPath: videoFile.path,
         videoUrl: rawUrl,
         thumbnailUrl: thumbnailFile?.path || null,
+        textOverlays: sanitizeTextOverlays(req.body.textOverlays) ?? undefined,
         status: 'published',
       },
     });
 
     res.status(201).json({ id: video.id, status: video.status, circle: video.circle, communityId: video.communityId, rawUrl });
+  })
+);
+
+// Photo posts. Same Video row as a video post (mediaType 'photo'): the image URL
+// goes in videoUrl AND thumbnailUrl so every surface that lists videos — feed,
+// profiles, search, collections — still has something to render.
+router.post(
+  '/photo',
+  requireAuth,
+  resolveCommunityTarget,
+  uploadPhoto.single('photo'),
+  asyncHandler(async (req, res) => {
+    if (!req.file) return res.status(400).json({ error: 'photo file is required' });
+    const { caption, circle } = req.body;
+    const url = req.file.path;
+    const video = await prisma.video.create({
+      data: {
+        userId: req.userId,
+        mediaType: 'photo',
+        videoType: 'short',
+        caption: caption || '',
+        circle: normalizeCircle(circle),
+        communityId: req.communityTargetId || null,
+        rawPath: url,
+        videoUrl: url,
+        thumbnailUrl: url,
+        textOverlays: sanitizeTextOverlays(req.body.textOverlays) ?? undefined,
+        status: 'published',
+      },
+    });
+    res.status(201).json({
+      id: video.id, status: video.status, mediaType: 'photo', circle: video.circle,
+      communityId: video.communityId, rawUrl: url, textOverlays: video.textOverlays,
+    });
   })
 );
 

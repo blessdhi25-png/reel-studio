@@ -242,6 +242,12 @@ export const api = {
     request(`/videos/${id}/events`, { method: 'POST', body: { eventType, watchDurationMs } }),
   getUser: (id) => request(`/users/${id}`),
   updateProfile: (data) => request('/users/me', { method: 'PATCH', body: data }),
+  // Private account details (email, phone, bio, WhatsApp, external links) — backend/src/routes/userProfile.js
+  getAccountProfile: () => request('/user/profile'),
+  updateAccountProfile: (data) => request('/user/profile', { method: 'PATCH', body: data }),
+  // Reposts — backend/src/routes/posts.js
+  repost: (videoId) => request('/posts/repost', { method: 'POST', body: { videoId } }),
+  undoRepost: (videoId) => request(`/posts/repost/${videoId}`, { method: 'DELETE' }),
   uploadAvatar: (formData) => request('/users/me/avatar', { method: 'POST', body: formData, isForm: true }),
   uploadBanner: (formData) => request('/users/me/banner', { method: 'POST', body: formData, isForm: true }),
 

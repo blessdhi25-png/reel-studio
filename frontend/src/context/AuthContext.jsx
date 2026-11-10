@@ -2,6 +2,8 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { deleteCookie, setCookie } from '../lib/cookies';
+import { getAccounts, removeAccount, saveAccount, updateAccountUser } from '../lib/accounts';
+import { API_BASE } from '../lib/api';
 
 const AuthContext = createContext(null);
 
@@ -52,10 +54,17 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
   const [ready, setReady] = useState(false);
+  // Other sessions saved on this device for the account switcher.
+  const [accounts, setAccounts] = useState([]);
 
   useEffect(() => {
-    setUser(readStoredUser());
-    setToken(readStoredToken());
+    const storedUser = readStoredUser();
+    const storedToken = readStoredToken();
+    setUser(storedUser);
+    setToken(storedToken);
+    // Backfill: someone who logged in before the switcher existed gets their
+    // current session registered so it shows up in the list.
+    setAccounts(storedToken && storedUser?.id ? saveAccount(storedToken, storedUser) : getAccounts());
     setReady(true);
 
     // Keeps multiple tabs in sync — logging out in one tab, or the token
@@ -90,6 +99,7 @@ export function AuthProvider({ children }) {
     }
     setToken(newToken);
     setUser(newUser);
+    setAccounts(saveAccount(newToken, newUser));
   }, []);
 
   // For partial updates (e.g. after editing display name/avatar in
@@ -101,6 +111,7 @@ export function AuthProvider({ children }) {
       if (!prev) return prev;
       const next = { ...prev, ...patch };
       window.localStorage.setItem(USER_KEY, JSON.stringify(next));
+      if (next.id) setAccounts(updateAccountUser(next.id, patch));
       // Keep the role cookie in sync too, in case a role change ever
       // arrives through this path rather than a fresh login.
       if (patch.role) setCookie('role', next.role, COOKIE_MAX_AGE_SECONDS);
@@ -109,6 +120,10 @@ export function AuthProvider({ children }) {
   }, []);
 
   const logout = useCallback(() => {
+    // Drop this account's saved token too — logging out must not leave a
+    // usable credential behind in the switcher list.
+    const current = readStoredUser();
+    if (current?.id) setAccounts(removeAccount(current.id));
     window.localStorage.removeItem(TOKEN_KEY);
     window.localStorage.removeItem(USER_KEY);
     deleteCookie(TOKEN_KEY);
@@ -117,9 +132,34 @@ export function AuthProvider({ children }) {
     setUser(null);
   }, []);
 
+  // Switch to another saved account. The saved token is checked against the
+  // server first so a revoked/expired session is pruned instead of leaving the
+  // app signed in to nothing. A full page load afterwards resets everything
+  // that's keyed to the previous user (sockets, feeds, cached requests).
+  const switchAccount = useCallback(async (id) => {
+    const target = getAccounts().find((a) => a.id === id);
+    if (!target) return { ok: false, error: 'That account is no longer saved on this device.' };
+    try {
+      const res = await fetch(`${API_BASE}/auth/me`, { headers: { Authorization: `Bearer ${target.token}` } });
+      if (res.status === 401 || res.status === 403) {
+        setAccounts(removeAccount(id));
+        return { ok: false, error: `The session for @${target.user.username} expired — log in again to re-add it.` };
+      }
+      if (!res.ok) throw new Error('bad status');
+      const fresh = await res.json().catch(() => ({}));
+      login(target.token, { ...target.user, ...fresh });
+    } catch {
+      return { ok: false, error: "Couldn't reach the server — try again." };
+    }
+    window.location.assign('/');
+    return { ok: true };
+  }, [login]);
+
+  const forgetAccount = useCallback((id) => setAccounts(removeAccount(id)), []);
+
   const value = useMemo(
-    () => ({ user, token, isAuthenticated: !!token, ready, login, logout, updateUser }),
-    [user, token, ready, login, logout, updateUser]
+    () => ({ user, token, isAuthenticated: !!token, ready, login, logout, updateUser, accounts, switchAccount, forgetAccount }),
+    [user, token, ready, login, logout, updateUser, accounts, switchAccount, forgetAccount]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -750,4 +750,5 @@ router.post('/change-password', requireAuth, authLimiter, validate(changePasswor
   }
 }));
 
+export { sendVerificationCode };
 export default router;

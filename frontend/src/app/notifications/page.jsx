@@ -20,7 +20,7 @@ const TABS = [
 ];
 
 const FOLLOWER_TYPES = ['follow'];
-const LIKE_COMMENT_TYPES = ['like', 'comment', 'tip'];
+const LIKE_COMMENT_TYPES = ['like', 'comment', 'tip', 'repost'];
 const SYSTEM_TYPES = ['moderation', 'live_started', 'system'];
 
 // ---------------------------------------------------------------------------

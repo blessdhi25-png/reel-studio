@@ -202,6 +202,31 @@ export default function ProfilePage({ params }) {
           </h1>
           <p className="text-xs text-zinc-500 font-mono">@{user.username}</p>
           {user.bio && <p className="text-sm text-zinc-300 mt-2">{user.bio}</p>}
+          {(user.whatsapp || (Array.isArray(user.externalLinks) && user.externalLinks.length > 0)) && (
+            <div className="flex flex-wrap gap-2 mt-3">
+              {user.whatsapp && (
+                <a
+                  href={/^https?:\/\//i.test(user.whatsapp) ? user.whatsapp : `https://wa.me/${user.whatsapp.replace(/[^0-9]/g, '')}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3 py-1.5 rounded-full bg-green-500/15 text-green-400 text-xs font-extrabold tracking-tight"
+                >
+                  WhatsApp
+                </a>
+              )}
+              {(user.externalLinks || []).map((l) => (
+                <a
+                  key={l.url}
+                  href={l.url}
+                  target="_blank"
+                  rel="noopener noreferrer nofollow"
+                  className="px-3 py-1.5 rounded-full bg-zinc-800 text-amber-400 text-xs font-extrabold tracking-tight"
+                >
+                  {l.label}
+                </a>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Stats Grid */}

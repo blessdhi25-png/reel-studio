@@ -10,6 +10,8 @@ import SoundPicker from '@/components/SoundPicker';
 import TemplatePicker from '@/components/TemplatePicker';
 import AiGenerationModal from '@/components/AiGenerationModal';
 import TemplateClipSheet from '@/components/TemplateClipSheet';
+import UploadStudio, { MediaTypeToggle } from '@/components/UploadStudio';
+import TextOverlayEditor from '@/components/TextOverlayEditor';
 import { stitchClips } from '@/lib/stitchClips';
 import { templateSetup } from '@/lib/templates';
 import { FilterSheet, LensPreview, useLensPreviews } from '@/components/studio/LensPicker';
@@ -251,6 +253,12 @@ function UploadPageInner() {
   const [cameraRecordError, setCameraRecordError] = useState(null);
   const [activeFilterId, setActiveFilterId] = useState(DEFAULT_FILTER_ID);
   const [showFilterGrid, setShowFilterGrid] = useState(false);
+  // Photo vs video creation. 'photo' hands the whole screen to <UploadStudio/>.
+  const [mediaType, setMediaType] = useState('video');
+  const [photoFile, setPhotoFile] = useState(null);
+  // Multi-overlay text (font/colour/pill) for gallery-picked videos — persisted
+  // with the post. Camera recordings still bake the single legacy overlay below.
+  const [videoOverlays, setVideoOverlays] = useState([]);
   const [textOverlay, setTextOverlay] = useState(null); // { content, x, y (both 0-100, % of stage) } | null
   const [showTextEditor, setShowTextEditor] = useState(false);
   const [textDraft, setTextDraft] = useState('');
@@ -390,6 +398,7 @@ function UploadPageInner() {
     setVideoClips([]);
     setFile(null);
     setTextOverlay(null);
+    setVideoOverlays([]);
     setErrorMsg(null);
     setSelectedTemplate(null);
     setTemplateClipError(null);
@@ -499,12 +508,10 @@ function UploadPageInner() {
   function pickFile(selected) {
     if (!selected) return;
     if (selected.type.startsWith('image/')) {
-      // The gallery-thumbnail button welcomes photos per the studio
-      // redesign brief, but backend/src/utils/upload.js's video upload
-      // pipeline only accepts video files — there's no photo-post model or
-      // route yet. Saying so clearly beats silently accepting the file and
-      // failing later at submit time.
-      setErrorMsg("Photo posts aren't supported yet — please choose a video.");
+      // Photos open the photo studio (see components/UploadStudio.jsx).
+      setErrorMsg(null);
+      setPhotoFile(selected);
+      setMediaType('photo');
       return;
     }
     if (!selected.type.startsWith('video/')) {
@@ -541,6 +548,7 @@ function UploadPageInner() {
     // stale "edit text" affordance that can no longer actually change
     // anything about this specific file.
     setTextOverlay(null);
+    setVideoOverlays([]);
     // A fresh recording becomes "the latest item" too, same as it would on
     // a real device's camera roll.
     setLastPickedFile(capturedFile);
@@ -602,6 +610,7 @@ function UploadPageInner() {
     setErrorMsg(null);
     setActiveFilterId('normal');
     setTextOverlay(null);
+    setVideoOverlays([]);
     setCapturedFromCamera(false);
     setShowPublishDrawer(false);
   }
@@ -620,6 +629,7 @@ function UploadPageInner() {
     if (thumbnailBlob) formData.append('thumbnail', thumbnailBlob, 'thumbnail.jpg');
     formData.append('caption', caption);
     formData.append('videoType', videoType);
+    if (videoOverlays.length && !capturedFromCamera) formData.append('textOverlays', JSON.stringify(videoOverlays));
     if (circle) formData.append('circle', circle);
     if (selectedTrack) formData.append('trackId', selectedTrack.id);
     formData.append('visibility', visibility);
@@ -653,6 +663,7 @@ function UploadPageInner() {
             // in, and would either show it under the wrong tab or drop it
             // entirely once real per-tab filtering is applied.
             videoType: videoType === 'long' ? 'long' : 'short',
+            textOverlays: videoOverlays.length && !capturedFromCamera ? videoOverlays : null,
             user: me,
             likeCount: 0,
             commentCount: 0,
@@ -727,12 +738,13 @@ function UploadPageInner() {
 
   function handleDurationSelect(id) {
     setDurationMode(id);
-    if (id === 'photo' || id === 'text') {
-      setErrorMsg(
-        id === 'photo'
-          ? "Photo posts aren't supported here yet — try Stories instead."
-          : "Text posts aren't supported here yet — try Stories instead."
-      );
+    if (id === 'photo') {
+      setPhotoFile(null);
+      setMediaType('photo');
+      return;
+    }
+    if (id === 'text') {
+      setErrorMsg("Text posts aren't supported here yet — try Stories instead.");
       return;
     }
     setErrorMsg(null);
@@ -783,6 +795,21 @@ function UploadPageInner() {
     cameraRef.current?.drawFilterPreview(canvas, lensId);
   }, []);
 
+  if (mediaType === 'photo') {
+    return (
+      <UploadStudio
+        communityTarget={communityTarget}
+        initialFile={photoFile}
+        onSwitchToVideo={() => {
+          setPhotoFile(null);
+          setMediaType('video');
+          setDurationMode('60s');
+        }}
+        onExit={() => router.push('/')}
+      />
+    );
+  }
+
   return (
     <main className="fixed inset-0 bg-black overflow-hidden">
       {/* ---------------- Step 1: nothing captured/picked yet ---------------- */}
@@ -828,6 +855,19 @@ function UploadPageInner() {
             onClearSound={() => setSelectedTrack(null)}
             disabled={isRecording}
           />
+
+          {!isRecording && !guided && (
+            <div className="absolute inset-x-0 flex justify-center pointer-events-none top-[calc(max(0.75rem,env(safe-area-inset-top))+3.25rem)] z-10">
+              <MediaTypeToggle
+                value="video"
+                onChange={() => {
+                  setPhotoFile(null);
+                  setMediaType('photo');
+                }}
+                className="pointer-events-auto"
+              />
+            </div>
+          )}
 
           {guided && (
             <GuidedHud
@@ -974,14 +1014,13 @@ function UploadPageInner() {
         <div
           ref={overlayStageRef}
           className="relative w-full h-full"
+          style={{ containerType: 'inline-size' }}
           onPointerMove={handleOverlayDragMove}
           onPointerUp={endOverlayDrag}
           onPointerLeave={endOverlayDrag}
         >
           <VideoPreview src={previewUrl} />
-          {!capturedFromCamera && textOverlay && (
-            <DraggableTextOverlay overlay={textOverlay} onPointerDownHandle={beginOverlayDrag} />
-          )}
+          {!capturedFromCamera && <TextOverlayEditor overlays={videoOverlays} onChange={setVideoOverlays} />}
 
           <div className="absolute top-0 inset-x-0 flex items-center justify-between px-5 pt-[max(1.25rem,env(safe-area-inset-top))]">
             <button
@@ -991,22 +1030,6 @@ function UploadPageInner() {
             >
               <XIcon />
             </button>
-            {/* Camera recordings already have any text overlay baked into
-                the pixels (see handleCaptured) — there's nothing left here
-                to edit without re-recording, so this only shows for
-                gallery/template-picked clips, where it's still the
-                preview-only tool it always was. */}
-            {!capturedFromCamera && (
-              <button
-                onClick={openTextEditor}
-                className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors ${
-                  textOverlay ? 'bg-amber-500 text-black' : 'bg-black/60 text-white'
-                }`}
-                aria-label="Add text"
-              >
-                <TextToolIcon />
-              </button>
-            )}
           </div>
 
           <div className="absolute bottom-0 inset-x-0 px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]">

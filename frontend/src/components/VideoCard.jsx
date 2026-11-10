@@ -1,5 +1,7 @@
 'use client';
 
+import PhotoMedia from './PhotoMedia';
+import TextOverlayLayer from './TextOverlayLayer';
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import CommentsPanel from './CommentsPanel';
@@ -144,6 +146,9 @@ const VideoCard = forwardRef(function VideoCard(
   ref
 ) {
   const videoRef = useRef(null);
+  // Photo posts reuse videoUrl/thumbnailUrl for the image (see POST /videos/photo)
+  // and render through <PhotoMedia/> instead of <video>.
+  const isPhoto = video.mediaType === 'photo';
   const containerRef = useRef(null);
   const commentsRef = useRef(null);
   const menuRef = useRef(null);
@@ -313,7 +318,8 @@ const VideoCard = forwardRef(function VideoCard(
     setShowLongPressMenu(false);
     const baseName = `clippulse-${video.user?.username || 'video'}-${String(video.id).slice(0, 8)}`;
     try {
-      if (watermarkOn) {
+      // The watermark pipeline re-records a <video>; photos download as-is.
+      if (watermarkOn && !isPhoto) {
         toast.info('Preparing your download with the ClipPulse watermark…');
         await downloadWithWatermark({ url: video.videoUrl, username: video.user?.username, baseName });
         toast.success('Saved with the ClipPulse watermark');
@@ -328,7 +334,7 @@ const VideoCard = forwardRef(function VideoCard(
           ? `Couldn't add the watermark: ${err.message}`
           : err instanceof PlainDownloadUnsupportedError
             ? `Couldn't download: ${err.message}`
-            : "Couldn't download this video — try again."
+            : "Couldn't download this post — try again."
       );
     } finally {
       setDownloading(false);
@@ -630,29 +636,59 @@ const VideoCard = forwardRef(function VideoCard(
 
   return (
     <div ref={containerRef} className="relative h-full w-full flex items-center justify-center bg-ink">
-      <video
-        ref={videoRef}
-        loop={!prefs.autoScroll}
-        playsInline
-        muted={!audioEnabled}
-        onClick={handleVideoTap}
-        {...longPress.handlers}
-        style={longPressStyle}
-        onWaiting={() => setBuffering(true)}
-        onPlaying={() => setBuffering(false)}
-        onCanPlay={() => setBuffering(false)}
-        onLoadedData={() => setBuffering(false)}
-        onLoadedMetadata={(e) => {
-          const d = e.currentTarget.duration;
-          // Some browsers report Infinity for a duration that isn't fully
-          // known yet (e.g. certain streamed responses mid-load) — only
-          // trust it once it's an actual finite number.
-          if (Number.isFinite(d)) setLiveDuration(d);
-          applySpeed();
-        }}
-        className="h-full w-full max-w-md object-cover mx-auto cursor-pointer touch-manipulation"
-        poster={video.thumbnailUrl}
-      />
+      {isPhoto ? (
+        <div
+          onClick={handleVideoTap}
+          {...longPress.handlers}
+          style={longPressStyle}
+          className="h-full w-full max-w-md mx-auto cursor-pointer touch-manipulation"
+        >
+          <PhotoMedia
+            src={shouldLoad ? video.videoUrl : null}
+            alt={video.caption || `Photo by ${video.user?.username || 'a creator'}`}
+            overlays={video.textOverlays}
+            onLoad={() => setBuffering(false)}
+            onError={() => setBuffering(false)}
+          />
+        </div>
+      ) : (
+        <>
+        <video
+          ref={videoRef}
+          loop={!prefs.autoScroll}
+          playsInline
+          muted={!audioEnabled}
+          onClick={handleVideoTap}
+          {...longPress.handlers}
+          style={longPressStyle}
+          onWaiting={() => setBuffering(true)}
+          onPlaying={() => setBuffering(false)}
+          onCanPlay={() => setBuffering(false)}
+          onLoadedData={() => setBuffering(false)}
+          onLoadedMetadata={(e) => {
+            const d = e.currentTarget.duration;
+            // Some browsers report Infinity for a duration that isn't fully
+            // known yet (e.g. certain streamed responses mid-load) — only
+            // trust it once it's an actual finite number.
+            if (Number.isFinite(d)) setLiveDuration(d);
+            applySpeed();
+          }}
+          className="h-full w-full max-w-md object-cover mx-auto cursor-pointer touch-manipulation"
+          poster={video.thumbnailUrl}
+        />
+
+          {/* Text overlays saved with a gallery-picked video. Matches the
+              video element's own box (h-full, max-w-md) so % positions line up. */}
+          {Array.isArray(video.textOverlays) && video.textOverlays.length > 0 && (
+            <div
+              className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-full max-w-md pointer-events-none"
+              style={{ containerType: 'inline-size' }}
+            >
+              <TextOverlayLayer overlays={video.textOverlays} />
+            </div>
+          )}
+        </>
+      )}
 
       {/* Buffering indicator — only for a card that's actually trying to
           load (shouldLoad); far-off cards with no src deliberately show
@@ -679,6 +715,7 @@ const VideoCard = forwardRef(function VideoCard(
       {/* Explicit mute toggle — audioEnabled previously only ever turned on
           implicitly via the first tap-to-play (see togglePlayPause) with no
           visible control and no way to mute again afterward. */}
+      {!isPhoto && (
       <button
         type="button"
         onClick={(e) => {
@@ -707,6 +744,7 @@ const VideoCard = forwardRef(function VideoCard(
           </svg>
         )}
       </button>
+      )}
 
       {/* Paused indicator — appears when the viewer taps the video to pause it */}
       {paused && (
@@ -720,7 +758,7 @@ const VideoCard = forwardRef(function VideoCard(
       {/* Tap-for-sound hint — shown until the viewer's first tap enables
           audio for the rest of the session. Not a control itself (tapping
           anywhere on the video already does this via togglePlayPause). */}
-      {!audioEnabled && (
+      {!audioEnabled && !isPhoto && (
         <div
           className="absolute right-6 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-ink/60 text-bone font-mono text-[10px] uppercase tracking-widest pointer-events-none z-10"
           style={{ top: 'calc(env(safe-area-inset-top) + 5rem)' }}
@@ -762,14 +800,14 @@ const VideoCard = forwardRef(function VideoCard(
             isExpanded ? 'pb-4 max-h-[50dvh] overflow-y-auto' : ''
           }`}
         >
-          <a href={`/profile/${video.user?.id}`} className="font-display text-2xl font-bold tracking-wide text-white">
+          <a href={`/profile/${video.user?.id}`} className="font-display text-2xl font-extrabold tracking-tight text-white">
             @{video.user?.username}
           </a>
           {video.caption && (
             <div className="mt-1">
               <p
                 ref={captionRef}
-                className={`font-body text-sm font-bold text-white break-words ${isExpanded ? '' : 'line-clamp-2'}`}
+                className={`font-body text-sm font-bold tracking-tight text-white break-words ${isExpanded ? '' : 'line-clamp-2'}`}
               >
                 {renderCaption(video.caption)}
               </p>
@@ -781,7 +819,7 @@ const VideoCard = forwardRef(function VideoCard(
                     setIsExpanded((v) => !v);
                   }}
                   aria-expanded={isExpanded}
-                  className="mt-0.5 py-1 text-sm font-bold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] underline-offset-2 active:opacity-70"
+                  className="mt-0.5 py-1 text-sm font-extrabold tracking-tight text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] underline-offset-2 active:opacity-70"
                 >
                   {isExpanded ? 'less' : '...more'}
                 </button>
@@ -800,7 +838,7 @@ const VideoCard = forwardRef(function VideoCard(
             <div className="mt-2 flex items-center gap-1.5 max-w-full overflow-hidden">
               <MusicNoteIcon className="w-3.5 h-3.5 text-white shrink-0 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]" />
               <div className="overflow-hidden">
-                <div className="flex w-max animate-marquee font-body text-xs font-semibold text-white whitespace-nowrap drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
+                <div className="flex w-max animate-marquee font-body text-xs font-bold tracking-tight text-white whitespace-nowrap drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
                   <span className="pr-8">
                     {video.track.artistName} - {video.track.title}
                   </span>
@@ -848,7 +886,7 @@ const VideoCard = forwardRef(function VideoCard(
               filled={liked}
               className="w-8 h-8 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]"
             />
-            <span className="text-xs font-bold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+            <span className="text-xs font-extrabold tracking-tight text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
               {likeCount}
             </span>
           </button>
@@ -861,7 +899,7 @@ const VideoCard = forwardRef(function VideoCard(
             className="flex flex-col items-center gap-1 p-2 -m-2 text-white hover:scale-110 transition-transform"
           >
             <CommentIcon className="w-8 h-8 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]" />
-            <span className="text-xs font-bold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+            <span className="text-xs font-extrabold tracking-tight text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
               {commentCount}
             </span>
           </button>
@@ -879,7 +917,7 @@ const VideoCard = forwardRef(function VideoCard(
               filled={bookmarked}
               className="w-8 h-8 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]"
             />
-            <span className="text-xs font-bold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+            <span className="text-xs font-extrabold tracking-tight text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
               {bookmarkCount}
             </span>
           </button>
@@ -889,7 +927,7 @@ const VideoCard = forwardRef(function VideoCard(
               className="flex flex-col items-center gap-1 p-2 -m-2 text-white hover:scale-110 transition-transform"
             >
               <TipIcon className="w-8 h-8 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]" />
-              <span className="text-xs font-bold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+              <span className="text-xs font-extrabold tracking-tight text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
                 Tip
               </span>
             </button>
@@ -899,7 +937,7 @@ const VideoCard = forwardRef(function VideoCard(
               className="flex flex-col items-center gap-1 p-2 -m-2 hover:scale-110 transition-transform"
             >
               <TipIcon muted className="w-8 h-8 drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]" />
-              <span className="text-xs font-bold text-white/40 drop-shadow-[0_1px_2px_rgba(0,0,0,0.5)]">
+              <span className="text-xs font-extrabold tracking-tight text-white/60 drop-shadow-[0_1px_2px_rgba(0,0,0,0.5)]">
                 Tip
               </span>
             </button>
@@ -920,7 +958,7 @@ const VideoCard = forwardRef(function VideoCard(
                       setShowMenu(false);
                       setShowDeleteConfirm(true);
                     }}
-                    className="w-full text-left px-4 py-2.5 text-xs text-red-400 hover:bg-smoke/10 font-body"
+                    className="w-full text-left px-4 py-2.5 text-xs text-red-400 hover:bg-smoke/10 font-body font-bold tracking-tight"
                   >
                     Delete Post
                   </button>
@@ -930,7 +968,7 @@ const VideoCard = forwardRef(function VideoCard(
                       setShowMenu(false);
                       setShowReport(true);
                     }}
-                    className="w-full text-left px-4 py-2.5 text-xs text-bone hover:bg-smoke/10 font-body"
+                    className="w-full text-left px-4 py-2.5 text-xs text-bone hover:bg-smoke/10 font-body font-bold tracking-tight"
                   >
                     Report
                   </button>
@@ -946,7 +984,7 @@ const VideoCard = forwardRef(function VideoCard(
             className="flex flex-col items-center gap-1 p-2 -m-2 text-white hover:scale-110 transition-transform"
           >
             <ShareIcon className="w-8 h-8 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]" />
-            <span className="text-xs font-bold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+            <span className="text-xs font-extrabold tracking-tight text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
               Share
             </span>
           </button>
@@ -1070,21 +1108,21 @@ function DeleteConfirmModal({ deleting, onConfirm, onCancel }) {
   return (
     <div className="absolute inset-0 bg-ink/90 flex items-center justify-center z-30">
       <div className="bg-ink2 rounded-sprocket p-6 w-72 border border-smoke/20 text-center">
-        <p className="font-display text-xl text-bone mb-2 tracking-wide">Delete this post?</p>
-        <p className="font-body text-sm text-smoke mb-5">
+        <p className="font-display text-xl font-extrabold text-bone mb-2 tracking-tight">Delete this post?</p>
+        <p className="font-body text-sm font-bold text-smoke mb-5">
           Are you sure you want to delete this video? This action cannot be undone.
         </p>
         <button
           onClick={onConfirm}
           disabled={deleting}
-          className="w-full bg-red-500 text-ink font-body font-semibold py-2 rounded-sprocket disabled:opacity-50"
+          className="w-full bg-red-500 text-ink font-body font-extrabold tracking-tight py-2 rounded-sprocket disabled:opacity-50"
         >
           {deleting ? 'Deleting…' : 'Delete Post'}
         </button>
         <button
           onClick={onCancel}
           disabled={deleting}
-          className="w-full mt-3 text-smoke text-sm font-body disabled:opacity-50"
+          className="w-full mt-3 text-smoke text-sm font-body font-bold disabled:opacity-50"
         >
           Cancel
         </button>
@@ -1097,13 +1135,13 @@ function TipUnavailableModal({ onClose }) {
   return (
     <div className="absolute inset-0 bg-ink/90 flex items-center justify-center z-30">
       <div className="bg-ink2 rounded-sprocket p-6 w-72 border border-smoke/20 text-center">
-        <p className="font-display text-xl text-bone mb-2 tracking-wide">Tips not open yet</p>
-        <p className="font-body text-sm text-smoke mb-5">
+        <p className="font-display text-xl font-extrabold text-bone mb-2 tracking-tight">Tips not open yet</p>
+        <p className="font-body text-sm font-bold text-smoke mb-5">
           This creator hasn't set up their payout account, so tips are turned off for now.
         </p>
         <button
           onClick={onClose}
-          className="w-full bg-reel text-ink font-body font-semibold py-2 rounded-sprocket"
+          className="w-full bg-reel text-ink font-body font-extrabold tracking-tight py-2 rounded-sprocket"
         >
           Got it
         </button>
@@ -1136,7 +1174,7 @@ function TipModal({ videoId, onClose }) {
   return (
     <div className="absolute inset-0 bg-ink/90 flex items-center justify-center z-30">
       <div className="bg-ink2 rounded-sprocket p-6 w-72 border border-reel/30">
-        <p className="font-display text-xl text-bone mb-4 tracking-wide">Send a tip</p>
+        <p className="font-display text-xl font-extrabold text-bone mb-4 tracking-tight">Send a tip</p>
         <div className="flex gap-2 mb-4">
           {[100, 200, 500].map((cents) => (
             <button
@@ -1154,11 +1192,11 @@ function TipModal({ videoId, onClose }) {
         <button
           onClick={sendTip}
           disabled={sending}
-          className="w-full bg-reel text-ink font-body font-semibold py-2 rounded-sprocket disabled:opacity-50"
+          className="w-full bg-reel text-ink font-body font-extrabold tracking-tight py-2 rounded-sprocket disabled:opacity-50"
         >
           {sending ? 'Redirecting to checkout…' : 'Continue to payment'}
         </button>
-        <button onClick={onClose} className="w-full mt-3 text-smoke text-sm font-body">
+        <button onClick={onClose} className="w-full mt-3 text-smoke text-sm font-body font-bold">
           Close
         </button>
       </div>

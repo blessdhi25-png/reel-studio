@@ -25,9 +25,10 @@ export async function deleteVideoCascade(video) {
 
   const destroyJobs = [];
   if (rawPublicId) {
-    destroyJobs.push(cloudinary.uploader.destroy(rawPublicId, { resource_type: 'video' }));
+    destroyJobs.push(cloudinary.uploader.destroy(rawPublicId, { resource_type: video.mediaType === 'photo' ? 'image' : 'video' }));
   }
-  if (thumbnailPublicId) {
+  // A photo's thumbnailUrl is the same asset as rawPath — don't destroy it twice.
+  if (thumbnailPublicId && thumbnailPublicId !== rawPublicId) {
     destroyJobs.push(cloudinary.uploader.destroy(thumbnailPublicId, { resource_type: 'image' }));
   }
   // NOTE: this doesn't yet clean up the HLS output (playlist + .ts
@@ -66,6 +67,7 @@ export async function deleteVideoCascade(video) {
     prisma.comment.deleteMany({ where: { videoId: video.id } }),
     prisma.feedEvent.deleteMany({ where: { videoId: video.id } }),
     prisma.watchLog.deleteMany({ where: { videoId: video.id } }),
+    prisma.repost.deleteMany({ where: { videoId: video.id } }),
     // Same reasoning as Like/Bookmark above — CollectionItem.videoId is a
     // real FK (see the Deep Bookmarking & Shared Collections schema in
     // schema.prisma), so a video saved into any collection would otherwise

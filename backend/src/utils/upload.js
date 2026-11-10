@@ -131,6 +131,22 @@ export const uploadVideoWithThumbnail = multer({
   limits: { fileSize: 2 * 1024 * 1024 * 1024 }, // 2GB cap — applies per file, thumbnail is only ever a few hundred KB
 });
 
+// Photo posts: full-resolution images (capped at 4096px on the long edge —
+// crisp on any phone, no crop). resource_type image; folder kept separate from
+// avatars so cleanup/analytics can tell them apart.
+const photoStorage = cloudinaryStorage(async (req) => ({
+  folder: 'reel/photos',
+  resource_type: 'image',
+  public_id: `${req.userId}-${Date.now()}`,
+  transformation: [{ width: 4096, height: 4096, crop: 'limit', quality: 'auto:best' }],
+}));
+
+export const uploadPhoto = multer({
+  storage: photoStorage,
+  fileFilter: imageFileFilter,
+  limits: { fileSize: 20 * 1024 * 1024 }, // 20MB cap
+});
+
 // Profile photos. The frontend now compresses/resizes these client-side
 // before they're ever sent (see lib/imageCompression.js) — the
 // transformation below is a server-side backstop for anyone hitting this
