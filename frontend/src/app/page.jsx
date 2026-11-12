@@ -277,7 +277,7 @@ export default function FeedPage() {
                 user.username?.[0]?.toUpperCase()
               )}
             </span>
-            <span className="font-body text-sm font-semibold text-white truncate group-hover:text-amber-400 transition-colors">
+            <span className="font-body text-sm font-semibold lg:font-extrabold lg:tracking-tight text-white truncate group-hover:text-amber-400 transition-colors">
               @{user.username}
             </span>
           </a>
@@ -288,7 +288,7 @@ export default function FeedPage() {
         )}
       </div>
 
-      <div className="flex gap-1 bg-zinc-900/80 border border-zinc-800 rounded-xl p-1 font-mono text-xs uppercase tracking-widest shrink-0 z-10">
+      <div className="flex gap-1 bg-zinc-900/80 border border-zinc-800 rounded-xl p-1 font-mono text-xs uppercase tracking-widest lg:font-body lg:font-extrabold lg:text-sm lg:tracking-tight shrink-0 z-10">
         {FILTERS.map((opt) => (
           <button
             key={opt.label}
@@ -305,7 +305,7 @@ export default function FeedPage() {
         ))}
       </div>
 
-      <div className="flex items-center justify-end gap-5 font-mono text-xs uppercase tracking-widest flex-1">
+      <div className="flex items-center justify-end gap-5 font-mono text-xs uppercase tracking-widest lg:font-body lg:font-extrabold lg:text-sm lg:tracking-tight flex-1">
         {user && (
           <>
             {user.role === 'admin' && (
@@ -441,12 +441,12 @@ export default function FeedPage() {
 
       {/* Desktop Workspace */}
       {isDesktop === true && (
-        <div className="flex-1 min-h-0 flex gap-4 p-4">
+        <div className="flex-1 min-h-0 flex gap-4 p-4 lg:w-full lg:max-w-7xl lg:mx-auto lg:px-8 lg:grid lg:grid-cols-[1fr_380px] lg:gap-8">
           <div className="flex-1 flex items-center justify-center min-w-0">
-            <div className="h-full w-full max-w-[calc((100vh-6rem)*9/16+2rem)] flex items-center justify-center bg-zinc-900/60 border border-zinc-800 rounded-2xl backdrop-blur-md shadow-2xl p-4">
+            <div className="h-full w-full max-w-[calc((100vh-6rem)*9/16+2rem)] flex items-center justify-center bg-zinc-900/60 border border-zinc-800 rounded-2xl backdrop-blur-md shadow-2xl p-4 lg:max-w-none lg:bg-transparent lg:border-0 lg:shadow-none lg:backdrop-blur-none lg:p-0">
               <div
                 ref={desktopContainerRef}
-                className="feed-scroll h-full max-h-[calc(100vh-8rem)] w-auto aspect-[9/16] overflow-y-scroll snap-y snap-mandatory rounded-xl mx-auto"
+                className="feed-scroll h-full max-h-[calc(100vh-8rem)] w-auto aspect-[9/16] overflow-y-scroll snap-y snap-mandatory rounded-xl mx-auto lg:aspect-auto lg:w-full lg:max-w-md lg:h-[75vh] lg:max-h-full lg:rounded-2xl lg:shadow-2xl lg:border lg:border-zinc-800 lg:bg-black"
                 {...scrollHandlers}
               >
                 {videos.map((video, i) => (
@@ -487,7 +487,7 @@ export default function FeedPage() {
           </div>
 
           {!focusMode && activeVideo && (
-            <div className="w-full max-w-md shrink-0 bg-zinc-900/60 border border-zinc-800 rounded-2xl backdrop-blur-md shadow-2xl p-4 overflow-hidden">
+            <div className="w-full max-w-md shrink-0 bg-zinc-900/60 border border-zinc-800 rounded-2xl backdrop-blur-md shadow-2xl p-4 overflow-hidden lg:max-w-none lg:h-full lg:min-h-0 lg:overflow-y-auto lg:p-0 lg:bg-zinc-900/80">
               <DesktopRail
                 ref={desktopRailRef}
                 video={activeVideo}

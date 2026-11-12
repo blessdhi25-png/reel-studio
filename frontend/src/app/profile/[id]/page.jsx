@@ -149,7 +149,7 @@ export default function ProfilePage({ params }) {
   const statLbl = 'text-xs font-medium text-neutral-500';
 
   return (
-    <div className="relative min-h-screen bg-white dark:bg-neutral-950 text-black dark:text-white pb-36 font-sans max-w-md mx-auto">
+    <div className="relative min-h-screen bg-white dark:bg-neutral-950 text-black dark:text-white pb-36 font-sans max-w-md mx-auto lg:max-w-4xl lg:py-8">
       {/* Top bar */}
       <div className="flex items-center justify-between px-4 py-3 bg-white dark:bg-neutral-950">
         {isSelf ? (
@@ -210,8 +210,8 @@ export default function ProfilePage({ params }) {
       </div>
 
       {/* Asymmetrical header */}
-      <div className="flex items-start justify-between px-4 pt-2">
-        <div className="min-w-0 pr-3">
+      <div className="flex items-start justify-between px-4 pt-2 lg:flex-row-reverse lg:justify-end lg:items-center lg:gap-12 lg:pt-4">
+        <div className="min-w-0 pr-3 lg:pr-0 lg:flex-1">
           <h1 className="font-extrabold text-2xl tracking-tight text-black dark:text-white flex items-center gap-1">
             <span className="truncate">{user.displayName || user.username}</span>
             {isSelf && (
@@ -228,7 +228,7 @@ export default function ProfilePage({ params }) {
           </h1>
           <p className="text-sm font-semibold text-neutral-500 mt-0.5">@{user.username}</p>
 
-          <div className="flex items-center gap-6 mt-4">
+          <div className="flex items-center gap-6 mt-4 lg:gap-12 lg:mt-5">
             <div>
               <p className={statNum}>{user._count?.following ?? 0}</p>
               <p className={statLbl}>Following</p>
@@ -244,7 +244,7 @@ export default function ProfilePage({ params }) {
           </div>
         </div>
 
-        <div className="relative w-24 h-24 shrink-0 mt-3">
+        <div className="relative w-24 h-24 shrink-0 mt-3 lg:mt-0 lg:w-36 lg:h-36">
           {isSelf && (
             <Link
               href="/settings/account"
@@ -253,7 +253,7 @@ export default function ProfilePage({ params }) {
               Add a note
             </Link>
           )}
-          <div className="w-24 h-24 rounded-full border border-neutral-200 bg-neutral-100 dark:bg-neutral-900 overflow-hidden flex items-center justify-center">
+          <div className="w-24 h-24 lg:w-36 lg:h-36 rounded-full border border-neutral-200 bg-neutral-100 dark:bg-neutral-900 overflow-hidden flex items-center justify-center">
             {user.avatarUrl ? (
               <img src={user.avatarUrl} alt="" className="w-full h-full rounded-full object-cover" />
             ) : (
@@ -393,7 +393,7 @@ export default function ProfilePage({ params }) {
               {activeTab === 'liked' && 'Nothing liked yet.'}
             </div>
           ) : (
-            <div className="grid grid-cols-3 gap-0.5 mt-0.5">
+            <div className="grid grid-cols-3 gap-0.5 mt-0.5 lg:grid-cols-4 lg:gap-4 lg:mt-4 lg:px-4">
               {activeVideos.map((v) => (
                 <div key={v.id} className="relative aspect-[9/16] bg-neutral-100 dark:bg-neutral-900 overflow-hidden group">
                   <a href={`/?video=${v.id}`} className="block w-full h-full">

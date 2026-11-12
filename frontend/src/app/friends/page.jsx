@@ -257,9 +257,9 @@ export default function FriendsPage() {
 
   return (
     <main className="min-h-screen pb-36">
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 max-w-6xl mx-auto p-6 md:p-8">
+      <div className="grid grid-cols-1 gap-8 max-w-6xl mx-auto p-6 md:p-8 lg:max-w-5xl lg:grid-cols-[1fr_360px] lg:gap-8 lg:py-6">
         {/* ── Header ── */}
-        <div className="lg:col-span-12 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="lg:col-span-2 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="font-extrabold tracking-tight text-lg uppercase text-black dark:text-white">Friends &amp; Activity Hub</h1>
             <div className="bg-neutral-100 border border-neutral-200 dark:bg-zinc-900 dark:border-zinc-800 rounded-xl p-1 flex gap-1 w-fit mt-4">
@@ -285,9 +285,9 @@ export default function FriendsPage() {
         </div>
 
         {/* ── Left: tray + content ── */}
-        <div className="lg:col-span-8 space-y-6">
+        <div className="space-y-6 lg:min-w-0">
           {/* Active friends tray */}
-          <div className="flex gap-4 overflow-x-auto pb-4" style={{ scrollbarWidth: 'none' }}>
+          <div className="flex gap-4 overflow-x-auto pb-4 lg:flex-wrap lg:overflow-visible lg:gap-x-6 lg:gap-y-5 lg:p-5 lg:pb-5 lg:rounded-2xl lg:border lg:border-neutral-200 dark:lg:border-zinc-800 lg:bg-white dark:lg:bg-zinc-900/70 lg:shadow-sm" style={{ scrollbarWidth: 'none' }}>
             <a href="/upload" className="flex flex-col items-center gap-1.5 shrink-0">
               <span className="relative w-16 h-16 rounded-full border-2 border-neutral-300 dark:border-zinc-700 p-0.5">
                 <span className="w-full h-full rounded-full bg-neutral-200 dark:bg-zinc-800 flex items-center justify-center overflow-hidden font-display text-lg text-neutral-800 dark:text-zinc-400">
@@ -348,7 +348,7 @@ export default function FriendsPage() {
         </div>
 
         {/* ── Right sidebar ── */}
-        <div className="lg:col-span-4 space-y-6">
+        <div className="space-y-6 lg:sticky lg:top-6 lg:self-start">
           <div className="bg-white border border-neutral-200 shadow-sm dark:shadow-none dark:bg-zinc-900/70 dark:border-zinc-800 rounded-2xl p-4">
             <p className="font-extrabold tracking-tight text-lg uppercase text-black dark:text-white mb-3">People You May Know</p>
             {suggested.length === 0 && <p className="font-body text-xs font-semibold text-neutral-800 dark:text-neutral-200">Nothing to show yet.</p>}

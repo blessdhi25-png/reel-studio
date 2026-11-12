@@ -170,7 +170,7 @@ export default function UploadStudio({ communityTarget, initialFile, onSwitchToV
       </div>
 
       {!file ? (
-        <div className="flex-1 px-5 pb-8 flex">
+        <div className="flex-1 px-5 pb-8 flex lg:max-w-3xl lg:w-full lg:mx-auto">
           <button
             type="button"
             onClick={() => inputRef.current?.click()}
@@ -196,14 +196,21 @@ export default function UploadStudio({ communityTarget, initialFile, onSwitchToV
           />
         </div>
       ) : (
-        <>
-          <div className="flex-1 min-h-0">
+        <div className="flex-1 min-h-0 flex flex-col lg:flex-none lg:my-auto lg:w-full lg:max-w-6xl lg:mx-auto lg:px-4 lg:grid lg:grid-cols-[1fr_360px] lg:gap-6 lg:h-[85vh]">
+          <div className="flex-1 min-h-0 lg:flex-none lg:h-full lg:min-w-0 lg:flex lg:items-center lg:justify-center">
+            {/* display:contents below lg keeps the mobile box tree identical to before */}
+            <div className="contents lg:block lg:h-full lg:aspect-[9/16] lg:max-w-full lg:rounded-2xl lg:overflow-hidden lg:border lg:border-zinc-800">
             <PhotoMedia src={previewUrl} overlays={null}>
               <TextOverlayEditor overlays={overlays} onChange={setOverlays} />
             </PhotoMedia>
+            </div>
           </div>
 
-          <div className="px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] space-y-2.5 bg-black">
+          <div className="px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] space-y-2.5 bg-black lg:p-5 lg:space-y-4 lg:bg-zinc-950 lg:rounded-2xl lg:border lg:border-zinc-800 lg:overflow-y-auto lg:h-full lg:flex lg:flex-col lg:justify-start">
+            <p className="hidden lg:block text-lg font-extrabold tracking-tight">Post details</p>
+            <p className="hidden lg:block text-xs font-bold text-white/50 -mt-2">
+              Tap the photo to add and style text. Add a caption and circle here, then post.
+            </p>
             {communityTarget && (
               <p className="text-xs font-bold text-white/60">
                 Posting to <span className="text-amber-400">{communityTarget.name}</span>
@@ -254,7 +261,7 @@ export default function UploadStudio({ communityTarget, initialFile, onSwitchToV
               </button>
             </div>
           </div>
-        </>
+        </div>
       )}
 
       {!file && error && <p className="px-5 pb-6 -mt-3 text-sm font-bold text-red-400 text-center">{error}</p>}

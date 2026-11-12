@@ -45,7 +45,7 @@ const DesktopRail = forwardRef(function DesktopRail({ video, onToggleFollow, cur
   const tags = extractTags(video.caption);
 
   return (
-    <div className="flex flex-col h-full w-full max-w-md border-l border-smoke/10 bg-ink2/40 pb-20">
+    <div className="flex flex-col h-full w-full max-w-md border-l border-smoke/10 bg-ink2/40 pb-20 lg:max-w-none lg:border-l-0 lg:pb-4 lg:min-h-0">
       {/* Creator profile + video metadata */}
       <div className="p-6 border-b border-smoke/10 shrink-0">
         <div className="flex items-center gap-3">
