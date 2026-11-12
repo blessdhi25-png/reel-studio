@@ -4,12 +4,13 @@ import BackButton from '@/components/BackButton';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { MoreHorizontal, Menu as MenuIcon, Share2, Lock, LayoutDashboard, Settings as SettingsIcon, PanelRight } from 'lucide-react';
+import { MoreHorizontal, Menu as MenuIcon, Share2, Lock, Pencil, UserPlus, ChevronDown, Sparkles, Grid3x3, Repeat2, Bookmark, Heart, Plus } from 'lucide-react';
 import { api, getStoredUser } from '@/lib/api';
 import { useToast } from '@/context/ToastContext';
 import ReportModal from '@/components/ReportModal';
 import ConfirmModal from '@/components/ConfirmModal';
 import ProfileDrawer from '@/components/ProfileDrawer';
+import AccountSwitcherModal from '@/components/AccountSwitcherModal';
 import { LoadingSpinner } from '@/components/LoadingScreen';
 
 export default function ProfilePage({ params }) {
@@ -20,6 +21,8 @@ export default function ProfilePage({ params }) {
   const [user, setUser] = useState(null);
   const [videos, setVideos] = useState([]);
   const [savedVideos, setSavedVideos] = useState([]);
+  const [repostVideos, setRepostVideos] = useState([]);
+  const [showSwitcher, setShowSwitcher] = useState(false);
   const [likedVideos, setLikedVideos] = useState([]);
   const [isSelf, setIsSelf] = useState(false);
   const [following, setFollowing] = useState(false);
@@ -38,17 +41,13 @@ export default function ProfilePage({ params }) {
   const [deleteTarget, setDeleteTarget] = useState(null); // video object pending delete confirmation, or null
   const [deleting, setDeleting] = useState(false);
   const menuRef = useRef(null);
-  const dropdownRef = useRef(null);
   const closeDrawer = useCallback(() => setIsMenuOpen(false), []); // stable: the drawer's effects depend on it
 
   // Close the ⋯ dropdown on an outside click, not just its own options.
   useEffect(() => {
     if (!showMenu) return;
     function onClickOutside(e) {
-      if (
-        menuRef.current && !menuRef.current.contains(e.target) &&
-        !(dropdownRef.current && dropdownRef.current.contains(e.target))
-      ) {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
         setShowMenu(false);
       }
     }
@@ -81,6 +80,7 @@ export default function ProfilePage({ params }) {
     if (self) {
       api.getBookmarks().then(setSavedVideos).catch(() => {});
       api.getLikedVideos().then(setLikedVideos).catch(() => {});
+      api.getMyReposts().then((r) => setRepostVideos(Array.isArray(r) ? r : [])).catch(() => {});
     }
   }, [id]);
 
@@ -118,7 +118,8 @@ export default function ProfilePage({ params }) {
     }
   }
 
-  const activeVideos = activeTab === 'videos' ? videos : activeTab === 'saved' ? savedVideos : likedVideos;
+  const activeVideos =
+    activeTab === 'videos' ? videos : activeTab === 'saved' ? savedVideos : activeTab === 'liked' ? likedVideos : activeTab === 'reposts' ? repostVideos : [];
 
   if (loading) {
     return (
@@ -136,147 +137,189 @@ export default function ProfilePage({ params }) {
     );
   }
 
-  return (
-    <div className="relative min-h-screen bg-white dark:bg-[#0a090e] text-slate-900 dark:text-white pb-36 font-sans max-w-md mx-auto">
-      {/* Banner */}
-      <div className="h-32 w-full bg-slate-50 dark:bg-zinc-900 relative overflow-hidden">
-        {user.bannerUrl && (
-          <img src={user.bannerUrl} alt="" className="w-full h-full object-cover" />
-        )}
-        <div className="absolute inset-x-0 top-0 px-4 pt-3 flex items-center justify-between">
-          <BackButton href="/" label="Back to feed" />
+  const TABS = [
+    { id: 'videos', label: 'Posts', Icon: Grid3x3 },
+    { id: 'private', label: 'Private', Icon: Lock },
+    { id: 'reposts', label: 'Reposts', Icon: Repeat2 },
+    { id: 'saved', label: 'Saved', Icon: Bookmark },
+    { id: 'liked', label: 'Liked', Icon: Heart },
+  ];
+  const visibleTabs = isSelf ? TABS : TABS.slice(0, 1);
+  const statNum = 'font-extrabold text-base text-black dark:text-white';
+  const statLbl = 'text-xs font-medium text-neutral-500';
 
-          <div className="flex items-center gap-2 relative" ref={menuRef}>
-            {isSelf ? (
-              // Own profile: one ≡ button → dropdown with Studio, Share, Settings
-              // and Menu. Share / Settings / Menu open the right-side slide-over.
-              <>
-                <button
-                  type="button"
-                  onClick={() => setShowMenu((v) => !v)}
-                  aria-label="Profile options"
-                  aria-haspopup="menu"
-                  aria-expanded={showMenu}
-                  className="p-1.5 text-white bg-black/50 rounded-lg backdrop-blur-sm"
+  return (
+    <div className="relative min-h-screen bg-white dark:bg-neutral-950 text-black dark:text-white pb-36 font-sans max-w-md mx-auto">
+      {/* Top bar */}
+      <div className="flex items-center justify-between px-4 py-3 bg-white dark:bg-neutral-950">
+        {isSelf ? (
+          <Link href="/settings/account" aria-label="Edit profile" className="p-1 -ml-1 text-black dark:text-white">
+            <Pencil className="w-5 h-5 stroke-[2.2]" />
+          </Link>
+        ) : (
+          <BackButton href="/" label="Back to feed" />
+        )}
+
+        <div className="flex items-center gap-4 relative" ref={menuRef}>
+          {isSelf ? (
+            <>
+              <Link href="/friends" aria-label="Find friends" className="p-1 text-black dark:text-white">
+                <UserPlus className="w-6 h-6 stroke-[2.2]" />
+              </Link>
+              <button
+                type="button"
+                onClick={() => openDrawer('menu')}
+                aria-label="Open menu"
+                aria-haspopup="dialog"
+                className="p-1 -mr-1 text-black dark:text-white"
+              >
+                <MenuIcon className="w-6 h-6 stroke-[2.2]" />
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={() => setShowMenu((v) => !v)}
+                aria-label="More options"
+                aria-haspopup="menu"
+                aria-expanded={showMenu}
+                className="p-1 -mr-1 text-black dark:text-white"
+              >
+                <MoreHorizontal className="w-6 h-6" />
+              </button>
+              {showMenu && (
+                <div
+                  role="menu"
+                  className="absolute right-0 top-10 w-48 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl shadow-2xl p-2 z-50"
                 >
-                  <MenuIcon size={20} />
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  onClick={() => setShowMenu((v) => !v)}
-                  aria-label="More options"
-                  className="p-1 text-zinc-200 hover:text-white bg-black/40 rounded-lg"
-                >
-                  <MoreHorizontal size={20} />
-                </button>
-                {showMenu && (
-                  <div className="absolute right-0 top-9 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl overflow-hidden z-10 w-40">
-                    <button
-                      onClick={() => {
-                        setShowMenu(false);
-                        setShowReport(true);
-                      }}
-                      className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-800"
-                    >
-                      Report
-                    </button>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
+                  <button
+                    role="menuitem"
+                    onClick={() => {
+                      setShowMenu(false);
+                      setShowReport(true);
+                    }}
+                    className="w-full text-left px-3 py-3 rounded-xl text-sm font-bold text-black dark:text-white hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                  >
+                    Report
+                  </button>
+                </div>
+              )}
+            </>
+          )}
         </div>
       </div>
 
-      <div className="px-4 pt-2">
-        {/* User Identity — the avatar wrapper is a sibling of (not nested
-            inside) the banner div above, with its own relative + negative
-            top margin, so it stacks above the banner regardless of the
-            banner's own overflow-hidden. z-10 keeps it above the banner's
-            image layer; border-4 in the page background color is what
-            visually separates the circle from the banner photo behind it. */}
-        <div className="relative z-10 -mt-12 mb-3 inline-block">
-          <div className="w-20 h-20 rounded-full border-4 border-[#0a090e] bg-slate-50 dark:bg-zinc-900 flex items-center justify-center shrink-0 overflow-hidden">
+      {/* Asymmetrical header */}
+      <div className="flex items-start justify-between px-4 pt-2">
+        <div className="min-w-0 pr-3">
+          <h1 className="font-extrabold text-2xl tracking-tight text-black dark:text-white flex items-center gap-1">
+            <span className="truncate">{user.displayName || user.username}</span>
+            {isSelf && (
+              <button
+                type="button"
+                onClick={() => setShowSwitcher(true)}
+                aria-label="Switch account"
+                aria-haspopup="dialog"
+                className="shrink-0"
+              >
+                <ChevronDown className="w-5 h-5 stroke-[3]" />
+              </button>
+            )}
+          </h1>
+          <p className="text-sm font-semibold text-neutral-500 mt-0.5">@{user.username}</p>
+
+          <div className="flex items-center gap-6 mt-4">
+            <div>
+              <p className={statNum}>{user._count?.following ?? 0}</p>
+              <p className={statLbl}>Following</p>
+            </div>
+            <div>
+              <p className={statNum}>{user._count?.followers ?? 0}</p>
+              <p className={statLbl}>Followers</p>
+            </div>
+            <div>
+              <p className={statNum}>{user.totalLikes ?? 0}</p>
+              <p className={statLbl}>Likes</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="relative w-24 h-24 shrink-0 mt-3">
+          {isSelf && (
+            <Link
+              href="/settings/account"
+              className="absolute -top-3 left-1/2 -translate-x-1/2 z-10 bg-white shadow-md border border-neutral-100 rounded-2xl px-2.5 py-1 text-[11px] font-semibold text-neutral-600 whitespace-nowrap"
+            >
+              Add a note
+            </Link>
+          )}
+          <div className="w-24 h-24 rounded-full border border-neutral-200 bg-neutral-100 dark:bg-neutral-900 overflow-hidden flex items-center justify-center">
             {user.avatarUrl ? (
-              <img src={user.avatarUrl} alt="" className="w-full h-full object-cover" />
+              <img src={user.avatarUrl} alt="" className="w-full h-full rounded-full object-cover" />
             ) : (
-              <span className="text-amber-600 dark:text-amber-500 font-black text-2xl">
+              <span className="text-amber-600 font-black text-3xl">
                 {(user.displayName || user.username)?.[0]?.toUpperCase()}
               </span>
             )}
           </div>
-        </div>
-
-        <div className="mb-4">
-          <h1 className="text-xl font-black tracking-wider text-slate-900 dark:text-white uppercase">
-            {user.displayName || user.username}
-          </h1>
-          <p className="text-xs text-slate-500 dark:text-zinc-500 font-mono">@{user.username}</p>
-          {user.bio && <p className="text-sm text-slate-700 dark:text-zinc-300 mt-2">{user.bio}</p>}
-          {(user.whatsapp || (Array.isArray(user.externalLinks) && user.externalLinks.length > 0)) && (
-            <div className="flex flex-wrap gap-2 mt-3">
-              {user.whatsapp && (
-                <a
-                  href={/^https?:\/\//i.test(user.whatsapp) ? user.whatsapp : `https://wa.me/${user.whatsapp.replace(/[^0-9]/g, '')}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-3 py-1.5 rounded-full bg-green-500/15 text-green-400 text-xs font-extrabold tracking-tight"
-                >
-                  WhatsApp
-                </a>
-              )}
-              {(user.externalLinks || []).map((l) => (
-                <a
-                  key={l.url}
-                  href={l.url}
-                  target="_blank"
-                  rel="noopener noreferrer nofollow"
-                  className="px-3 py-1.5 rounded-full bg-slate-100 dark:bg-zinc-800 text-amber-600 dark:text-amber-400 text-xs font-extrabold tracking-tight"
-                >
-                  {l.label}
-                </a>
-              ))}
-            </div>
+          {isSelf && (
+            <Link
+              href="/upload"
+              aria-label="Add to your story"
+              className="absolute bottom-0 right-0 w-7 h-7 rounded-full bg-amber-500 border-2 border-white flex items-center justify-center text-black font-bold"
+            >
+              <Plus className="w-4 h-4 stroke-[3.5]" />
+            </Link>
           )}
         </div>
+      </div>
 
-        {/* Stats Grid */}
-        <div className="grid grid-cols-4 gap-1 bg-slate-50 dark:bg-zinc-900/40 border border-slate-200 dark:border-zinc-800/80 rounded-2xl p-3 text-center mb-4">
-          <div>
-            <p className="text-base font-bold text-slate-900 dark:text-white">{user._count?.following ?? 0}</p>
-            <p className="text-[10px] text-slate-500 dark:text-zinc-400 font-medium">Following</p>
+      {/* Bio, links, Studio pill, other-user actions */}
+      <div className="px-4 mt-3">
+        {user.bio && (
+          <p className="text-sm font-medium text-neutral-800 dark:text-neutral-200 leading-snug">{user.bio}</p>
+        )}
+        {(user.whatsapp || (Array.isArray(user.externalLinks) && user.externalLinks.length > 0)) && (
+          <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-xs font-extrabold">
+            {user.whatsapp && (
+              <a
+                href={/^https?:\/\//i.test(user.whatsapp) ? user.whatsapp : `https://wa.me/${user.whatsapp.replace(/[^0-9]/g, '')}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-green-600 dark:text-green-400 hover:underline"
+              >
+                WhatsApp
+              </a>
+            )}
+            {(user.externalLinks || []).map((l) => (
+              <a
+                key={l.url}
+                href={l.url}
+                target="_blank"
+                rel="noopener noreferrer nofollow"
+                className="text-amber-700 dark:text-amber-400 hover:underline"
+              >
+                {l.label}
+              </a>
+            ))}
           </div>
-          <div>
-            <p className="text-base font-bold text-slate-900 dark:text-white">{user._count?.followers ?? 0}</p>
-            <p className="text-[10px] text-slate-500 dark:text-zinc-400 font-medium">Followers</p>
-          </div>
-          <div>
-            <p className="text-base font-bold text-slate-900 dark:text-white">{user._count?.videos ?? 0}</p>
-            <p className="text-[10px] text-slate-500 dark:text-zinc-400 font-medium">Videos</p>
-          </div>
-          <div>
-            <p className="text-base font-bold text-slate-900 dark:text-white">{user.totalLikes ?? 0}</p>
-            <p className="text-[10px] text-slate-500 dark:text-zinc-400 font-medium">Likes</p>
-          </div>
-        </div>
+        )}
 
-        {/* Primary Action Buttons */}
         {isSelf ? (
           <Link
-            href="/profile/edit"
-            className="flex items-center justify-center w-full py-3 mb-5 rounded-xl bg-amber-500 text-black text-sm font-extrabold tracking-tight hover:bg-amber-400 transition-all"
+            className="mt-3 inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 text-xs font-extrabold text-black dark:text-white transition-colors"
+            href="/studio"
           >
-            Edit Profile
+            <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+            ClipPulse Studio
           </Link>
         ) : (
-          <div className="grid grid-cols-3 gap-2 mb-2">
+          <div className="grid grid-cols-3 gap-2 mt-3">
             <button
               onClick={toggleFollow}
               className={`py-2.5 rounded-xl text-xs font-extrabold tracking-wide transition-all ${
                 following
-                  ? 'bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-300'
+                  ? 'bg-neutral-100 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 text-black dark:text-white'
                   : 'bg-amber-500 text-black hover:bg-amber-400'
               }`}
             >
@@ -284,103 +327,102 @@ export default function ProfilePage({ params }) {
             </button>
             <button
               onClick={() => router.push(`/messages/${user.id}`)}
-              className="py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-amber-600 dark:text-amber-500 text-xs font-bold hover:bg-slate-100 dark:hover:bg-zinc-800 transition-all"
+              className="py-2.5 rounded-xl bg-neutral-100 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 text-black dark:text-white text-xs font-extrabold hover:bg-neutral-200 dark:hover:bg-neutral-800"
             >
               Message
             </button>
             <button
               onClick={() => navigator.share?.({ url: window.location.href }).catch(() => {})}
-              className="flex items-center justify-center py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-all"
+              aria-label="Share profile"
+              className="flex items-center justify-center py-2.5 rounded-xl bg-neutral-100 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 text-black dark:text-white hover:bg-neutral-200 dark:hover:bg-neutral-800"
             >
               <Share2 size={16} />
             </button>
           </div>
         )}
-
-        {privateLocked && !isSelf ? (
-          <div className="py-16 text-center">
-            <Lock size={28} className="mx-auto text-slate-400 dark:text-zinc-600 mb-3" />
-            <p className="text-sm text-slate-500 dark:text-zinc-400">This account is private.</p>
-            <p className="text-xs text-slate-400 dark:text-zinc-600 mt-1">Follow to see their videos.</p>
-          </div>
-        ) : (
-          <>
-            {/* Content Tabs */}
-            <div
-              className={`grid ${isSelf ? 'grid-cols-3' : 'grid-cols-1'} bg-slate-50 dark:bg-zinc-900/50 border border-slate-200 dark:border-zinc-800/80 rounded-2xl p-1 mb-6`}
-            >
-              <button
-                onClick={() => setActiveTab('videos')}
-                className={`py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
-                  activeTab === 'videos' ? 'bg-amber-500 text-black shadow-md' : 'text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
-                }`}
-              >
-                Videos
-              </button>
-              {isSelf && (
-                <>
-                  <button
-                    onClick={() => setActiveTab('saved')}
-                    className={`py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
-                      activeTab === 'saved' ? 'bg-amber-500 text-black shadow-md' : 'text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
-                    }`}
-                  >
-                    Saved
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('liked')}
-                    className={`py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
-                      activeTab === 'liked' ? 'bg-amber-500 text-black shadow-md' : 'text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
-                    }`}
-                  >
-                    Liked
-                  </button>
-                </>
-              )}
-            </div>
-
-            {/* Tab Content area */}
-            {activeVideos.length === 0 ? (
-              <div className="py-12 text-center text-xs text-slate-500 dark:text-zinc-500 font-mono">
-                {activeTab === 'videos' && 'No videos posted yet.'}
-                {activeTab === 'saved' && 'Nothing saved yet.'}
-                {activeTab === 'liked' && 'Nothing liked yet.'}
-              </div>
-            ) : (
-              <div className="grid grid-cols-3 gap-1">
-                {activeVideos.map((v) => (
-                  <div key={v.id} className="relative aspect-[9/16] bg-slate-50 dark:bg-zinc-900 rounded-lg overflow-hidden group">
-                    <a href={`/?video=${v.id}`} className="block w-full h-full">
-                      {v.thumbnailUrl ? (
-                        <img src={v.thumbnailUrl} alt="" className="w-full h-full object-cover" />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-[10px] text-slate-400 dark:text-zinc-600 font-mono">
-                          {v.status === 'processing' ? 'Processing…' : 'No thumbnail'}
-                        </div>
-                      )}
-                    </a>
-                    {/* Own posts only — this profile's "saved"/"liked" tabs
-                        show other people's videos, where deleting isn't a
-                        meaningful action for this account to take. */}
-                    {isSelf && activeTab === 'videos' && (
-                      <button
-                        onClick={(e) => {
-                          e.preventDefault();
-                          setDeleteTarget(v);
-                        }}
-                        aria-label="Delete post"
-                        className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/70 text-white text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                      >
-                        ✕
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </>
-        )}
       </div>
+
+      {privateLocked && !isSelf ? (
+        <div className="py-16 px-4 text-center">
+          <Lock size={28} className="mx-auto text-neutral-400 mb-3" />
+          <p className="text-sm font-bold text-neutral-600 dark:text-neutral-400">This account is private.</p>
+          <p className="text-xs font-medium text-neutral-500 mt-1">Follow to see their videos.</p>
+        </div>
+      ) : (
+        <>
+          {/* Icon tabs */}
+          <div role="tablist" className="mt-5 border-b border-neutral-200 dark:border-neutral-800 flex">
+            {visibleTabs.map(({ id: tabId, label, Icon }) => {
+              const active = activeTab === tabId;
+              return (
+                <button
+                  key={tabId}
+                  role="tab"
+                  aria-selected={active}
+                  aria-label={label}
+                  onClick={() => setActiveTab(tabId)}
+                  className={`flex-1 flex justify-center py-3 -mb-px border-b-2 transition-colors ${
+                    active
+                      ? 'border-black dark:border-white text-black dark:text-white'
+                      : 'border-transparent text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300'
+                  }`}
+                >
+                  <Icon className="w-6 h-6 stroke-[2.2]" />
+                </button>
+              );
+            })}
+          </div>
+
+          {activeTab === 'private' ? (
+            <div className="py-14 px-6 text-center">
+              <Lock className="w-7 h-7 mx-auto text-neutral-400 mb-3" />
+              <p className="text-sm font-extrabold text-black dark:text-white">Only you can see this tab</p>
+              <p className="text-xs font-medium text-neutral-500 mt-1 leading-snug">
+                Per-post privacy isn't available yet. To hide your account from non-followers, use
+                Privacy settings.
+              </p>
+              <Link href="/settings/privacy" className="inline-block mt-3 text-xs font-extrabold text-amber-700 dark:text-amber-400 hover:underline">
+                Open Privacy settings
+              </Link>
+            </div>
+          ) : activeVideos.length === 0 ? (
+            <div className="py-12 text-center text-xs font-bold text-neutral-500">
+              {activeTab === 'videos' && 'No posts yet.'}
+              {activeTab === 'reposts' && 'No reposts yet.'}
+              {activeTab === 'saved' && 'Nothing saved yet.'}
+              {activeTab === 'liked' && 'Nothing liked yet.'}
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 gap-0.5 mt-0.5">
+              {activeVideos.map((v) => (
+                <div key={v.id} className="relative aspect-[9/16] bg-neutral-100 dark:bg-neutral-900 overflow-hidden group">
+                  <a href={`/?video=${v.id}`} className="block w-full h-full">
+                    {v.thumbnailUrl ? (
+                      <img src={v.thumbnailUrl} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-[10px] font-bold text-neutral-400">
+                        {v.status === 'processing' ? 'Processing…' : 'No thumbnail'}
+                      </div>
+                    )}
+                  </a>
+                  {isSelf && activeTab === 'videos' && (
+                    <button
+                      onClick={(e) => {
+                        e.preventDefault();
+                        setDeleteTarget(v);
+                      }}
+                      aria-label="Delete post"
+                      className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/70 text-white text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
 
       {deleteTarget && (
         <ConfirmModal
@@ -396,47 +438,8 @@ export default function ProfilePage({ params }) {
         <ReportModal targetType="user" targetId={user.id} onClose={() => setShowReport(false)} />
       )}
 
-      {isSelf && showMenu && (
-        <div
-          ref={dropdownRef}
-          role="menu"
-          className="absolute right-4 top-16 w-56 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl shadow-2xl p-2 z-50 flex flex-col gap-1"
-        >
-<Link
-                      href="/studio"
-                      role="menuitem"
-                      onClick={() => setShowMenu(false)}
-                      className="flex items-center gap-2.5 px-3 py-3 rounded-xl text-sm font-bold text-black dark:text-white hover:bg-neutral-100 dark:hover:bg-neutral-800"
-                    >
-                      <LayoutDashboard size={16} className="text-amber-600 dark:text-amber-500" /> Studio
-                    </Link>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => openDrawer('share')}
-                      className="w-full flex items-center gap-2.5 px-3 py-3 rounded-xl text-sm font-bold text-left text-black dark:text-white hover:bg-neutral-100 dark:hover:bg-neutral-800"
-                    >
-                      <Share2 size={16} className="text-amber-600 dark:text-amber-500" /> Share
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => openDrawer('settings')}
-                      className="w-full flex items-center gap-2.5 px-3 py-3 rounded-xl text-sm font-bold text-left text-black dark:text-white hover:bg-neutral-100 dark:hover:bg-neutral-800"
-                    >
-                      <SettingsIcon size={16} className="text-amber-600 dark:text-amber-500" /> Settings
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => openDrawer('menu')}
-                      className="w-full flex items-center gap-2.5 px-3 py-3 rounded-xl text-sm font-bold text-left text-black dark:text-white hover:bg-neutral-100 dark:hover:bg-neutral-800"
-                    >
-                      <PanelRight size={16} className="text-amber-600 dark:text-amber-500" /> Menu
-                    </button>
-        </div>
-      )}
       {isSelf && <ProfileDrawer open={isMenuOpen} onClose={closeDrawer} user={user} initialView={drawerView} />}
+      {isSelf && <AccountSwitcherModal open={showSwitcher} onClose={() => setShowSwitcher(false)} />}
     </div>
   );
 }

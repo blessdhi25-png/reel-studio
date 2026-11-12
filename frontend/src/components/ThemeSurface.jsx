@@ -6,9 +6,9 @@ import { usePathname } from 'next/navigation';
 // Add a route here once its page is converted. Everything else was built dark-only
 // (hardcoded text-white / zinc-* on an implicit dark body), so it is wrapped in a
 // forced-dark surface and renders exactly as it did before light became the default.
-const THEMED_ROUTES = ['/friends', '/menu', '/welcome', '/moderator', '/profile', '/settings'];
+const THEMED_ROUTES = ['/friends', '/menu', '/welcome', '/moderator', '/profile', '/settings', '/studio'];
 // Sub-routes of a themed route that have NOT been converted yet stay forced-dark.
-const LEGACY_EXCEPTIONS = ['/profile/edit'];
+const LEGACY_EXCEPTIONS = ['/profile/edit', '/studio/artists'];
 
 export function isThemedRoute(pathname) {
   if (LEGACY_EXCEPTIONS.some((r) => pathname === r || pathname.startsWith(`${r}/`))) return false;

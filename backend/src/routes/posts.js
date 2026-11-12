@@ -44,4 +44,20 @@ router.delete('/repost/:videoId', requireAuth, asyncHandler(async (req, res) => 
   res.json({ reposted: false });
 }));
 
+// GET /posts/reposts — the signed-in user's own reposts, newest first, as video
+// cards for the profile's Reposts tab. Removed/unpublished posts are skipped.
+router.get('/reposts', requireAuth, asyncHandler(async (req, res) => {
+  const rows = await prisma.repost.findMany({
+    where: { userId: req.userId, video: { status: 'published' } },
+    orderBy: { createdAt: 'desc' },
+    take: 100,
+    select: {
+      video: {
+        select: { id: true, caption: true, thumbnailUrl: true, mediaType: true, status: true, viewCount: true },
+      },
+    },
+  });
+  res.json(rows.map((r) => ({ ...r.video, viewCount: Number(r.video.viewCount) })));
+}));
+
 export default router;

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { ChevronLeft, ChevronRight, Copy, Share2, X } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useToast } from '@/context/ToastContext';
@@ -24,6 +25,7 @@ const TITLES = { menu: 'Menu', share: 'Share profile', settings: 'Settings' };
  */
 export default function ProfileDrawer({ open, onClose, user, initialView = 'menu' }) {
   const toast = useToast();
+  const router = useRouter();
   const [view, setView] = useState(initialView);
   const [balance, setBalance] = useState(null);
   const [qrFailed, setQrFailed] = useState(false);
@@ -103,8 +105,11 @@ export default function ProfileDrawer({ open, onClose, user, initialView = 'menu
             <nav aria-label="Profile actions" className="space-y-1">
               <DrawerLink href="/earnings" icon="💳" title="ClipPulse Wallet & Creator Balance" onClick={onClose}
                 subtitle={balance != null ? `${formatCents(balance)} earned · Tips & earnings` : 'Earnings & tips breakdown'} />
-              <DrawerLink href="/studio" icon="📊" title="ClipPulse Studio" onClick={onClose}
-                subtitle="Analytics & video performance" />
+              <DrawerRow icon="📊" title="ClipPulse Studio" subtitle="Analytics & video performance"
+                onClick={() => {
+                  onClose();
+                  router.push('/studio');
+                }} />
               <DrawerRow icon="📱" title="My QR Code / Share Profile" subtitle="Dynamic link to your profile"
                 onClick={() => setView('share')} />
               <DrawerRow icon="⚙️" title="Settings and Privacy" subtitle="Account, privacy, wellbeing"

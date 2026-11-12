@@ -247,6 +247,7 @@ export const api = {
   updateAccountProfile: (data) => request('/user/profile', { method: 'PATCH', body: data }),
   // Reposts — backend/src/routes/posts.js
   repost: (videoId) => request('/posts/repost', { method: 'POST', body: { videoId } }),
+  getMyReposts: () => request('/posts/reposts'),
   undoRepost: (videoId) => request(`/posts/repost/${videoId}`, { method: 'DELETE' }),
   uploadAvatar: (formData) => request('/users/me/avatar', { method: 'POST', body: formData, isForm: true }),
   uploadBanner: (formData) => request('/users/me/banner', { method: 'POST', body: formData, isForm: true }),
