@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { Router } from 'express';
 import prisma from '../config/db.js';
 import { requireAuth, optionalAuth } from '../middleware/auth.js';
@@ -49,6 +50,63 @@ async function getMembership(communityId, userId) {
     where: { communityId_userId: { communityId, userId } },
   });
 }
+
+// ---------------------------------------------------------------------------
+// Invite links. Any member can read their community's link to share it; only an
+// admin can rotate it (which kills the old link). Joining through a link is the
+// only way into a private community. Defined before the /:id routes so
+// "invite" is never read as a community id.
+// ---------------------------------------------------------------------------
+const newInviteCode = () => crypto.randomBytes(9).toString('base64url');
+
+router.get('/communities/invite/:code', optionalAuth, asyncHandler(async (req, res) => {
+  const community = await prisma.community.findUnique({
+    where: { inviteCode: req.params.code },
+    select: { id: true, name: true, description: true, privacy: true, avatarUrl: true, bannerUrl: true, _count: { select: { members: true } } },
+  });
+  if (!community) return res.status(404).json({ error: 'This invite link is invalid or has been reset' });
+  const membership = await getMembership(community.id, req.userId);
+  res.json({
+    id: community.id,
+    name: community.name,
+    description: community.description,
+    privacy: community.privacy,
+    avatarUrl: community.avatarUrl,
+    bannerUrl: community.bannerUrl,
+    memberCount: community._count.members,
+    isJoined: Boolean(membership),
+  });
+}));
+
+router.post('/communities/invite/:code/join', requireAuth, asyncHandler(async (req, res) => {
+  const community = await prisma.community.findUnique({ where: { inviteCode: req.params.code }, select: { id: true } });
+  if (!community) return res.status(404).json({ error: 'This invite link is invalid or has been reset' });
+  await prisma.communityMember.upsert({
+    where: { communityId_userId: { communityId: community.id, userId: req.userId } },
+    update: {},
+    create: { communityId: community.id, userId: req.userId, role: 'member' },
+  });
+  res.json({ joined: true, communityId: community.id });
+}));
+
+router.get('/communities/:id/invite', requireAuth, asyncHandler(async (req, res) => {
+  const membership = await getMembership(req.params.id, req.userId);
+  if (!membership) return res.status(403).json({ error: 'Only members can share invite links' });
+  let { inviteCode } = await prisma.community.findUnique({ where: { id: req.params.id }, select: { inviteCode: true } });
+  if (!inviteCode) {
+    inviteCode = newInviteCode();
+    await prisma.community.update({ where: { id: req.params.id }, data: { inviteCode } });
+  }
+  res.json({ code: inviteCode, canReset: membership.role === 'admin' });
+}));
+
+router.post('/communities/:id/invite/reset', requireAuth, asyncHandler(async (req, res) => {
+  const membership = await getMembership(req.params.id, req.userId);
+  if (membership?.role !== 'admin') return res.status(403).json({ error: 'Only admins can reset the invite link' });
+  const inviteCode = newInviteCode();
+  await prisma.community.update({ where: { id: req.params.id }, data: { inviteCode } });
+  res.json({ code: inviteCode, canReset: true });
+}));
 
 // ---------------------------------------------------------------------------
 // GET /communities — discovery hub. ?category= and ?search= filter
@@ -411,9 +469,6 @@ router.post('/communities/:id/posts', requireAuth, asyncHandler(async (req, res)
     select: { id: true, privacy: true },
   });
   if (!community) return res.status(404).json({ error: 'Community not found' });
-  if (community.privacy !== 'public') {
-    return res.status(403).json({ error: "Posting to private communities isn't supported yet" });
-  }
   if (!(await getMembership(community.id, req.userId))) {
     return res.status(403).json({ error: 'Join this community to post in it' });
   }
@@ -474,6 +529,32 @@ router.post('/communities/:id/posts', requireAuth, asyncHandler(async (req, res)
     user: { ...video.user, isFollowing: false },
     track: null,
   });
+}));
+
+// ---------------------------------------------------------------------------
+// PATCH /communities/:id/posts/:videoId { caption } — edit a community post's
+// caption. Allowed for the post's author and for community admins/moderators.
+// ---------------------------------------------------------------------------
+router.patch('/communities/:id/posts/:videoId', requireAuth, asyncHandler(async (req, res) => {
+  const video = await prisma.video.findUnique({
+    where: { id: req.params.videoId },
+    select: { id: true, userId: true, communityId: true, status: true },
+  });
+  if (!video || video.communityId !== req.params.id || video.status === 'removed') {
+    return res.status(404).json({ error: 'Post not found in this community' });
+  }
+  const membership = await getMembership(req.params.id, req.userId);
+  const isStaff = membership && (membership.role === 'admin' || membership.role === 'moderator');
+  if (video.userId !== req.userId && !isStaff) {
+    return res.status(403).json({ error: 'You can only edit your own posts' });
+  }
+  if (typeof req.body?.caption !== 'string') return res.status(400).json({ error: 'caption is required' });
+  const updated = await prisma.video.update({
+    where: { id: video.id },
+    data: { caption: req.body.caption.trim().slice(0, 2200) },
+    select: { id: true, caption: true },
+  });
+  res.json(updated);
 }));
 
 // ---------------------------------------------------------------------------

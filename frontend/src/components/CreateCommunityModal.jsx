@@ -38,7 +38,7 @@ export default function CreateCommunityModal({ onClose, onCreated }) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-end sm:items-center justify-center z-50" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/70 flex items-end sm:items-center justify-center z-[60]" onClick={onClose}>
       <div
         className="w-full sm:max-w-md sm:mx-4 max-h-[88vh] bg-zinc-900/95 backdrop-blur-xl border border-zinc-800 text-white rounded-t-3xl sm:rounded-2xl flex flex-col shadow-2xl"
         onClick={(e) => e.stopPropagation()}
@@ -50,7 +50,7 @@ export default function CreateCommunityModal({ onClose, onCreated }) {
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-4 space-y-4">
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-4 pb-32 space-y-4">
           <div>
             <label className="font-mono text-[10px] uppercase tracking-widest text-zinc-500 mb-1.5 block">
               Name

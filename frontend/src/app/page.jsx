@@ -52,7 +52,7 @@ export default function FeedPage() {
 
   // Audio & Header state
   const [activeTab, setActiveTab] = useState('All');
-  const [isMuted, setIsMuted] = useState(true);
+  const [isMuted, setIsMuted] = useState(false);
 
   // Core Feed States
   const [videos, setVideos] = useState([]);
@@ -410,6 +410,7 @@ export default function FeedPage() {
                   video={video}
                   isActive={i === activeIndex}
                   isMuted={isMuted}
+                  onMuteChange={setIsMuted}
                   shouldLoad={Math.abs(i - activeIndex) <= 1}
                   focusMode={focusMode}
                   isScrolling={isScrolling}
@@ -455,6 +456,7 @@ export default function FeedPage() {
                       video={video}
                       isActive={i === activeIndex}
                       isMuted={isMuted}
+                      onMuteChange={setIsMuted}
                       shouldLoad={Math.abs(i - activeIndex) <= 1}
                       focusMode={focusMode}
                       isScrolling={isScrolling}

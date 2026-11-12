@@ -1,3 +1,4 @@
+import { notInPrivateCommunity } from '../utils/communityVisibility.js';
 import { Router } from 'express';
 import prisma from '../config/db.js';
 import cloudinary from '../config/cloudinary.js';
@@ -228,7 +229,7 @@ router.get('/feed', optionalAuth, async (req, res) => {
     // doesn't require pulling a whole candidate pool.
     const poolSize = Math.max(Number(limit) * 5, 50);
     const pool = await prisma.video.findMany({
-      where: { ...visibilityFilter, ...(type ? { videoType: type } : {}), ...circleFilter, ...followingFilter },
+      where: { ...visibilityFilter, ...(type ? { videoType: type } : {}), ...circleFilter, ...followingFilter, AND: [notInPrivateCommunity] },
       orderBy: [{ rankingScore: 'desc' }, { createdAt: 'desc' }],
       take: poolSize,
       include: {
@@ -240,7 +241,7 @@ router.get('/feed', optionalAuth, async (req, res) => {
     nextCursor = null;
   } else {
     videos = await prisma.video.findMany({
-      where: { ...visibilityFilter, ...(type ? { videoType: type } : {}), ...circleFilter, ...followingFilter },
+      where: { ...visibilityFilter, ...(type ? { videoType: type } : {}), ...circleFilter, ...followingFilter, AND: [notInPrivateCommunity] },
       orderBy,
       take: Number(limit),
       ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),

@@ -1,3 +1,4 @@
+import { notInPrivateCommunity } from '../utils/communityVisibility.js';
 import { Router } from 'express';
 import prisma from '../config/db.js';
 import { requireAuth } from '../middleware/auth.js';
@@ -188,7 +189,7 @@ router.get('/:id/videos', optionalAuth, asyncHandler(async (req, res) => {
   }
 
   const videos = await prisma.video.findMany({
-    where: { userId: req.params.id, status: 'published' },
+    where: { userId: req.params.id, status: 'published', AND: [notInPrivateCommunity] },
     orderBy: { createdAt: 'desc' },
   });
   res.json(videos);

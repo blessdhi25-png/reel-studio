@@ -4,13 +4,15 @@ import BackButton from '@/components/BackButton';
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { api } from '../../../lib/api';
+import { api, getStoredUser } from '../../../lib/api';
 import { useToast } from '../../../context/ToastContext';
 import { LoadingSpinner } from '../../../components/LoadingScreen';
 import VideoCard from '../../../components/VideoCard';
 import { COMMUNITY_CATEGORIES } from '../../../components/CreateCommunityModal';
 import { compressImage } from '../../../lib/imageCompression';
 import CommunityPostModal from '../../../components/CommunityPostModal';
+import InviteMemberModal from '../../../components/InviteMemberModal';
+import EditCommunityPostModal from '../../../components/EditCommunityPostModal';
 
 const TABS = [
   { value: 'feed', label: 'Feed' },
@@ -110,6 +112,12 @@ export default function CommunityDetailPage({ params }) {
 
   const [posts, setPosts] = useState([]);
   const [isCreatePostOpen, setIsCreatePostOpen] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [editingPost, setEditingPost] = useState(null);
+  const [myId, setMyId] = useState(null);
+  useEffect(() => {
+    setMyId(getStoredUser()?.id ?? null);
+  }, []);
   const [postsCursor, setPostsCursor] = useState(null);
   const [postsLoading, setPostsLoading] = useState(true);
   const [postsLoadingMore, setPostsLoadingMore] = useState(false);
@@ -348,7 +356,8 @@ export default function CommunityDetailPage({ params }) {
   const isAdmin = community.myRole === 'admin';
 
   const isMember = community?.isJoined === true;
-  const canPost = isMember && community?.privacy === 'public';
+  const canPost = isMember; // members of public and private communities can both post
+  const canInvite = isMember && community?.privacy === 'private';
 
   return (
     <main className="min-h-screen bg-zinc-950 pb-40" style={{ paddingBottom: '160px' }}>
@@ -403,6 +412,16 @@ export default function CommunityDetailPage({ params }) {
               {community.isJoined ? 'Joined' : 'Join'}
             </button>
           </div>
+
+          {canInvite && (
+            <button
+              type="button"
+              onClick={() => setInviteOpen(true)}
+              className="mt-4 w-full py-2.5 rounded-xl bg-white text-black text-sm font-extrabold hover:bg-zinc-200 transition-colors"
+            >
+              + Invite Member
+            </button>
+          )}
 
           {community.description && (
             <p className="font-body text-sm text-zinc-400 mt-3">{community.description}</p>
@@ -550,8 +569,7 @@ export default function CommunityDetailPage({ params }) {
               </div>
             )}
 
-            {/* Members of public communities only — the server rejects posts to private communities
-                (see backend routes/communities.js), so the trigger is hidden there too. */}
+            {/* Any member can post — including in private communities. */}
             {canPost && (
               <button
                 type="button"
@@ -575,6 +593,15 @@ export default function CommunityDetailPage({ params }) {
                 <div className="rounded-2xl overflow-hidden border border-zinc-800 divide-y divide-zinc-800">
                   {posts.map((video) => (
                     <div key={video.id} className="relative h-[80vh] bg-black">
+                      {(video.user?.id === myId || canModerate) && (
+                        <button
+                          type="button"
+                          onClick={() => setEditingPost(video)}
+                          className="absolute top-3 left-3 z-20 px-3 py-1.5 rounded-full bg-black/70 backdrop-blur-sm text-white text-xs font-extrabold hover:bg-black/90"
+                        >
+                          ✎ Edit Post
+                        </button>
+                      )}
                       <VideoCard
                         video={video}
                         onDeleted={(deletedId) => setPosts((prev) => prev.filter((v) => v.id !== deletedId))}
@@ -716,6 +743,24 @@ export default function CommunityDetailPage({ params }) {
         >
           + Post
         </button>
+      )}
+
+      <InviteMemberModal
+        open={inviteOpen}
+        onClose={() => setInviteOpen(false)}
+        communityId={community.id}
+        communityName={community.name}
+      />
+
+      {editingPost && (
+        <EditCommunityPostModal
+          post={editingPost}
+          communityId={community.id}
+          onClose={() => setEditingPost(null)}
+          onSaved={(res) =>
+            setPosts((prev) => prev.map((v) => (v.id === res.id ? { ...v, caption: res.caption } : v)))
+          }
+        />
       )}
 
       {isCreatePostOpen && (

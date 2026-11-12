@@ -1,3 +1,4 @@
+import { notInPrivateCommunity } from '../utils/communityVisibility.js';
 import { Router } from 'express';
 import prisma from '../config/db.js';
 import { optionalAuth } from '../middleware/auth.js';
@@ -24,6 +25,9 @@ async function hashtagCounts({ contains = '', limit = 20 } = {}) {
         SELECT DISTINCT v."id" AS id, lower(m[1]) AS tag
         FROM "Video" v, regexp_matches(v."caption", '#([[:alnum:]_]+)', 'g') AS m
         WHERE v."status" = 'published' AND v."caption" IS NOT NULL
+          AND (v."communityId" IS NULL OR NOT EXISTS (
+            SELECT 1 FROM "Community" c WHERE c."id" = v."communityId" AND c."privacy" = 'private'
+          ))
       ) t
       WHERE tag LIKE ${pattern}
       GROUP BY tag
@@ -53,7 +57,7 @@ router.get('/search', optionalAuth, asyncHandler(async (req, res) => {
       take: 10,
     }),
     prisma.video.findMany({
-      where: { status: 'published', caption: { contains: term, mode: 'insensitive' } },
+      where: { status: 'published', caption: { contains: term, mode: 'insensitive' }, AND: [notInPrivateCommunity] },
       take: 10,
       include: { user: { select: { id: true, username: true, avatarUrl: true } } },
     }),
@@ -84,7 +88,7 @@ router.get('/trending', asyncHandler(async (_req, res) => {
   // Simple v1: recent videos ranked by like count.
   // Swap for a Redis sorted-set-backed score once the feed_events pipeline exists.
   const videos = await prisma.video.findMany({
-    where: { status: 'published' },
+    where: { status: 'published', AND: [notInPrivateCommunity] },
     orderBy: [{ likeCount: 'desc' }, { createdAt: 'desc' }],
     take: 20,
     include: { user: { select: { id: true, username: true, avatarUrl: true } } },

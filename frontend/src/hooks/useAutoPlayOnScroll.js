@@ -19,7 +19,7 @@ import { useEffect, useState } from 'react';
 // to overlap more than the viewport itself). So a 60% threshold guarantees
 // at most one card is ever "in view" at a time — there's no scroll
 // position where two videos could both be playing.
-export function useAutoPlayOnScroll(containerRef, videoRef, { threshold = 0.6, enabled = true } = {}) {
+export function useAutoPlayOnScroll(containerRef, videoRef, { threshold = 0.6, enabled = true, onSoundBlocked } = {}) {
   const [inView, setInView] = useState(false);
 
   useEffect(() => {
@@ -46,10 +46,16 @@ export function useAutoPlayOnScroll(containerRef, videoRef, { threshold = 0.6, e
         const visible = entry.isIntersecting && entry.intersectionRatio >= threshold;
         setInView(visible);
         if (visible) {
-          video?.play().catch(() => {
-            // Autoplay can still be rejected (e.g. a browser that requires
-            // an explicit gesture even for muted video) — the tap-to-play
-            // handler already on the video element covers that case.
+          // Try with sound first. Browsers refuse unmuted autoplay before any
+          // user gesture; when that happens, silently fall back to muted
+          // playback (no on-screen text) and let the owner know so its mute
+          // button reflects reality. The first tap then turns sound on.
+          video?.play().catch((err) => {
+            if (video && !video.muted && err?.name === 'NotAllowedError') {
+              video.muted = true;
+              onSoundBlocked?.();
+              video.play().catch(() => {});
+            }
           });
         } else {
           video?.pause();
@@ -60,6 +66,7 @@ export function useAutoPlayOnScroll(containerRef, videoRef, { threshold = 0.6, e
 
     observer.observe(container);
     return () => observer.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [containerRef, videoRef, threshold, enabled]);
 
   return inView;

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { api } from '../../lib/api';
 import { useToast } from '../../context/ToastContext';
 import { LoadingSpinner } from '../../components/LoadingScreen';
+import InviteMemberModal from '../../components/InviteMemberModal';
 import CreateCommunityModal, { COMMUNITY_CATEGORIES } from '../../components/CreateCommunityModal';
 
 const TABS = [
@@ -12,7 +13,22 @@ const TABS = [
   { value: 'all', label: 'Explore All Circles' },
 ];
 
-function CommunityCard({ community, onToggleJoin, busy }) {
+const BANNER_GRADIENTS = [
+  'from-amber-500 to-rose-600',
+  'from-indigo-500 to-fuchsia-600',
+  'from-emerald-500 to-sky-600',
+  'from-orange-500 to-pink-600',
+  'from-cyan-500 to-blue-700',
+  'from-violet-600 to-purple-900',
+];
+// Stable per-community gradient so a community without a banner never shows a flat grey box.
+function bannerGradient(key = '') {
+  let h = 0;
+  for (const ch of String(key)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return BANNER_GRADIENTS[h % BANNER_GRADIENTS.length];
+}
+
+function CommunityCard({ community, onToggleJoin, onInvite, busy }) {
   // A broken/expired image URL falls back to the gradient / letter box instead of a blank hole.
   const [bannerFailed, setBannerFailed] = useState(false);
   const [avatarFailed, setAvatarFailed] = useState(false);
@@ -23,17 +39,22 @@ function CommunityCard({ community, onToggleJoin, busy }) {
     <div className="bg-zinc-900 border border-zinc-800 text-white rounded-2xl overflow-hidden hover:border-zinc-700 transition-colors">
       <a href={`/communities/${community.id}`} className="block">
         {/* Banner header; the avatar overlaps its bottom edge and spills into the text area below (still inside the card, so overflow-hidden doesn't clip it). */}
-        <div className="relative w-full h-24">
+        <div className="relative w-full h-32">
           {bannerSrc ? (
             <img
               src={bannerSrc}
               alt=""
               loading="lazy"
               onError={() => setBannerFailed(true)}
-              className="h-24 w-full object-cover rounded-t-2xl bg-cover bg-center"
+              className="h-32 w-full object-cover rounded-t-2xl"
             />
           ) : (
-            <div className="w-full h-full rounded-t-2xl bg-gradient-to-br from-zinc-800 to-zinc-900" />
+            <div
+              className={`h-32 w-full rounded-t-2xl bg-gradient-to-br ${bannerGradient(community.id || community.name)} flex items-center justify-center`}
+              aria-hidden="true"
+            >
+              <span className="text-5xl font-black text-white/30 select-none">{community.name?.[0]?.toUpperCase()}</span>
+            </div>
           )}
           {avatarSrc ? (
             <img
@@ -65,6 +86,15 @@ function CommunityCard({ community, onToggleJoin, busy }) {
             {community.memberCount} {community.memberCount === 1 ? 'member' : 'members'}
           </span>
         </div>
+        {community.privacy === 'private' && community.isJoined && (
+          <button
+            type="button"
+            onClick={() => onInvite(community)}
+            className="px-3 py-1.5 rounded-full text-xs font-extrabold bg-white text-black hover:bg-zinc-200 transition-colors"
+          >
+            Invite Member
+          </button>
+        )}
         <button
           onClick={() => onToggleJoin(community)}
           disabled={busy}
@@ -88,8 +118,10 @@ export default function CommunitiesHubPage() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('all');
   const [category, setCategory] = useState('All');
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [showCreate, setShowCreate] = useState(false);
+  const [inviteFor, setInviteFor] = useState(null);
   const [busyIds, setBusyIds] = useState(new Set());
 
   function load() {
@@ -175,20 +207,46 @@ export default function CommunitiesHubPage() {
           />
         </form>
 
-        <div className="flex flex-wrap gap-2 mb-5">
-          {['All', ...COMMUNITY_CATEGORIES].map((c) => (
-            <button
-              key={c}
-              onClick={() => setCategory(c)}
-              className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
-                category === c
-                  ? 'bg-white text-black'
-                  : 'bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-200'
-              }`}
-            >
-              {c}
-            </button>
-          ))}
+        {/* Collapsible category filter — one horizontal-scroll row, hidden until opened. */}
+        <div className="mb-5">
+          <button
+            type="button"
+            onClick={() => setFiltersOpen((v) => !v)}
+            aria-expanded={filtersOpen}
+            aria-controls="community-filters"
+            className="flex items-center gap-2 px-3.5 py-2 rounded-full bg-zinc-900 border border-zinc-800 text-xs font-bold text-white"
+          >
+            <span aria-hidden="true">⚙️</span>
+            Filters
+            {category !== 'All' && (
+              <span className="px-2 py-0.5 rounded-full bg-amber-500 text-black text-[10px] font-extrabold">{category}</span>
+            )}
+            <span aria-hidden="true" className={`transition-transform ${filtersOpen ? 'rotate-180' : ''}`}>▾</span>
+          </button>
+          <div
+            id="community-filters"
+            className={`grid transition-all duration-300 ease-in-out ${filtersOpen ? 'grid-rows-[1fr] opacity-100 mt-3' : 'grid-rows-[0fr] opacity-0'}`}
+          >
+            <div className="overflow-hidden">
+              <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                {['All', ...COMMUNITY_CATEGORIES].map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    tabIndex={filtersOpen ? 0 : -1}
+                    onClick={() => setCategory(c)}
+                    className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors ${
+                      category === c
+                        ? 'bg-white text-black'
+                        : 'bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    {c}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
 
         <div className="flex gap-2 mb-6">
@@ -227,11 +285,19 @@ export default function CommunitiesHubPage() {
                 community={c}
                 busy={busyIds.has(c.id)}
                 onToggleJoin={handleToggleJoin}
+                onInvite={setInviteFor}
               />
             ))}
           </div>
         )}
       </div>
+
+      <InviteMemberModal
+        open={!!inviteFor}
+        onClose={() => setInviteFor(null)}
+        communityId={inviteFor?.id}
+        communityName={inviteFor?.name}
+      />
 
       {showCreate && (
         <CreateCommunityModal

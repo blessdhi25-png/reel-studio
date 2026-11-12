@@ -281,6 +281,8 @@ model Community {
   // one field, not a separate announcements table, since the spec calls for
   // one pinned box, not a feed of past announcements.
   pinnedAnnouncement String?
+  // Shareable invite token; GET /communities/invite/:code → join. Rotatable by an admin.
+  inviteCode         String?  @unique
   createdById        String
   createdBy          User     @relation("communityCreator", fields: [createdById], references: [id])
   createdAt          DateTime @default(now())

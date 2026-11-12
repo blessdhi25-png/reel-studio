@@ -217,6 +217,12 @@ export const api = {
   removeCommunityMember: (id, userId) =>
     request(`/communities/${id}/members/${userId}`, { method: 'DELETE' }),
   // body: { caption?, videoId } or { caption?, mediaUrl } — exactly one media source.
+  getCommunityInvite: (id) => request(`/communities/${id}/invite`),
+  resetCommunityInvite: (id) => request(`/communities/${id}/invite/reset`, { method: 'POST' }),
+  getInvitePreview: (code) => request(`/communities/invite/${encodeURIComponent(code)}`),
+  joinCommunityViaInvite: (code) => request(`/communities/invite/${encodeURIComponent(code)}/join`, { method: 'POST' }),
+  editCommunityPost: (id, videoId, caption) =>
+    request(`/communities/${id}/posts/${videoId}`, { method: 'PATCH', body: { caption } }),
   createCommunityPost: (id, body) => request(`/communities/${id}/posts`, { method: 'POST', body }),
   getCommunityPosts: (id, cursor) =>
     request(`/communities/${id}/posts${cursor ? `?cursor=${cursor}` : ''}`),

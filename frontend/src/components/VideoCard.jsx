@@ -103,8 +103,9 @@ function ShareIcon({ className = '' }) {
 // someone taps to play/pause. There's no dedicated mute button: once this
 // is true, sound just stays on for the rest of the session.
 function getStoredAudioEnabled() {
-  if (typeof window === 'undefined') return false;
-  return window.localStorage.getItem('feedAudioEnabled') === 'true';
+  // Sound is on by default; only an explicit mute (stored 'false') turns it off.
+  if (typeof window === 'undefined') return true;
+  return window.localStorage.getItem('feedAudioEnabled') !== 'false';
 }
 
 // Renders the caption with #hashtags split into their own bold spans so they
@@ -169,7 +170,10 @@ const VideoCard = forwardRef(function VideoCard(
   const [deleting, setDeleting] = useState(false);
   const [bookmarked, setBookmarked] = useState(Boolean(video.isBookmarked));
   const [bookmarkCount, setBookmarkCount] = useState(Number(video.bookmarkCount || 0));
-  const [audioEnabled, setAudioEnabled] = useState(false);
+  const [audioEnabled, setAudioEnabled] = useState(true);
+  // True when the browser refused unmuted autoplay and we fell back to muted playback:
+  // the next tap should just restore sound, not pause the clip.
+  const soundBlockedRef = useRef(false);
   const [paused, setPaused] = useState(false);
   const [isOwnVideo, setIsOwnVideo] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -234,7 +238,15 @@ const VideoCard = forwardRef(function VideoCard(
   // activeIndex — enabled only once shouldLoad has given this card a real
   // src to play, so an off-screen, unloaded card's observer never tries to
   // play a video with nothing loaded into it.
-  const inView = useAutoPlayOnScroll(containerRef, videoRef, { threshold: 0.6, enabled: shouldLoad });
+  const inView = useAutoPlayOnScroll(containerRef, videoRef, {
+    threshold: 0.6,
+    enabled: shouldLoad,
+    onSoundBlocked: () => {
+      soundBlockedRef.current = true;
+      setAudioEnabled(false);
+      onMuteChange?.(true);
+    },
+  });
 
   // Hold-to-open options sheet (400ms, cancelled by any drag/scroll).
   const longPress = useLongPress(() => setShowLongPressMenu(true), {
@@ -504,6 +516,13 @@ const VideoCard = forwardRef(function VideoCard(
       setAudioEnabled(true);
       window.localStorage.setItem('feedAudioEnabled', 'true');
       onMuteChange?.(false);
+      el.muted = false;
+      if (soundBlockedRef.current) {
+        // Autoplay fell back to muted: this tap only brings the sound back.
+        soundBlockedRef.current = false;
+        if (el.paused) el.play().catch(() => {});
+        return;
+      }
     }
 
     if (el.paused) {
@@ -752,18 +771,6 @@ const VideoCard = forwardRef(function VideoCard(
           <span className="w-16 h-16 rounded-full bg-ink/50 flex items-center justify-center text-bone text-3xl">
             ▶
           </span>
-        </div>
-      )}
-
-      {/* Tap-for-sound hint — shown until the viewer's first tap enables
-          audio for the rest of the session. Not a control itself (tapping
-          anywhere on the video already does this via togglePlayPause). */}
-      {!audioEnabled && !isPhoto && (
-        <div
-          className="absolute right-6 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-ink/60 text-bone font-mono text-[10px] uppercase tracking-widest pointer-events-none z-10"
-          style={{ top: 'calc(env(safe-area-inset-top) + 5rem)' }}
-        >
-          🔇 Tap for sound
         </div>
       )}
 
