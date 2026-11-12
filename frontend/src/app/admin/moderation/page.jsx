@@ -58,7 +58,7 @@ export default function ModerationQueuePage() {
     try {
       // "Approve" = the video is fine, dismiss every report against it.
       await Promise.all(
-        group.reports.map((r) => api.adminResolveReport(r.id, 'dismiss', 'Reviewed — content approved'))
+        group.reports.map((r) => api.adminResolveReport(r.id, 'dismissed', 'Reviewed — content approved'))
       );
       setGroups((prev) => prev.filter((g) => g.videoId !== group.videoId));
     } catch (err) {

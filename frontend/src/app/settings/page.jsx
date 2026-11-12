@@ -182,7 +182,7 @@ export default function SettingsDashboardPage() {
         <SettingsBlock icon="💬" title="Comments & Direct Messages" subtitle="Choose who can interact with you">
           <div className="space-y-3">
             <div>
-              <p className="font-sans font-bold text-[11px] uppercase tracking-wide text-neutral-500 mb-1.5">
+              <p className="font-sans font-bold text-[11px] uppercase tracking-wide text-slate-500 dark:text-neutral-500 mb-1.5">
                 Who can comment
               </p>
               <Segmented
@@ -194,7 +194,7 @@ export default function SettingsDashboardPage() {
               />
             </div>
             <div>
-              <p className="font-sans font-bold text-[11px] uppercase tracking-wide text-neutral-500 mb-1.5">
+              <p className="font-sans font-bold text-[11px] uppercase tracking-wide text-slate-500 dark:text-neutral-500 mb-1.5">
                 Who can message you
               </p>
               <Segmented
@@ -251,7 +251,7 @@ export default function SettingsDashboardPage() {
               type="button"
               onClick={handleClearCache}
               disabled={clearing || !cacheBytes}
-              className="shrink-0 px-3 py-1.5 rounded-xl bg-neutral-800 text-white font-sans font-bold text-xs hover:bg-neutral-700 active:bg-neutral-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              className="shrink-0 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-neutral-800 text-slate-900 dark:text-white font-sans font-bold text-xs hover:bg-slate-200 dark:hover:bg-neutral-700 active:bg-neutral-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {clearing ? 'Clearing…' : 'Clear Cache'}
             </button>

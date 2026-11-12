@@ -50,17 +50,17 @@ export default function ConfirmModal({
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="confirm-modal-title"
-        className="fixed inset-x-4 bottom-28 bottom-[calc(7rem+env(safe-area-inset-bottom))] sm:bottom-auto sm:top-1/2 sm:-translate-y-1/2 mx-auto max-w-sm bg-neutral-900 border border-neutral-800 shadow-2xl rounded-2xl p-5"
+        className="fixed inset-x-4 bottom-28 bottom-[calc(7rem+env(safe-area-inset-bottom))] sm:bottom-auto sm:top-1/2 sm:-translate-y-1/2 mx-auto max-w-sm bg-white dark:bg-neutral-900 border border-slate-200 dark:border-neutral-800 shadow-2xl rounded-2xl p-5"
       >
-        <h2 id="confirm-modal-title" className="text-base font-bold text-white mb-1.5">
+        <h2 id="confirm-modal-title" className="text-base font-extrabold tracking-tight text-slate-900 dark:text-white mb-1.5">
           {title}
         </h2>
-        {message && <p className="text-sm text-neutral-400 mb-5">{message}</p>}
+        {message && <p className="text-sm font-medium text-slate-600 dark:text-neutral-400 mb-5">{message}</p>}
         <div className="flex gap-2">
           <button
             ref={cancelRef}
             onClick={onCancel}
-            className="flex-1 py-2.5 rounded-xl bg-neutral-800 text-neutral-200 text-sm font-semibold hover:bg-neutral-700 transition-colors"
+            className="flex-1 py-2.5 rounded-xl bg-slate-100 dark:bg-neutral-800 text-slate-800 dark:text-neutral-200 text-sm font-bold hover:bg-slate-200 dark:hover:bg-neutral-700 transition-colors"
           >
             {cancelLabel}
           </button>

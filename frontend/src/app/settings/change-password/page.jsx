@@ -71,7 +71,7 @@ export default function ChangePasswordPage() {
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="block font-sans font-bold text-[11px] text-neutral-500 uppercase tracking-widest mb-2 px-1">
+          <label className="block font-sans font-bold text-[11px] text-slate-500 dark:text-neutral-500 uppercase tracking-widest mb-2 px-1">
             Current Password
           </label>
           <input
@@ -79,12 +79,12 @@ export default function ChangePasswordPage() {
             required
             value={currentPassword}
             onChange={(e) => setCurrentPassword(e.target.value)}
-            className="w-full bg-neutral-900/90 border border-neutral-800 rounded-2xl px-4 py-3 text-sm font-sans font-bold text-white focus:outline-none focus:border-amber-500"
+            className="w-full bg-slate-50 dark:bg-neutral-900/90 border border-slate-200 dark:border-neutral-800 rounded-2xl px-4 py-3 text-sm font-sans font-bold text-slate-900 dark:text-white focus:outline-none focus:border-amber-500"
           />
         </div>
 
         <div>
-          <label className="block font-sans font-bold text-[11px] text-neutral-500 uppercase tracking-widest mb-2 px-1">
+          <label className="block font-sans font-bold text-[11px] text-slate-500 dark:text-neutral-500 uppercase tracking-widest mb-2 px-1">
             New Password
           </label>
           <input
@@ -92,12 +92,12 @@ export default function ChangePasswordPage() {
             required
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
-            className="w-full bg-neutral-900/90 border border-neutral-800 rounded-2xl px-4 py-3 text-sm font-sans font-bold text-white focus:outline-none focus:border-amber-500"
+            className="w-full bg-slate-50 dark:bg-neutral-900/90 border border-slate-200 dark:border-neutral-800 rounded-2xl px-4 py-3 text-sm font-sans font-bold text-slate-900 dark:text-white focus:outline-none focus:border-amber-500"
           />
         </div>
 
         <div>
-          <label className="block font-sans font-bold text-[11px] text-neutral-500 uppercase tracking-widest mb-2 px-1">
+          <label className="block font-sans font-bold text-[11px] text-slate-500 dark:text-neutral-500 uppercase tracking-widest mb-2 px-1">
             Confirm New Password
           </label>
           <input
@@ -105,7 +105,7 @@ export default function ChangePasswordPage() {
             required
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
-            className="w-full bg-neutral-900/90 border border-neutral-800 rounded-2xl px-4 py-3 text-sm font-sans font-bold text-white focus:outline-none focus:border-amber-500"
+            className="w-full bg-slate-50 dark:bg-neutral-900/90 border border-slate-200 dark:border-neutral-800 rounded-2xl px-4 py-3 text-sm font-sans font-bold text-slate-900 dark:text-white focus:outline-none focus:border-amber-500"
           />
         </div>
 

@@ -18,7 +18,7 @@ const HIDDEN_ON = ['/welcome', '/login', '/signup', '/verify-email', '/upload'];
 // h-screen takeover with its own input dock pinned to the true bottom of
 // the viewport, which the nav bar would sit on top of / get covered by;
 // the conversation list page has room for both and keeps the nav.
-const HIDDEN_PREFIXES = ['/admin', '/messages/'];
+const HIDDEN_PREFIXES = ['/admin', '/moderator', '/messages/'];
 
 function HomeIcon({ active }) {
   return (

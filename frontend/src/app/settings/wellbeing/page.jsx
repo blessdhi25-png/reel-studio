@@ -79,13 +79,13 @@ export default function WellbeingPage() {
       {/* Header card: daily average */}
       <section
         aria-label="Daily average watch time"
-        className="bg-neutral-900/90 rounded-2xl border border-neutral-800 p-5 mb-5"
+        className="bg-slate-50 dark:bg-neutral-900/90 rounded-2xl border border-slate-200 dark:border-neutral-800 p-5 mb-5"
       >
-        <p className="font-sans font-bold text-[11px] tracking-widest uppercase text-neutral-500">Daily average</p>
-        <p className="font-sans font-bold text-4xl tracking-tight text-white mt-1.5">
+        <p className="font-sans font-bold text-[11px] tracking-widest uppercase text-slate-500 dark:text-neutral-500">Daily average</p>
+        <p className="font-sans font-bold text-4xl tracking-tight text-slate-900 dark:text-white mt-1.5">
           {week ? formatDuration(average) : '—'}
         </p>
-        <p className="font-sans font-medium text-xs text-neutral-400 mt-1.5">
+        <p className="font-sans font-medium text-xs text-slate-500 dark:text-neutral-400 mt-1.5">
           {week ? `${formatDuration(weekTotal)} total · ${weekRangeLabel(week, weeksBack)}` : 'Loading your activity…'}
         </p>
       </section>
@@ -93,7 +93,7 @@ export default function WellbeingPage() {
       {/* Weekly bar chart */}
       <section
         aria-label="Weekly usage"
-        className="bg-neutral-900/90 rounded-2xl border border-neutral-800 p-4 mb-5"
+        className="bg-slate-50 dark:bg-neutral-900/90 rounded-2xl border border-slate-200 dark:border-neutral-800 p-4 mb-5"
       >
         <div className="flex items-center justify-between mb-4">
           <button
@@ -101,13 +101,13 @@ export default function WellbeingPage() {
             onClick={() => setWeeksBack((w) => Math.min(MAX_WEEKS_BACK, w + 1))}
             disabled={weeksBack >= MAX_WEEKS_BACK}
             aria-label="Previous week"
-            className="w-8 h-8 flex items-center justify-center rounded-full text-neutral-300 hover:bg-neutral-800 disabled:opacity-30 disabled:hover:bg-transparent"
+            className="w-8 h-8 flex items-center justify-center rounded-full text-slate-700 dark:text-neutral-300 hover:bg-slate-100 dark:hover:bg-neutral-800 disabled:opacity-30 disabled:hover:bg-transparent"
           >
             <ChevronLeft size={18} aria-hidden="true" />
           </button>
           <div className="text-center">
-            <p className="font-sans font-bold text-sm text-white">{week ? weekRangeLabel(week, weeksBack) : ' '}</p>
-            <p className="font-sans font-medium text-xs text-neutral-400 mt-0.5" aria-live="polite">
+            <p className="font-sans font-bold text-sm text-slate-900 dark:text-white">{week ? weekRangeLabel(week, weeksBack) : ' '}</p>
+            <p className="font-sans font-medium text-xs text-slate-500 dark:text-neutral-400 mt-0.5" aria-live="polite">
               {selected ? `${selected.label} · ${formatDuration(selected.seconds)}` : ' '}
             </p>
           </div>
@@ -116,7 +116,7 @@ export default function WellbeingPage() {
             onClick={() => setWeeksBack((w) => Math.max(0, w - 1))}
             disabled={weeksBack === 0}
             aria-label="Next week"
-            className="w-8 h-8 flex items-center justify-center rounded-full text-neutral-300 hover:bg-neutral-800 disabled:opacity-30 disabled:hover:bg-transparent"
+            className="w-8 h-8 flex items-center justify-center rounded-full text-slate-700 dark:text-neutral-300 hover:bg-slate-100 dark:hover:bg-neutral-800 disabled:opacity-30 disabled:hover:bg-transparent"
           >
             <ChevronRight size={18} aria-hidden="true" />
           </button>
@@ -125,7 +125,7 @@ export default function WellbeingPage() {
         <div className="flex gap-2">
           {/* y-axis */}
           <div
-            className="flex flex-col justify-between items-end pr-1 font-sans font-bold text-[10px] text-neutral-500 tabular-nums"
+            className="flex flex-col justify-between items-end pr-1 font-sans font-bold text-[10px] text-slate-500 dark:text-neutral-500 tabular-nums"
             style={{ height: CHART_HEIGHT_PX }}
             aria-hidden="true"
           >
@@ -136,8 +136,8 @@ export default function WellbeingPage() {
 
           {/* bars */}
           <div className="relative flex-1">
-            <div className="absolute inset-x-0 top-0 border-t border-dashed border-neutral-800" aria-hidden="true" />
-            <div className="absolute inset-x-0 border-t border-dashed border-neutral-800" aria-hidden="true" style={{ top: CHART_HEIGHT_PX / 2 }} />
+            <div className="absolute inset-x-0 top-0 border-t border-dashed border-slate-200 dark:border-neutral-800" aria-hidden="true" />
+            <div className="absolute inset-x-0 border-t border-dashed border-slate-200 dark:border-neutral-800" aria-hidden="true" style={{ top: CHART_HEIGHT_PX / 2 }} />
             <div className="relative grid grid-cols-7 gap-2 items-end" style={{ height: CHART_HEIGHT_PX }} role="group" aria-label="Minutes watched per day, Sunday to Saturday">
               {(week || Array.from({ length: 7 }, (_, i) => ({ key: i, label: '', seconds: 0 }))).map((d) => {
                 const isSelected = selected && d.key === selected.key;
@@ -154,7 +154,7 @@ export default function WellbeingPage() {
                   >
                     <span
                       className={`block w-full max-w-[28px] rounded-t-lg transition-all duration-300 motion-reduce:transition-none group-focus-visible:ring-2 group-focus-visible:ring-amber-400 ${
-                        isSelected ? 'bg-amber-500' : d.isFuture ? 'bg-neutral-800/60' : 'bg-neutral-700 group-hover:bg-neutral-600'
+                        isSelected ? 'bg-amber-500' : d.isFuture ? 'bg-slate-100 dark:bg-neutral-800/60' : 'bg-neutral-700 group-hover:bg-neutral-600'
                       }`}
                       // 3px floor so an empty-but-elapsed day still reads as a baseline stub.
                       style={{ height: d.isFuture ? 3 : `max(3px, ${pct}%)` }}
@@ -168,7 +168,7 @@ export default function WellbeingPage() {
                 <span
                   key={d.key}
                   className={`text-center font-sans font-bold text-[11px] ${
-                    selected && d.key === selected.key ? 'text-amber-500' : 'text-neutral-500'
+                    selected && d.key === selected.key ? 'text-amber-600 dark:text-amber-500' : 'text-slate-500 dark:text-neutral-500'
                   }`}
                 >
                   {d.label}

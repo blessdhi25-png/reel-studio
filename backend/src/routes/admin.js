@@ -50,6 +50,76 @@ router.get('/status', asyncHandler(async (req, res) => {
   });
 }));
 
+// Real KPIs for the admin dashboard. "Active" has no last-seen column to read,
+// so it is defined as: any like, comment, watch or upload in the window — the
+// label in the UI says so. Counts of distinct users are capped per source at
+// 50k rows, which is far above this app's scale and keeps the query bounded.
+router.get('/stats', asyncHandler(async (req, res) => {
+  const now = Date.now();
+  const since24h = new Date(now - 24 * 3600 * 1000);
+  const since7d = new Date(now - 7 * 24 * 3600 * 1000);
+  const since30d = new Date(now - 30 * 24 * 3600 * 1000);
+
+  async function activeUsers(since) {
+    const where = { createdAt: { gte: since } };
+    const opts = { where, select: { userId: true }, distinct: ['userId'], take: 50000 };
+    const [likes, comments, watches, uploads] = await Promise.all([
+      prisma.like.findMany(opts),
+      prisma.comment.findMany(opts),
+      prisma.watchLog.findMany(opts),
+      prisma.video.findMany(opts),
+    ]);
+    const set = new Set();
+    for (const list of [likes, comments, watches, uploads]) for (const r of list) set.add(r.userId);
+    return set.size;
+  }
+
+  const [
+    totalUsers, newUsers7d, totalVideos, videos24h, bannedUsers, suspendedUsers, removedVideos,
+    pendingReports, pendingVideoGroups, activeCreatorRows, active24h, active7d,
+  ] = await Promise.all([
+    prisma.user.count(),
+    prisma.user.count({ where: { createdAt: { gte: since7d } } }),
+    prisma.video.count({ where: { status: 'published' } }),
+    prisma.video.count({ where: { createdAt: { gte: since24h } } }),
+    prisma.user.count({ where: { accountStatus: 'banned' } }),
+    prisma.user.count({ where: { accountStatus: 'suspended' } }),
+    prisma.video.count({ where: { status: 'removed' } }),
+    prisma.report.count({ where: { status: 'pending' } }),
+    prisma.report.groupBy({ by: ['targetId'], where: { status: 'pending', targetType: 'video' } }),
+    prisma.video.findMany({ where: { status: 'published', createdAt: { gte: since30d } }, select: { userId: true }, distinct: ['userId'], take: 50000 }),
+    activeUsers(since24h),
+    activeUsers(since7d),
+  ]);
+
+  // Last 7 calendar days (oldest first) for the overview charts.
+  const days = [];
+  for (let i = 6; i >= 0; i -= 1) {
+    const start = new Date(now - i * 24 * 3600 * 1000);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start.getTime() + 24 * 3600 * 1000);
+    days.push({ start, end, date: start.toLocaleDateString('en-US', { weekday: 'short' }) });
+  }
+  const userGrowth = await Promise.all(
+    days.map(async (d) => {
+      const range = { gte: d.start, lt: d.end };
+      const [users, uploads] = await Promise.all([
+        prisma.user.count({ where: { createdAt: range } }),
+        prisma.video.count({ where: { createdAt: range } }),
+      ]);
+      return { date: d.date, users, uploads };
+    })
+  );
+
+  res.json({
+    totalUsers, newUsers7d, activeUsers24h: active24h, activeUsers7d: active7d,
+    activeCreators: activeCreatorRows.length, totalVideos, videos24h,
+    bannedUsers, suspendedUsers, removedVideos, pendingReports,
+    flaggedContent: pendingVideoGroups.length,
+    userGrowth,
+  });
+}));
+
 // ---------------------------------------------------------------------------
 // Reports
 // ---------------------------------------------------------------------------

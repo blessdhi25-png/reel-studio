@@ -4,7 +4,7 @@ import BackButton from '@/components/BackButton';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { MoreHorizontal, Menu as MenuIcon, Share2, Home, Lock } from 'lucide-react';
+import { MoreHorizontal, Menu as MenuIcon, Share2, Lock, LayoutDashboard, Settings as SettingsIcon, PanelRight } from 'lucide-react';
 import { api, getStoredUser } from '@/lib/api';
 import { useToast } from '@/context/ToastContext';
 import ReportModal from '@/components/ReportModal';
@@ -28,7 +28,13 @@ export default function ProfilePage({ params }) {
   const [activeTab, setActiveTab] = useState('videos');
   const [showMenu, setShowMenu] = useState(false);
   const [showReport, setShowReport] = useState(false);
-  const [isMenuOpen, setIsMenuOpen] = useState(false); // own-profile ≡ bottom sheet
+  const [isMenuOpen, setIsMenuOpen] = useState(false); // right-side slide-over (own profile)
+  const [drawerView, setDrawerView] = useState('menu'); // 'menu' | 'share' | 'settings'
+  const openDrawer = (view) => {
+    setShowMenu(false);
+    setDrawerView(view);
+    setIsMenuOpen(true);
+  };
   const [deleteTarget, setDeleteTarget] = useState(null); // video object pending delete confirmation, or null
   const [deleting, setDeleting] = useState(false);
   const menuRef = useRef(null);
@@ -112,7 +118,7 @@ export default function ProfilePage({ params }) {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#0a090e] text-white flex items-center justify-center">
+      <div className="min-h-screen bg-white dark:bg-[#0a090e] text-slate-900 dark:text-white flex items-center justify-center">
         <LoadingSpinner label="Loading…" />
       </div>
     );
@@ -120,16 +126,16 @@ export default function ProfilePage({ params }) {
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-[#0a090e] text-white flex items-center justify-center">
-        <p className="text-xs text-zinc-500 font-mono">User not found.</p>
+      <div className="min-h-screen bg-white dark:bg-[#0a090e] text-slate-900 dark:text-white flex items-center justify-center">
+        <p className="text-xs text-slate-500 dark:text-zinc-500 font-mono">User not found.</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#0a090e] text-white pb-36 font-sans max-w-md mx-auto">
+    <div className="min-h-screen bg-white dark:bg-[#0a090e] text-slate-900 dark:text-white pb-36 font-sans max-w-md mx-auto">
       {/* Banner */}
-      <div className="h-32 w-full bg-zinc-900 relative overflow-hidden">
+      <div className="h-32 w-full bg-slate-50 dark:bg-zinc-900 relative overflow-hidden">
         {user.bannerUrl && (
           <img src={user.bannerUrl} alt="" className="w-full h-full object-cover" />
         )}
@@ -138,17 +144,59 @@ export default function ProfilePage({ params }) {
 
           <div className="flex items-center gap-2 relative" ref={menuRef}>
             {isSelf ? (
-              // Own profile: ≡ opens the slide-up drawer (Wallet, Studio,
-              // QR / share, Settings & Privacy). Log out lives in Settings.
-              <button
-                type="button"
-                onClick={() => setIsMenuOpen(true)}
-                aria-label="Open profile menu"
-                aria-haspopup="dialog"
-                className="p-1.5 text-zinc-200 hover:text-white bg-black/40 rounded-lg"
-              >
-                <MenuIcon size={20} />
-              </button>
+              // Own profile: one ≡ button → dropdown with Studio, Share, Settings
+              // and Menu. Share / Settings / Menu open the right-side slide-over.
+              <>
+                <button
+                  type="button"
+                  onClick={() => setShowMenu((v) => !v)}
+                  aria-label="Profile options"
+                  aria-haspopup="menu"
+                  aria-expanded={showMenu}
+                  className="p-1.5 text-white bg-black/50 rounded-lg backdrop-blur-sm"
+                >
+                  <MenuIcon size={20} />
+                </button>
+                {showMenu && (
+                  <div
+                    role="menu"
+                    className="absolute right-0 top-10 w-48 bg-white dark:bg-neutral-900 border border-slate-200 dark:border-neutral-800 rounded-2xl shadow-xl overflow-hidden z-20 py-1"
+                  >
+                    <Link
+                      href="/studio"
+                      role="menuitem"
+                      onClick={() => setShowMenu(false)}
+                      className="flex items-center gap-2.5 px-4 py-3 text-sm font-extrabold tracking-tight text-slate-900 dark:text-white hover:bg-slate-100 dark:hover:bg-neutral-800"
+                    >
+                      <LayoutDashboard size={16} className="text-amber-600 dark:text-amber-500" /> Studio
+                    </Link>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => openDrawer('share')}
+                      className="w-full flex items-center gap-2.5 px-4 py-3 text-sm font-extrabold tracking-tight text-left text-slate-900 dark:text-white hover:bg-slate-100 dark:hover:bg-neutral-800"
+                    >
+                      <Share2 size={16} className="text-amber-600 dark:text-amber-500" /> Share
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => openDrawer('settings')}
+                      className="w-full flex items-center gap-2.5 px-4 py-3 text-sm font-extrabold tracking-tight text-left text-slate-900 dark:text-white hover:bg-slate-100 dark:hover:bg-neutral-800"
+                    >
+                      <SettingsIcon size={16} className="text-amber-600 dark:text-amber-500" /> Settings
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => openDrawer('menu')}
+                      className="w-full flex items-center gap-2.5 px-4 py-3 text-sm font-extrabold tracking-tight text-left text-slate-900 dark:text-white hover:bg-slate-100 dark:hover:bg-neutral-800"
+                    >
+                      <PanelRight size={16} className="text-amber-600 dark:text-amber-500" /> Menu
+                    </button>
+                  </div>
+                )}
+              </>
             ) : (
               <>
                 <button
@@ -159,13 +207,13 @@ export default function ProfilePage({ params }) {
                   <MoreHorizontal size={20} />
                 </button>
                 {showMenu && (
-                  <div className="absolute right-0 top-9 bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden z-10 w-40">
+                  <div className="absolute right-0 top-9 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl overflow-hidden z-10 w-40">
                     <button
                       onClick={() => {
                         setShowMenu(false);
                         setShowReport(true);
                       }}
-                      className="w-full text-left px-4 py-2.5 text-xs text-zinc-200 hover:bg-zinc-800"
+                      className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-800"
                     >
                       Report
                     </button>
@@ -185,11 +233,11 @@ export default function ProfilePage({ params }) {
             image layer; border-4 in the page background color is what
             visually separates the circle from the banner photo behind it. */}
         <div className="relative z-10 -mt-12 mb-3 inline-block">
-          <div className="w-20 h-20 rounded-full border-4 border-[#0a090e] bg-zinc-900 flex items-center justify-center shrink-0 overflow-hidden">
+          <div className="w-20 h-20 rounded-full border-4 border-[#0a090e] bg-slate-50 dark:bg-zinc-900 flex items-center justify-center shrink-0 overflow-hidden">
             {user.avatarUrl ? (
               <img src={user.avatarUrl} alt="" className="w-full h-full object-cover" />
             ) : (
-              <span className="text-amber-500 font-black text-2xl">
+              <span className="text-amber-600 dark:text-amber-500 font-black text-2xl">
                 {(user.displayName || user.username)?.[0]?.toUpperCase()}
               </span>
             )}
@@ -197,11 +245,11 @@ export default function ProfilePage({ params }) {
         </div>
 
         <div className="mb-4">
-          <h1 className="text-xl font-black tracking-wider text-white uppercase">
+          <h1 className="text-xl font-black tracking-wider text-slate-900 dark:text-white uppercase">
             {user.displayName || user.username}
           </h1>
-          <p className="text-xs text-zinc-500 font-mono">@{user.username}</p>
-          {user.bio && <p className="text-sm text-zinc-300 mt-2">{user.bio}</p>}
+          <p className="text-xs text-slate-500 dark:text-zinc-500 font-mono">@{user.username}</p>
+          {user.bio && <p className="text-sm text-slate-700 dark:text-zinc-300 mt-2">{user.bio}</p>}
           {(user.whatsapp || (Array.isArray(user.externalLinks) && user.externalLinks.length > 0)) && (
             <div className="flex flex-wrap gap-2 mt-3">
               {user.whatsapp && (
@@ -220,7 +268,7 @@ export default function ProfilePage({ params }) {
                   href={l.url}
                   target="_blank"
                   rel="noopener noreferrer nofollow"
-                  className="px-3 py-1.5 rounded-full bg-zinc-800 text-amber-400 text-xs font-extrabold tracking-tight"
+                  className="px-3 py-1.5 rounded-full bg-slate-100 dark:bg-zinc-800 text-amber-600 dark:text-amber-400 text-xs font-extrabold tracking-tight"
                 >
                   {l.label}
                 </a>
@@ -230,55 +278,40 @@ export default function ProfilePage({ params }) {
         </div>
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-4 gap-1 bg-zinc-900/40 border border-zinc-800/80 rounded-2xl p-3 text-center mb-4">
+        <div className="grid grid-cols-4 gap-1 bg-slate-50 dark:bg-zinc-900/40 border border-slate-200 dark:border-zinc-800/80 rounded-2xl p-3 text-center mb-4">
           <div>
-            <p className="text-base font-bold text-white">{user._count?.following ?? 0}</p>
-            <p className="text-[10px] text-zinc-400 font-medium">Following</p>
+            <p className="text-base font-bold text-slate-900 dark:text-white">{user._count?.following ?? 0}</p>
+            <p className="text-[10px] text-slate-500 dark:text-zinc-400 font-medium">Following</p>
           </div>
           <div>
-            <p className="text-base font-bold text-white">{user._count?.followers ?? 0}</p>
-            <p className="text-[10px] text-zinc-400 font-medium">Followers</p>
+            <p className="text-base font-bold text-slate-900 dark:text-white">{user._count?.followers ?? 0}</p>
+            <p className="text-[10px] text-slate-500 dark:text-zinc-400 font-medium">Followers</p>
           </div>
           <div>
-            <p className="text-base font-bold text-white">{user._count?.videos ?? 0}</p>
-            <p className="text-[10px] text-zinc-400 font-medium">Videos</p>
+            <p className="text-base font-bold text-slate-900 dark:text-white">{user._count?.videos ?? 0}</p>
+            <p className="text-[10px] text-slate-500 dark:text-zinc-400 font-medium">Videos</p>
           </div>
           <div>
-            <p className="text-base font-bold text-white">{user.totalLikes ?? 0}</p>
-            <p className="text-[10px] text-zinc-400 font-medium">Likes</p>
+            <p className="text-base font-bold text-slate-900 dark:text-white">{user.totalLikes ?? 0}</p>
+            <p className="text-[10px] text-slate-500 dark:text-zinc-400 font-medium">Likes</p>
           </div>
         </div>
 
         {/* Primary Action Buttons */}
         {isSelf ? (
-          <div className="grid grid-cols-3 gap-2 mb-2">
-            <Link
-              href="/profile/edit"
-              className="flex items-center justify-center py-2.5 rounded-xl bg-amber-500 text-black text-xs font-extrabold tracking-wide hover:bg-amber-400 transition-all"
-            >
-              Edit Profile
-            </Link>
-            <Link
-              href="/studio"
-              className="flex items-center justify-center gap-1 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-amber-500 text-xs font-bold hover:bg-zinc-800 transition-all"
-            >
-              <Home size={14} />
-              <span>Studio</span>
-            </Link>
-            <button
-              onClick={() => navigator.share?.({ url: window.location.href }).catch(() => {})}
-              className="flex items-center justify-center py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-300 hover:bg-zinc-800 transition-all"
-            >
-              <Share2 size={16} />
-            </button>
-          </div>
+          <Link
+            href="/profile/edit"
+            className="flex items-center justify-center w-full py-3 mb-5 rounded-xl bg-amber-500 text-black text-sm font-extrabold tracking-tight hover:bg-amber-400 transition-all"
+          >
+            Edit Profile
+          </Link>
         ) : (
           <div className="grid grid-cols-3 gap-2 mb-2">
             <button
               onClick={toggleFollow}
               className={`py-2.5 rounded-xl text-xs font-extrabold tracking-wide transition-all ${
                 following
-                  ? 'bg-zinc-900 border border-zinc-800 text-zinc-300'
+                  ? 'bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-300'
                   : 'bg-amber-500 text-black hover:bg-amber-400'
               }`}
             >
@@ -286,60 +319,35 @@ export default function ProfilePage({ params }) {
             </button>
             <button
               onClick={() => router.push(`/messages/${user.id}`)}
-              className="py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-amber-500 text-xs font-bold hover:bg-zinc-800 transition-all"
+              className="py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-amber-600 dark:text-amber-500 text-xs font-bold hover:bg-slate-100 dark:hover:bg-zinc-800 transition-all"
             >
               Message
             </button>
             <button
               onClick={() => navigator.share?.({ url: window.location.href }).catch(() => {})}
-              className="flex items-center justify-center py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-300 hover:bg-zinc-800 transition-all"
+              className="flex items-center justify-center py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-all"
             >
               <Share2 size={16} />
             </button>
           </div>
         )}
 
-        {/* Own-profile actions: Settings goes straight to /settings; Menu opens the
-            slide-up drawer (Wallet, Studio, QR / share, Settings & Privacy). */}
-        {isSelf && (
-          <div className="grid grid-cols-2 gap-2 mb-5">
-            <button
-              type="button"
-              onClick={() => router.push('/settings')}
-              className="flex items-center justify-center gap-2 py-2 rounded-xl bg-neutral-900/90 border border-neutral-800 text-zinc-200 text-xs font-semibold hover:bg-neutral-800 transition-all"
-            >
-              <span aria-hidden="true">⚙️</span>
-              <span>Settings</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsMenuOpen(true)}
-              aria-haspopup="dialog"
-              aria-expanded={isMenuOpen}
-              className="flex items-center justify-center gap-2 py-2 rounded-xl bg-neutral-900/90 border border-neutral-800 text-zinc-200 text-xs font-semibold hover:bg-neutral-800 transition-all"
-            >
-              <MenuIcon size={14} className="text-amber-500" aria-hidden="true" />
-              <span>Menu</span>
-            </button>
-          </div>
-        )}
-
         {privateLocked && !isSelf ? (
           <div className="py-16 text-center">
-            <Lock size={28} className="mx-auto text-zinc-600 mb-3" />
-            <p className="text-sm text-zinc-400">This account is private.</p>
-            <p className="text-xs text-zinc-600 mt-1">Follow to see their videos.</p>
+            <Lock size={28} className="mx-auto text-slate-400 dark:text-zinc-600 mb-3" />
+            <p className="text-sm text-slate-500 dark:text-zinc-400">This account is private.</p>
+            <p className="text-xs text-slate-400 dark:text-zinc-600 mt-1">Follow to see their videos.</p>
           </div>
         ) : (
           <>
             {/* Content Tabs */}
             <div
-              className={`grid ${isSelf ? 'grid-cols-3' : 'grid-cols-1'} bg-zinc-900/50 border border-zinc-800/80 rounded-2xl p-1 mb-6`}
+              className={`grid ${isSelf ? 'grid-cols-3' : 'grid-cols-1'} bg-slate-50 dark:bg-zinc-900/50 border border-slate-200 dark:border-zinc-800/80 rounded-2xl p-1 mb-6`}
             >
               <button
                 onClick={() => setActiveTab('videos')}
                 className={`py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
-                  activeTab === 'videos' ? 'bg-amber-500 text-black shadow-md' : 'text-zinc-400 hover:text-white'
+                  activeTab === 'videos' ? 'bg-amber-500 text-black shadow-md' : 'text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
                 Videos
@@ -349,7 +357,7 @@ export default function ProfilePage({ params }) {
                   <button
                     onClick={() => setActiveTab('saved')}
                     className={`py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
-                      activeTab === 'saved' ? 'bg-amber-500 text-black shadow-md' : 'text-zinc-400 hover:text-white'
+                      activeTab === 'saved' ? 'bg-amber-500 text-black shadow-md' : 'text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
                     }`}
                   >
                     Saved
@@ -357,7 +365,7 @@ export default function ProfilePage({ params }) {
                   <button
                     onClick={() => setActiveTab('liked')}
                     className={`py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
-                      activeTab === 'liked' ? 'bg-amber-500 text-black shadow-md' : 'text-zinc-400 hover:text-white'
+                      activeTab === 'liked' ? 'bg-amber-500 text-black shadow-md' : 'text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
                     }`}
                   >
                     Liked
@@ -368,7 +376,7 @@ export default function ProfilePage({ params }) {
 
             {/* Tab Content area */}
             {activeVideos.length === 0 ? (
-              <div className="py-12 text-center text-xs text-zinc-500 font-mono">
+              <div className="py-12 text-center text-xs text-slate-500 dark:text-zinc-500 font-mono">
                 {activeTab === 'videos' && 'No videos posted yet.'}
                 {activeTab === 'saved' && 'Nothing saved yet.'}
                 {activeTab === 'liked' && 'Nothing liked yet.'}
@@ -376,12 +384,12 @@ export default function ProfilePage({ params }) {
             ) : (
               <div className="grid grid-cols-3 gap-1">
                 {activeVideos.map((v) => (
-                  <div key={v.id} className="relative aspect-[9/16] bg-zinc-900 rounded-lg overflow-hidden group">
+                  <div key={v.id} className="relative aspect-[9/16] bg-slate-50 dark:bg-zinc-900 rounded-lg overflow-hidden group">
                     <a href={`/?video=${v.id}`} className="block w-full h-full">
                       {v.thumbnailUrl ? (
                         <img src={v.thumbnailUrl} alt="" className="w-full h-full object-cover" />
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center text-[10px] text-zinc-600 font-mono">
+                        <div className="w-full h-full flex items-center justify-center text-[10px] text-slate-400 dark:text-zinc-600 font-mono">
                           {v.status === 'processing' ? 'Processing…' : 'No thumbnail'}
                         </div>
                       )}
@@ -423,7 +431,7 @@ export default function ProfilePage({ params }) {
         <ReportModal targetType="user" targetId={user.id} onClose={() => setShowReport(false)} />
       )}
 
-      {isSelf && <ProfileDrawer open={isMenuOpen} onClose={closeDrawer} user={user} />}
+      {isSelf && <ProfileDrawer open={isMenuOpen} onClose={closeDrawer} user={user} initialView={drawerView} />}
     </div>
   );
 }

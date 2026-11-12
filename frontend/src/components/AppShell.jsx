@@ -7,6 +7,7 @@ import BottomNav from '@/components/BottomNav';
 import ChatHub from '@/components/ChatHub';
 import ScreenTimeTracker from '@/components/ScreenTimeTracker';
 import ThemeSurface from '@/components/ThemeSurface';
+import SwipeNavigator from '@/components/SwipeNavigator';
 
 // AuthContext's `ready` flag (see context/AuthContext.jsx) already
 // distinguishes "haven't checked localStorage yet" from "checked, no one's
@@ -35,6 +36,7 @@ export default function AppShell({ children }) {
   return (
     <>
       <ThemeSurface>{children}</ThemeSurface>
+      <SwipeNavigator />
       <ChatHub />
       <ScreenTimeTracker />
       <BottomNav />

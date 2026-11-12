@@ -57,24 +57,24 @@ export default function BlockedAccountsPage() {
 
   return (
     <SettingsPage title="Blocked Accounts">
-      <p className="font-sans font-medium text-xs text-neutral-400 -mt-3 mb-5 px-1">
+      <p className="font-sans font-medium text-xs text-slate-500 dark:text-neutral-400 -mt-3 mb-5 px-1">
         Blocked accounts can't follow you, message you, comment on your videos, or find your profile.
       </p>
 
       {blocked === null ? (
-        <div className="bg-neutral-900/90 rounded-2xl border border-neutral-800 overflow-hidden mb-5 divide-y divide-neutral-800 animate-pulse">
+        <div className="bg-slate-50 dark:bg-neutral-900/90 rounded-2xl border border-slate-200 dark:border-neutral-800 overflow-hidden mb-5 divide-y divide-slate-200 dark:divide-neutral-800 animate-pulse">
           <div className="h-16" />
           <div className="h-16" />
         </div>
       ) : loadFailed ? (
         <p className="font-sans font-bold text-sm text-red-400 px-1">Couldn't load your blocked accounts.</p>
       ) : blocked.length === 0 ? (
-        <p className="font-sans font-bold text-sm text-neutral-500 px-1">You haven't blocked anyone.</p>
+        <p className="font-sans font-bold text-sm text-slate-500 dark:text-neutral-500 px-1">You haven't blocked anyone.</p>
       ) : (
         <SettingsGroup>
           {blocked.map((user) => (
             <div key={user.id} className="flex items-center gap-3 px-4 py-3">
-              <div className="w-10 h-10 rounded-full bg-neutral-800 flex items-center justify-center font-sans font-bold text-base text-amber-500 overflow-hidden shrink-0">
+              <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-neutral-800 flex items-center justify-center font-sans font-bold text-base text-amber-600 dark:text-amber-500 overflow-hidden shrink-0">
                 {user.avatarUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={user.avatarUrl} alt="" className="w-full h-full object-cover" />
@@ -83,14 +83,14 @@ export default function BlockedAccountsPage() {
                 )}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="font-sans font-bold text-sm text-white truncate">{user.displayName || user.username}</p>
-                <p className="font-sans font-medium text-xs text-neutral-400 truncate">@{user.username}</p>
+                <p className="font-sans font-bold text-sm text-slate-900 dark:text-white truncate">{user.displayName || user.username}</p>
+                <p className="font-sans font-medium text-xs text-slate-500 dark:text-neutral-400 truncate">@{user.username}</p>
               </div>
               <button
                 type="button"
                 onClick={() => unblock(user)}
                 disabled={unblockingId === user.id}
-                className="shrink-0 px-3 py-1.5 rounded-xl bg-neutral-800 text-white font-sans font-bold text-xs hover:bg-neutral-700 transition-colors disabled:opacity-50"
+                className="shrink-0 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-neutral-800 text-slate-900 dark:text-white font-sans font-bold text-xs hover:bg-slate-200 dark:hover:bg-neutral-700 transition-colors disabled:opacity-50"
               >
                 Unblock
               </button>

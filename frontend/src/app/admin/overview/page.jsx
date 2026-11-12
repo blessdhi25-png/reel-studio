@@ -17,6 +17,7 @@ import {
 export default function AdminOverviewPage() {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     // Fetch overview statistics
@@ -24,28 +25,10 @@ export default function AdminOverviewPage() {
       .adminGetStats()
       .then((data) => setStats(data))
       .catch((err) => {
-        console.error('Failed to load stats, using fallback mock data:', err);
-        // Fallback placeholder data for seamless rendering during dev/testing
-        setStats({
-          totalUsers: 1420,
-          activeCreators: 380,
-          totalVideos: 5890,
-          flaggedContent: 12,
-          userGrowth: [
-            { date: 'Mon', users: 120, uploads: 450 },
-            { date: 'Tue', users: 210, uploads: 620 },
-            { date: 'Wed', users: 180, uploads: 590 },
-            { date: 'Thu', users: 310, uploads: 800 },
-            { date: 'Fri', users: 290, uploads: 750 },
-            { date: 'Sat', users: 420, uploads: 980 },
-            { date: 'Sun', users: 380, uploads: 890 },
-          ],
-          systemStatus: {
-            serverLoad: '28%',
-            storageUsed: '142.8 GB / 500 GB',
-            databaseStatus: 'Healthy',
-          },
-        });
+        // No placeholder figures: showing invented numbers on an admin
+        // dashboard is worse than showing an error.
+        console.error('Failed to load stats:', err);
+        setError(err.message || "Couldn't load analytics.");
       })
       .finally(() => setLoading(false));
   }, []);
@@ -54,6 +37,14 @@ export default function AdminOverviewPage() {
     return (
       <div className="p-6 text-zinc-400 animate-pulse flex items-center justify-center min-h-[400px]">
         Loading analytics dashboard...
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-6 max-w-7xl mx-auto">
+        <p role="alert" className="text-sm font-bold text-red-400">{error}</p>
       </div>
     );
   }
@@ -71,7 +62,7 @@ export default function AdminOverviewPage() {
         <div className="flex items-center gap-2">
           <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1.5 animate-ping" />
-            System Live
+            Live data
           </span>
         </div>
       </div>
@@ -81,19 +72,19 @@ export default function AdminOverviewPage() {
         <StatCard
           title="Total Users"
           value={stats?.totalUsers?.toLocaleString() || '0'}
-          change="+14% this week"
+          change={stats ? `+${stats.newUsers7d ?? 0} new this week` : ''}
           color="text-blue-400"
         />
         <StatCard
           title="Active Creators"
           value={stats?.activeCreators?.toLocaleString() || '0'}
-          change="+8% this week"
+          change="Posted in the last 30 days"
           color="text-emerald-400"
         />
         <StatCard
           title="Total Video Uploads"
           value={stats?.totalVideos?.toLocaleString() || '0'}
-          change="+22% this week"
+          change={stats ? `+${stats.videos24h ?? 0} in the last 24h` : ''}
           color="text-purple-400"
         />
         <StatCard
@@ -164,19 +155,19 @@ export default function AdminOverviewPage() {
           <div className="p-4 rounded-lg bg-zinc-950/50 border border-zinc-800">
             <p className="text-xs text-zinc-500">API Server Load</p>
             <p className="text-lg font-mono font-semibold text-white mt-1">
-              {stats?.systemStatus?.serverLoad || '28%'}
+              {stats?.systemStatus?.serverLoad || '—'}
             </p>
           </div>
           <div className="p-4 rounded-lg bg-zinc-950/50 border border-zinc-800">
             <p className="text-xs text-zinc-500">Storage Usage</p>
             <p className="text-lg font-mono font-semibold text-white mt-1">
-              {stats?.systemStatus?.storageUsed || '142.8 GB / 500 GB'}
+              {stats?.systemStatus?.storageUsed || '—'}
             </p>
           </div>
           <div className="p-4 rounded-lg bg-zinc-950/50 border border-zinc-800">
             <p className="text-xs text-zinc-500">Database Connection</p>
             <p className="text-lg font-mono font-semibold text-emerald-400 mt-1">
-              {stats?.systemStatus?.databaseStatus || 'Healthy'}
+              {stats?.systemStatus?.databaseStatus || (stats ? 'Connected' : '—')}
             </p>
           </div>
         </div>

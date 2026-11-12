@@ -250,7 +250,7 @@ const CommentsPanel = forwardRef(function CommentsPanel(
   }
 
   return (
-    <div className="absolute inset-0 z-30 flex items-end">
+    <div className="absolute inset-0 z-30 flex items-end" data-no-swipe>
       <div className="absolute inset-0 bg-ink/70" onClick={onClose} />
       <div className="relative w-full max-h-[70%] bg-ink2 rounded-t-2xl flex flex-col">
         <div className="flex items-center justify-between px-6 py-4 border-b border-smoke/10">

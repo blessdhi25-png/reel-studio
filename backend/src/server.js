@@ -79,6 +79,7 @@ import communitiesRoutes from './routes/communities.js';
 import collectionsRoutes from './routes/collections.js';
 import analyticsRoutes from './routes/analytics.js';
 import postsRoutes from './routes/posts.js';
+import moderationRoutes from './routes/moderation.js';
 import userProfileRoutes from './routes/userProfile.js';
 
 const app = express();
@@ -200,6 +201,7 @@ app.use('/api/v1/ai', aiTemplatesRoutes); // /ai/templates, /ai/credits, /ai/gen
 app.use('/api/v1/ai', aiRoutes); // /ai/generate-captions, /ai/refine-draft (AI Co-Pilot — real Claude calls, rate-limited)
 app.use('/api/v1', communitiesRoutes); // /communities, /communities/:id, /communities/:id/join, /communities/:id/posts
 app.use('/api/v1', collectionsRoutes); // /collections, /collections/:id, /collections/:id/save|collaborators
+app.use('/api/v1/moderation', moderationRoutes); // staff (moderator + admin) review queue and content actions
 app.use('/api/v1/posts', postsRoutes); // /posts/repost — repost records
 app.use('/api/v1/user', userProfileRoutes); // /user/profile — private account details (email, phone, bio, links)
 app.use('/api/v1/analytics', analyticsRoutes); // /analytics/overview — creator's own totalViews/totalLikes/averageWatchTimeSeconds

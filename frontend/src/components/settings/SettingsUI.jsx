@@ -10,7 +10,7 @@ import { ChevronRight } from 'lucide-react';
 
 export function SettingsPage({ title, backHref = '/settings', backLabel = 'Settings', children }) {
   return (
-    <div className="min-h-screen bg-[#0a090e] text-white font-sans pb-36">
+    <div className="min-h-screen bg-white dark:bg-[#0a090e] text-slate-900 dark:text-white font-sans pb-36">
       <div className="max-w-md mx-auto px-4 pt-4">
         <BackButton href={backHref} label={`Back to ${backLabel}`} />
         <h1 className="font-sans font-bold text-2xl tracking-tight mt-3 mb-6">{title}</h1>
@@ -24,20 +24,20 @@ export function SettingsGroup({ title, children, footer }) {
   return (
     <section>
       {title && (
-        <h2 className="font-sans font-bold text-[11px] tracking-widest uppercase text-neutral-500 px-1 mb-2">
+        <h2 className="font-sans font-bold text-[11px] tracking-widest uppercase text-slate-500 dark:text-neutral-500 px-1 mb-2">
           {title}
         </h2>
       )}
-      <div className="bg-neutral-900/90 rounded-2xl border border-neutral-800 overflow-hidden mb-5 divide-y divide-neutral-800">
+      <div className="bg-slate-50 dark:bg-neutral-900/90 rounded-2xl border border-slate-200 dark:border-neutral-800 overflow-hidden mb-5 divide-y divide-slate-200 dark:divide-neutral-800">
         {children}
       </div>
-      {footer && <p className="font-sans font-medium text-xs text-neutral-500 px-1 -mt-3 mb-5">{footer}</p>}
+      {footer && <p className="font-sans font-medium text-xs text-slate-500 dark:text-neutral-500 px-1 -mt-3 mb-5">{footer}</p>}
     </section>
   );
 }
 
 const ROW_BASE = 'w-full flex items-center gap-3 px-4 py-3.5 text-left transition-colors';
-const ROW_INTERACTIVE = 'hover:bg-neutral-800/60 active:bg-neutral-800';
+const ROW_INTERACTIVE = 'hover:bg-slate-100 dark:hover:bg-neutral-800/60 active:bg-neutral-800';
 
 function RowBody({ icon, title, subtitle, right, chevron, tone }) {
   return (
@@ -45,7 +45,7 @@ function RowBody({ icon, title, subtitle, right, chevron, tone }) {
       {icon && (
         <span
           aria-hidden="true"
-          className="w-9 h-9 shrink-0 rounded-xl bg-neutral-800 flex items-center justify-center text-lg"
+          className="w-9 h-9 shrink-0 rounded-xl bg-slate-100 dark:bg-neutral-800 flex items-center justify-center text-lg"
         >
           {icon}
         </span>
@@ -53,19 +53,19 @@ function RowBody({ icon, title, subtitle, right, chevron, tone }) {
       <span className="flex-1 min-w-0">
         <span
           className={`block font-sans font-bold text-sm leading-snug break-words ${
-            tone === 'amber' ? 'text-amber-400' : 'text-white'
+            tone === 'amber' ? 'text-amber-600 dark:text-amber-400' : 'text-slate-900 dark:text-white'
           }`}
         >
           {title}
         </span>
         {subtitle && (
-          <span className="block font-sans font-medium text-xs text-neutral-400 mt-0.5 leading-snug break-words">
+          <span className="block font-sans font-medium text-xs text-slate-500 dark:text-neutral-400 mt-0.5 leading-snug break-words">
             {subtitle}
           </span>
         )}
       </span>
       {right}
-      {chevron && <ChevronRight size={18} className="text-neutral-600 shrink-0" aria-hidden="true" />}
+      {chevron && <ChevronRight size={18} className="text-slate-400 dark:text-neutral-600 shrink-0" aria-hidden="true" />}
     </>
   );
 }
@@ -108,7 +108,7 @@ export function Switch({ checked, disabled }) {
     <span
       aria-hidden="true"
       className={`relative w-11 h-6 rounded-full shrink-0 transition-colors motion-reduce:transition-none ${
-        checked ? 'bg-amber-500' : 'bg-neutral-700'
+        checked ? 'bg-amber-500' : 'bg-slate-300 dark:bg-neutral-700'
       } ${disabled ? 'opacity-50' : ''}`}
     >
       <span
@@ -138,7 +138,7 @@ export function ToggleRow({ icon, title, subtitle, checked, onChange, disabled }
 
 export function Segmented({ label, options, value, onChange, disabled }) {
   return (
-    <div role="radiogroup" aria-label={label} className="grid grid-cols-3 gap-1 bg-neutral-950 border border-neutral-800 rounded-xl p-1">
+    <div role="radiogroup" aria-label={label} className="grid grid-cols-3 gap-1 bg-white dark:bg-neutral-950 border border-slate-200 dark:border-neutral-800 rounded-xl p-1">
       {options.map((opt) => {
         const active = value === opt.value;
         return (
@@ -150,7 +150,7 @@ export function Segmented({ label, options, value, onChange, disabled }) {
             disabled={disabled}
             onClick={() => onChange(opt.value)}
             className={`py-2 rounded-lg font-sans font-bold text-xs transition-colors disabled:opacity-50 ${
-              active ? 'bg-amber-500 text-black' : 'text-neutral-400 hover:text-white'
+              active ? 'bg-amber-500 text-black' : 'text-slate-500 dark:text-neutral-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
             {opt.label}
@@ -165,7 +165,7 @@ export function VerifiedBadge({ verified }) {
   return (
     <span
       className={`shrink-0 inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-sans font-bold text-[10px] uppercase tracking-wide ${
-        verified ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-neutral-800 text-neutral-400'
+        verified ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-100 dark:bg-neutral-800 text-neutral-400'
       }`}
     >
       {verified ? '✓ Verified' : 'Unverified'}

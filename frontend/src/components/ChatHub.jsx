@@ -14,7 +14,7 @@ import { useToast } from '../context/ToastContext';
 // feature set (compose, block, report, follow-back, etc); this widget is
 // the quick-glance/quick-reply surface everywhere else, with a link out to
 // each full page for anything beyond that.
-const HIDDEN_PREFIXES = ['/admin', '/messages', '/notifications', '/welcome', '/login', '/signup', '/verify-email', '/upload'];
+const HIDDEN_PREFIXES = ['/admin', '/moderator', '/messages', '/notifications', '/welcome', '/login', '/signup', '/verify-email', '/upload'];
 
 function timeAgo(dateStr) {
   const diffMs = Date.now() - new Date(dateStr).getTime();

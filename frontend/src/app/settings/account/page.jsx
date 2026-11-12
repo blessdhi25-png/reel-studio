@@ -14,12 +14,12 @@ const BIO_MAX = 150;
 const MAX_LINKS = 5;
 
 const INPUT =
-  'w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3.5 py-3 text-sm font-bold tracking-tight text-white placeholder-neutral-600 outline-none focus:ring-2 focus:ring-amber-500/50';
-const LABEL = 'block text-[11px] font-extrabold uppercase tracking-widest text-neutral-500 mb-1.5';
+  'w-full bg-white dark:bg-neutral-950 border border-slate-200 dark:border-neutral-800 rounded-xl px-3.5 py-3 text-sm font-bold tracking-tight text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-neutral-600 outline-none focus:ring-2 focus:ring-amber-500/50';
+const LABEL = 'block text-[11px] font-extrabold uppercase tracking-widest text-slate-500 dark:text-neutral-500 mb-1.5';
 
 function Avatar({ user, size = 'w-10 h-10' }) {
   return (
-    <span className={`${size} rounded-full overflow-hidden bg-neutral-800 border border-neutral-700 flex items-center justify-center shrink-0 font-extrabold text-white`}>
+    <span className={`${size} rounded-full overflow-hidden bg-slate-100 dark:bg-neutral-800 border border-slate-200 dark:border-neutral-700 flex items-center justify-center shrink-0 font-extrabold text-slate-900 dark:text-white`}>
       {user?.avatarUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={user.avatarUrl} alt="" className="w-full h-full object-cover" />
@@ -54,14 +54,14 @@ function AccountSwitcher() {
         type="button"
         onClick={() => setOpen(true)}
         aria-haspopup="dialog"
-        className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-neutral-800/60"
+        className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-slate-100 dark:hover:bg-neutral-800/60"
       >
         <Avatar user={user} size="w-12 h-12" />
         <span className="min-w-0 flex-1">
-          <span className="block font-extrabold tracking-tight text-white truncate">{user.displayName || user.username}</span>
-          <span className="block text-xs font-bold text-neutral-400 truncate">@{user.username} · Active</span>
+          <span className="block font-extrabold tracking-tight text-slate-900 dark:text-white truncate">{user.displayName || user.username}</span>
+          <span className="block text-xs font-bold text-slate-500 dark:text-neutral-400 truncate">@{user.username} · Active</span>
         </span>
-        <span className="flex items-center gap-1 text-xs font-extrabold text-amber-500 shrink-0">
+        <span className="flex items-center gap-1 text-xs font-extrabold text-amber-600 dark:text-amber-500 shrink-0">
           Switch <ChevronDown className="w-4 h-4" strokeWidth={3} />
         </span>
       </button>
@@ -69,10 +69,10 @@ function AccountSwitcher() {
       {open && (
         <div className="fixed inset-0 z-[60] flex items-end" role="dialog" aria-modal="true" aria-label="Switch account">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-md animate-share-backdrop" onClick={() => setOpen(false)} />
-          <div className="relative w-full max-w-md mx-auto bg-neutral-900 text-white rounded-t-3xl border-t border-neutral-800 animate-share-sheet pb-[max(1rem,env(safe-area-inset-bottom))]">
+          <div className="relative w-full max-w-md mx-auto bg-slate-50 dark:bg-neutral-900 text-slate-900 dark:text-white rounded-t-3xl border-t border-slate-200 dark:border-neutral-800 animate-share-sheet pb-[max(1rem,env(safe-area-inset-bottom))]">
             <div className="flex items-center justify-between px-5 pt-5 pb-3">
               <h3 className="font-extrabold tracking-tight text-lg">Switch account</h3>
-              <button onClick={() => setOpen(false)} aria-label="Close" className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center">
+              <button onClick={() => setOpen(false)} aria-label="Close" className="w-8 h-8 rounded-full bg-slate-100 dark:bg-neutral-800 flex items-center justify-center">
                 <X className="w-4 h-4" strokeWidth={3} />
               </button>
             </div>
@@ -85,17 +85,17 @@ function AccountSwitcher() {
                       type="button"
                       onClick={() => onSwitch(a.id)}
                       disabled={!!busyId}
-                      className="flex-1 min-w-0 flex items-center gap-3 px-2 py-2.5 rounded-2xl hover:bg-neutral-800 text-left disabled:opacity-60"
+                      className="flex-1 min-w-0 flex items-center gap-3 px-2 py-2.5 rounded-2xl hover:bg-slate-100 dark:hover:bg-neutral-800 text-left disabled:opacity-60"
                     >
                       <Avatar user={a.user} />
                       <span className="min-w-0 flex-1">
                         <span className="block font-extrabold tracking-tight truncate">{a.user.displayName || a.user.username}</span>
-                        <span className="block text-xs font-bold text-neutral-400 truncate">@{a.user.username}</span>
+                        <span className="block text-xs font-bold text-slate-500 dark:text-neutral-400 truncate">@{a.user.username}</span>
                       </span>
                       {busyId === a.id ? (
                         <span className="w-4 h-4 rounded-full border-2 border-amber-500 border-t-transparent animate-spin" />
                       ) : active ? (
-                        <Check className="w-5 h-5 text-amber-500" strokeWidth={3.5} />
+                        <Check className="w-5 h-5 text-amber-600 dark:text-amber-500" strokeWidth={3.5} />
                       ) : null}
                     </button>
                     {!active && (
@@ -103,7 +103,7 @@ function AccountSwitcher() {
                         type="button"
                         onClick={() => forgetAccount(a.id)}
                         aria-label={`Remove @${a.user.username} from this device`}
-                        className="w-9 h-9 rounded-full text-neutral-500 hover:text-red-400 flex items-center justify-center"
+                        className="w-9 h-9 rounded-full text-slate-500 dark:text-neutral-500 hover:text-red-400 flex items-center justify-center"
                       >
                         <Trash2 className="w-4 h-4" strokeWidth={2.5} />
                       </button>
@@ -121,7 +121,7 @@ function AccountSwitcher() {
               >
                 <UserPlus className="w-4 h-4" strokeWidth={3} /> Add account
               </button>
-              <p className="text-[11px] font-bold text-neutral-500 text-center mt-2">
+              <p className="text-[11px] font-bold text-slate-500 dark:text-neutral-500 text-center mt-2">
                 {accounts.length >= MAX_ACCOUNTS
                   ? `You can keep up to ${MAX_ACCOUNTS} accounts on this device.`
                   : 'Accounts stay signed in on this device only. Log out to remove one.'}
@@ -229,7 +229,7 @@ export default function AccountDetailsPage() {
                 <div className="mt-2 flex items-center gap-2">
                   <VerifiedBadge verified={saved.emailVerified} />
                   {!saved.emailVerified && (
-                    <Link href={`/verify-email?email=${encodeURIComponent(saved.email)}`} className="text-xs font-extrabold text-amber-500">
+                    <Link href={`/verify-email?email=${encodeURIComponent(saved.email)}`} className="text-xs font-extrabold text-amber-600 dark:text-amber-500">
                       Verify now
                     </Link>
                   )}
@@ -260,7 +260,7 @@ export default function AccountDetailsPage() {
               <div>
                 <label htmlFor="acc-bio" className={LABEL}>Bio / description</label>
                 <textarea id="acc-bio" rows={3} maxLength={BIO_MAX} value={form.bio} onChange={(e) => set({ bio: e.target.value })} className={`${INPUT} resize-none`} placeholder="Tell people about yourself" />
-                <p className="text-right text-[11px] font-bold text-neutral-500 mt-1">{BIO_MAX - form.bio.length} left</p>
+                <p className="text-right text-[11px] font-bold text-slate-500 dark:text-neutral-500 mt-1">{BIO_MAX - form.bio.length} left</p>
               </div>
               <div>
                 <label htmlFor="acc-wa" className={LABEL}>WhatsApp</label>
@@ -275,14 +275,14 @@ export default function AccountDetailsPage() {
                         <input aria-label={`Link ${i + 1} label`} placeholder="Label (e.g. Instagram)" maxLength={30} value={l.label} onChange={(e) => setLink(i, { label: e.target.value })} className={INPUT} />
                         <input aria-label={`Link ${i + 1} URL`} type="url" inputMode="url" placeholder="https://…" value={l.url} onChange={(e) => setLink(i, { url: e.target.value })} className={INPUT} />
                       </div>
-                      <button type="button" aria-label={`Remove link ${i + 1}`} onClick={() => set({ links: form.links.filter((_, j) => j !== i) })} className="w-10 h-10 mt-1 rounded-xl bg-neutral-800 text-neutral-400 hover:text-red-400 flex items-center justify-center shrink-0">
+                      <button type="button" aria-label={`Remove link ${i + 1}`} onClick={() => set({ links: form.links.filter((_, j) => j !== i) })} className="w-10 h-10 mt-1 rounded-xl bg-slate-100 dark:bg-neutral-800 text-slate-500 dark:text-neutral-400 hover:text-red-400 flex items-center justify-center shrink-0">
                         <Trash2 className="w-4 h-4" strokeWidth={2.5} />
                       </button>
                     </div>
                   ))}
                 </div>
                 {form.links.length < MAX_LINKS && (
-                  <button type="button" onClick={() => set({ links: [...form.links, { label: '', url: '' }] })} className="mt-3 flex items-center gap-1.5 text-sm font-extrabold text-amber-500">
+                  <button type="button" onClick={() => set({ links: [...form.links, { label: '', url: '' }] })} className="mt-3 flex items-center gap-1.5 text-sm font-extrabold text-amber-600 dark:text-amber-500">
                     <Plus className="w-4 h-4" strokeWidth={3} /> Add link
                   </button>
                 )}

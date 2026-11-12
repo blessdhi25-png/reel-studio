@@ -301,6 +301,12 @@ export const api = {
   // Add this inside your api object in frontend/src/lib/api.js
 adminGetStats: () => request('/admin/stats'),
   adminGetStatus: () => request('/admin/status'),
+  // Staff moderation API (moderator + admin) — backend/src/routes/moderation.js
+  moderationStats: () => request('/moderation/stats'),
+  moderationQueue: () => request('/moderation/queue'),
+  moderationApprove: (videoId) => request(`/moderation/videos/${videoId}/approve`, { method: 'POST' }),
+  moderationRemove: (videoId, reason) => request(`/moderation/videos/${videoId}/remove`, { method: 'POST', body: { reason } }),
+  moderationBan: (userId, reason) => request(`/moderation/users/${userId}/ban`, { method: 'POST', body: { reason } }),
   adminGetReports: (status = 'pending', search = '') =>
     request(`/admin/reports?status=${status}${search ? `&search=${encodeURIComponent(search)}` : ''}`),
   adminGetReportStats: () => request('/admin/reports/stats'),

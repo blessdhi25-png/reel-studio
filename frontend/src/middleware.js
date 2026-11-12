@@ -18,10 +18,11 @@ import { NextResponse } from 'next/server';
 // the token + role into cookies specifically so this file has something to
 // read (see frontend/src/lib/cookies.js for the full explanation).
 export const config = {
-  matcher: ['/admin/:path*'],
+  matcher: ['/admin/:path*', '/moderator/:path*'],
 };
 
 const ADMIN_ROLES = ['admin']; // admin portal is admin-only
+const MODERATOR_ROLES = ['moderator', 'admin']; // moderator portal also lets admins in
 
 export function middleware(request) {
   const cookieToken = request.cookies.get('token')?.value;
@@ -48,7 +49,8 @@ export function middleware(request) {
     return NextResponse.redirect(loginUrl);
   }
 
-  if (!ADMIN_ROLES.includes(role)) {
+  const allowed = request.nextUrl.pathname.startsWith('/moderator') ? MODERATOR_ROLES : ADMIN_ROLES;
+  if (!allowed.includes(role)) {
     return NextResponse.redirect(new URL('/', request.url));
   }
 

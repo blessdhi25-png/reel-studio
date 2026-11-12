@@ -1,12 +1,8 @@
 'use client';
 
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import StaffDashboard from '@/components/staff/StaffDashboard';
 
-export default function AdminIndexPage() {
-  const router = useRouter();
-  useEffect(() => {
-    router.replace('/admin/reports');
-  }, [router]);
-  return null;
+// The layout (app/admin/layout.jsx) has already verified the viewer is an admin.
+export default function AdminDashboardPage() {
+  return <StaffDashboard mode="admin" theme="dark" viewerRole="admin" />;
 }

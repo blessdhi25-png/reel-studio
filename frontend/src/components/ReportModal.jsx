@@ -40,12 +40,12 @@ export default function ReportModal({ targetType, targetId, onClose }) {
   }
 
   return (
-    <div className="absolute inset-0 bg-ink/90 flex items-center justify-center z-40 px-6">
-      <div className="bg-ink2 rounded-sprocket p-6 w-full max-w-sm border border-smoke/20">
+    <div className="absolute inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-40 px-6">
+      <div className="bg-white dark:bg-ink2 rounded-sprocket p-6 w-full max-w-sm border border-slate-200 dark:border-smoke/20">
         {done ? (
           <>
-            <p className="font-display text-xl text-bone mb-2 tracking-wide">Report submitted</p>
-            <p className="font-body text-sm text-smoke mb-5">
+            <p className="font-display text-xl font-extrabold tracking-tight text-slate-900 dark:text-bone mb-2">Report submitted</p>
+            <p className="font-body text-sm font-semibold text-slate-500 dark:text-smoke mb-5">
               Thanks — our team will review it. You can check the status from your reports later.
             </p>
             <button
@@ -57,7 +57,7 @@ export default function ReportModal({ targetType, targetId, onClose }) {
           </>
         ) : (
           <>
-            <p className="font-display text-xl text-bone mb-4 tracking-wide">
+            <p className="font-display text-xl font-extrabold tracking-tight text-slate-900 dark:text-bone mb-4">
               Report {targetType}
             </p>
             <div className="grid grid-cols-2 gap-2 mb-4">
@@ -78,7 +78,7 @@ export default function ReportModal({ targetType, targetId, onClose }) {
               onChange={(e) => setDetails(e.target.value)}
               placeholder="Additional details (optional)"
               rows={3}
-              className="w-full bg-ink text-bone font-body text-sm rounded-sprocket p-3 mb-4 outline-none border border-transparent focus:border-reel/50"
+              className="w-full bg-slate-100 dark:bg-ink text-slate-900 dark:text-bone font-body text-sm rounded-sprocket p-3 mb-4 outline-none border border-transparent focus:border-reel/50"
             />
             {error && <p className="font-body text-xs text-red-400 mb-3">{error}</p>}
             <button
@@ -88,7 +88,7 @@ export default function ReportModal({ targetType, targetId, onClose }) {
             >
               {submitting ? 'Submitting…' : 'Submit report'}
             </button>
-            <button onClick={onClose} className="w-full mt-3 text-smoke text-sm font-body">
+            <button onClick={onClose} className="w-full mt-3 text-slate-500 dark:text-smoke text-sm font-bold font-body">
               Cancel
             </button>
           </>
