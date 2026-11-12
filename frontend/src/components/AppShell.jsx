@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import LoadingScreen from '@/components/LoadingScreen';
 import BottomNav from '@/components/BottomNav';
-import DesktopSidebar, { sidebarShownFor } from '@/components/DesktopSidebar';
+import DesktopSidebar, { sidebarShownFor, SIDEBAR_PAD_CLASS } from '@/components/DesktopSidebar';
 import ChatHub from '@/components/ChatHub';
 import ScreenTimeTracker from '@/components/ScreenTimeTracker';
 import ThemeSurface from '@/components/ThemeSurface';
@@ -40,7 +40,7 @@ export default function AppShell({ children }) {
     <>
       <DesktopSidebar />
       {/* Below lg there is no sidebar, so the wrapper adds no padding and mobile layout is untouched. */}
-      <div className={sidebarShownFor(pathname) ? 'lg:pl-64' : undefined}>
+      <div className={sidebarShownFor(pathname) ? SIDEBAR_PAD_CLASS : undefined}>
         <ThemeSurface>{children}</ThemeSurface>
       </div>
       <SwipeNavigator />

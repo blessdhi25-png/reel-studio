@@ -4,7 +4,7 @@ import BackButton from '@/components/BackButton';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { MoreHorizontal, Menu as MenuIcon, Share2, Lock, Pencil, UserPlus, ChevronDown, Sparkles, Grid3x3, Repeat2, Bookmark, Heart, Plus } from 'lucide-react';
+import { MoreHorizontal, Menu as MenuIcon, Share2, Settings, Lock, Pencil, UserPlus, ChevronDown, Sparkles, Grid3x3, Repeat2, Bookmark, Heart, Plus } from 'lucide-react';
 import { api, getStoredUser } from '@/lib/api';
 import { useToast } from '@/context/ToastContext';
 import ReportModal from '@/components/ReportModal';
@@ -12,6 +12,13 @@ import ConfirmModal from '@/components/ConfirmModal';
 import ProfileDrawer from '@/components/ProfileDrawer';
 import AccountSwitcherModal from '@/components/AccountSwitcherModal';
 import { LoadingSpinner } from '@/components/LoadingScreen';
+
+// Latest = API order (newest first); Oldest = reverse; Popular = most views first (stable for ties).
+function sortVideos(list, sortBy) {
+  if (sortBy === 'oldest') return [...list].reverse();
+  if (sortBy === 'popular') return [...list].sort((a, b) => Number(b.viewCount || 0) - Number(a.viewCount || 0));
+  return list;
+}
 
 export default function ProfilePage({ params }) {
   const { id } = params;
@@ -23,6 +30,7 @@ export default function ProfilePage({ params }) {
   const [savedVideos, setSavedVideos] = useState([]);
   const [repostVideos, setRepostVideos] = useState([]);
   const [showSwitcher, setShowSwitcher] = useState(false);
+  const [sortBy, setSortBy] = useState('latest'); // latest | popular | oldest (desktop control)
   const [likedVideos, setLikedVideos] = useState([]);
   const [isSelf, setIsSelf] = useState(false);
   const [following, setFollowing] = useState(false);
@@ -119,7 +127,7 @@ export default function ProfilePage({ params }) {
   }
 
   const activeVideos =
-    activeTab === 'videos' ? videos : activeTab === 'saved' ? savedVideos : activeTab === 'liked' ? likedVideos : activeTab === 'reposts' ? repostVideos : [];
+    activeTab === 'videos' ? sortVideos(videos, sortBy) : activeTab === 'saved' ? savedVideos : activeTab === 'liked' ? likedVideos : activeTab === 'reposts' ? repostVideos : [];
 
   if (loading) {
     return (
@@ -149,7 +157,7 @@ export default function ProfilePage({ params }) {
   const statLbl = 'text-xs font-medium text-neutral-500';
 
   return (
-    <div className="relative min-h-screen bg-white dark:bg-neutral-950 text-black dark:text-white pb-36 font-sans max-w-md mx-auto lg:max-w-4xl lg:py-8">
+    <div className="relative min-h-screen bg-white dark:bg-neutral-950 text-black dark:text-white pb-36 font-sans max-w-md mx-auto lg:max-w-5xl lg:py-8">
       {/* Top bar */}
       <div className="flex items-center justify-between px-4 py-3 bg-white dark:bg-neutral-950">
         {isSelf ? (
@@ -242,6 +250,23 @@ export default function ProfilePage({ params }) {
               <p className={statLbl}>Likes</p>
             </div>
           </div>
+
+          {isSelf && (
+            <div className="hidden lg:flex items-center gap-2 mt-5">
+              <Link href="/settings/account" className="px-5 py-2.5 rounded-lg bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-sm font-extrabold text-black dark:text-white transition-colors">
+                Edit profile
+              </Link>
+              <Link href="/promote" className="px-5 py-2.5 rounded-lg bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-sm font-extrabold text-black dark:text-white transition-colors">
+                Promote post
+              </Link>
+              <button type="button" onClick={() => openDrawer('settings')} aria-label="Settings" className="w-10 h-10 rounded-lg bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 flex items-center justify-center text-black dark:text-white transition-colors">
+                <Settings className="w-5 h-5 stroke-[2.2]" />
+              </button>
+              <button type="button" onClick={() => openDrawer('share')} aria-label="Share profile" className="w-10 h-10 rounded-lg bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 flex items-center justify-center text-black dark:text-white transition-colors">
+                <Share2 className="w-5 h-5 stroke-[2.2]" />
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="relative w-24 h-24 shrink-0 mt-3 lg:mt-0 lg:w-36 lg:h-36">
@@ -372,6 +397,29 @@ export default function ProfilePage({ params }) {
               );
             })}
           </div>
+
+          {activeTab === 'videos' && (
+            <div className="hidden lg:flex justify-end px-4 pt-4" role="radiogroup" aria-label="Sort posts">
+              <div className="inline-flex rounded-lg bg-neutral-100 dark:bg-neutral-800 p-1">
+                {[['latest', 'Latest'], ['popular', 'Popular'], ['oldest', 'Oldest']].map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    role="radio"
+                    aria-checked={sortBy === id}
+                    onClick={() => setSortBy(id)}
+                    className={`px-4 py-1.5 rounded-md text-sm font-extrabold tracking-tight transition-colors ${
+                      sortBy === id
+                        ? 'bg-white dark:bg-neutral-600 text-black dark:text-white shadow-sm'
+                        : 'text-neutral-500 hover:text-black dark:hover:text-white'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {activeTab === 'private' ? (
             <div className="py-14 px-6 text-center">

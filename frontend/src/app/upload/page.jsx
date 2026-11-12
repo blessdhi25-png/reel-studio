@@ -11,6 +11,7 @@ import TemplatePicker from '@/components/TemplatePicker';
 import AiGenerationModal from '@/components/AiGenerationModal';
 import TemplateClipSheet from '@/components/TemplateClipSheet';
 import UploadStudio, { MediaTypeToggle } from '@/components/UploadStudio';
+import DesktopUploadLanding from '@/components/DesktopUploadLanding';
 import TextOverlayEditor from '@/components/TextOverlayEditor';
 import { stitchClips } from '@/lib/stitchClips';
 import { templateSetup } from '@/lib/templates';
@@ -255,6 +256,12 @@ function UploadPageInner() {
   const [showFilterGrid, setShowFilterGrid] = useState(false);
   // Photo vs video creation. 'photo' hands the whole screen to <UploadStudio/>.
   const [mediaType, setMediaType] = useState('video');
+  // Desktop (lg+) opens on a pick-or-drop landing instead of the full-screen camera.
+  // null until mounted (so SSR/first paint matches); 'Open camera' flips it to false.
+  const [desktopLanding, setDesktopLanding] = useState(null);
+  useEffect(() => {
+    setDesktopLanding(window.matchMedia('(min-width: 1024px)').matches);
+  }, []);
   const [photoFile, setPhotoFile] = useState(null);
   // Multi-overlay text (font/colour/pill) for gallery-picked videos — persisted
   // with the post. Camera recordings still bake the single legacy overlay below.
@@ -806,6 +813,18 @@ function UploadPageInner() {
           setDurationMode('60s');
         }}
         onExit={() => router.push('/')}
+      />
+    );
+  }
+
+  if (desktopLanding && !file && !guided) {
+    return (
+      <DesktopUploadLanding
+        onPick={pickFile}
+        onOpenCamera={() => setDesktopLanding(false)}
+        onExit={() => router.push('/')}
+        error={errorMsg}
+        communityTarget={communityTarget}
       />
     );
   }
