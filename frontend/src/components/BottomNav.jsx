@@ -20,6 +20,11 @@ const HIDDEN_ON = ['/welcome', '/login', '/signup', '/verify-email', '/upload'];
 // the conversation list page has room for both and keeps the nav.
 const HIDDEN_PREFIXES = ['/admin', '/moderator', '/messages/'];
 
+// Shared with DesktopNav so the two bars are always hidden on exactly the same routes.
+export function isNavHidden(pathname) {
+  return HIDDEN_ON.includes(pathname) || HIDDEN_PREFIXES.some((p) => pathname.startsWith(p));
+}
+
 function HomeIcon({ active }) {
   return (
     <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -78,7 +83,7 @@ export default function BottomNav() {
   // it here, independently from the notifications page).
   const { unreadCount } = useSocketContext();
 
-  if (HIDDEN_ON.includes(pathname) || HIDDEN_PREFIXES.some((p) => pathname.startsWith(p))) return null;
+  if (isNavHidden(pathname)) return null;
 
   function go(path, requireAuth = false) {
     if (requireAuth && !isAuthenticated) {
@@ -95,7 +100,7 @@ export default function BottomNav() {
     // paddingBottom overrides py-2's bottom padding so the bar still grows by the device's
     // home-indicator inset (otherwise the centred + button sits in the iOS swipe-up dead zone).
     <nav
-      className="fixed bottom-0 inset-x-0 z-50 bg-black border-t border-neutral-800 py-2"
+      className="fixed bottom-0 inset-x-0 z-50 lg:hidden bg-black border-t border-neutral-800 py-2"
       style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}
     >
       <div className="flex items-end justify-between px-3 max-w-md mx-auto">

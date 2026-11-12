@@ -12,6 +12,7 @@ import { useFeedScrolling } from '../hooks/useFeedScrolling';
 import DesktopRail from '../components/DesktopRail';
 import { loadTuningWeights } from '../components/TuneFeedPanel';
 import FeedFiltersDrawer from '../components/FeedFiltersDrawer';
+import { DesktopIconNav } from '@/components/DesktopNav';
 import Logo from '../components/Logo';
 import StoriesBar from '../components/StoriesBar';
 import TopHeaderNav from '../components/TopHeaderNav';
@@ -322,10 +323,11 @@ export default function FeedPage() {
             </a>
           </>
         )}
+        <DesktopIconNav />
         <button
           type="button"
           onClick={() => setIsMuted((prev) => !prev)}
-          className="text-zinc-300 hover:text-white px-2 py-1 rounded bg-zinc-800/50"
+          className="text-zinc-300 hover:text-white px-2 py-1 rounded bg-zinc-800/50 lg:font-extrabold lg:tracking-tight"
         >
           {isMuted ? '🔇 Mute' : '🔊 Sound'}
         </button>
@@ -441,12 +443,12 @@ export default function FeedPage() {
 
       {/* Desktop Workspace */}
       {isDesktop === true && (
-        <div className="flex-1 min-h-0 flex gap-4 p-4 lg:w-full lg:max-w-7xl lg:mx-auto lg:px-8 lg:grid lg:grid-cols-[1fr_380px] lg:gap-8">
+        <div className="flex-1 min-h-0 flex gap-4 p-4 lg:w-full lg:max-w-7xl lg:mx-auto lg:px-6 lg:py-6 lg:grid lg:grid-cols-[1fr_420px] lg:gap-8 lg:items-start">
           <div className="flex-1 flex items-center justify-center min-w-0">
-            <div className="h-full w-full max-w-[calc((100vh-6rem)*9/16+2rem)] flex items-center justify-center bg-zinc-900/60 border border-zinc-800 rounded-2xl backdrop-blur-md shadow-2xl p-4 lg:max-w-none lg:bg-transparent lg:border-0 lg:shadow-none lg:backdrop-blur-none lg:p-0">
+            <div className="h-full w-full max-w-[calc((100vh-6rem)*9/16+2rem)] flex items-center justify-center lg:h-auto bg-zinc-900/60 border border-zinc-800 rounded-2xl backdrop-blur-md shadow-2xl p-4 lg:max-w-none lg:bg-transparent lg:border-0 lg:shadow-none lg:backdrop-blur-none lg:p-0">
               <div
                 ref={desktopContainerRef}
-                className="feed-scroll h-full max-h-[calc(100vh-8rem)] w-auto aspect-[9/16] overflow-y-scroll snap-y snap-mandatory rounded-xl mx-auto lg:aspect-auto lg:w-full lg:max-w-md lg:h-[75vh] lg:max-h-full lg:rounded-2xl lg:shadow-2xl lg:border lg:border-zinc-800 lg:bg-black"
+                className="feed-scroll h-full max-h-[calc(100vh-8rem)] w-auto aspect-[9/16] overflow-y-scroll snap-y snap-mandatory rounded-xl mx-auto lg:aspect-auto lg:w-full lg:max-w-lg lg:h-[min(80vh,calc(100dvh_-_14.5rem))] lg:rounded-2xl lg:shadow-2xl lg:border lg:border-zinc-800 lg:bg-black"
                 {...scrollHandlers}
               >
                 {videos.map((video, i) => (
@@ -487,7 +489,7 @@ export default function FeedPage() {
           </div>
 
           {!focusMode && activeVideo && (
-            <div className="w-full max-w-md shrink-0 bg-zinc-900/60 border border-zinc-800 rounded-2xl backdrop-blur-md shadow-2xl p-4 overflow-hidden lg:max-w-none lg:h-full lg:min-h-0 lg:overflow-y-auto lg:p-0 lg:bg-zinc-900/80">
+            <div className="w-full max-w-md shrink-0 bg-zinc-900/60 border border-zinc-800 rounded-2xl backdrop-blur-md shadow-2xl p-4 overflow-hidden lg:max-w-none lg:h-[min(80vh,calc(100dvh_-_14.5rem))] lg:min-h-0 lg:overflow-y-auto lg:p-0 lg:bg-zinc-900/80">
               <DesktopRail
                 ref={desktopRailRef}
                 video={activeVideo}

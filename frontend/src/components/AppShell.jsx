@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import LoadingScreen from '@/components/LoadingScreen';
 import BottomNav from '@/components/BottomNav';
+import DesktopTopNav from '@/components/DesktopNav';
 import ChatHub from '@/components/ChatHub';
 import ScreenTimeTracker from '@/components/ScreenTimeTracker';
 import ThemeSurface from '@/components/ThemeSurface';
@@ -35,6 +36,7 @@ export default function AppShell({ children }) {
 
   return (
     <>
+      <DesktopTopNav />
       <ThemeSurface>{children}</ThemeSurface>
       <SwipeNavigator />
       <ChatHub />
