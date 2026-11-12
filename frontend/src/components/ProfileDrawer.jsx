@@ -1,13 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ChevronLeft, ChevronRight, Copy, Share2, X } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useToast } from '@/context/ToastContext';
-
-const CLOSE_MS = 280;
-const DRAG_CLOSE_PX = 80;
+import SlideDrawer from '@/components/SlideDrawer';
 
 function formatCents(cents) {
   return `$${(cents / 100).toFixed(2)}`;
@@ -26,27 +24,15 @@ const TITLES = { menu: 'Menu', share: 'Share profile', settings: 'Settings' };
  */
 export default function ProfileDrawer({ open, onClose, user, initialView = 'menu' }) {
   const toast = useToast();
-  const [mounted, setMounted] = useState(open);
-  const [shown, setShown] = useState(false); // drives the slide transition
   const [view, setView] = useState(initialView);
   const [balance, setBalance] = useState(null);
   const [qrFailed, setQrFailed] = useState(false);
-  const [dragX, setDragX] = useState(0);
-  const dragStart = useRef(null);
-  const sheetRef = useRef(null);
 
-  // Mount → next frame → slide in; slide out → unmount.
   useEffect(() => {
     if (open) {
-      setMounted(true);
       setView(initialView);
       setQrFailed(false);
-      const raf = requestAnimationFrame(() => requestAnimationFrame(() => setShown(true)));
-      return () => cancelAnimationFrame(raf);
     }
-    setShown(false);
-    const t = setTimeout(() => setMounted(false), CLOSE_MS);
-    return () => clearTimeout(t);
   }, [open, initialView]);
 
   // Wallet subtitle shows the real running total; failure just leaves the generic label.
@@ -61,20 +47,6 @@ export default function ProfileDrawer({ open, onClose, user, initialView = 'menu
       cancelled = true;
     };
   }, [open]);
-
-  // Escape to close, scroll lock, move focus into the panel.
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e) => e.key === 'Escape' && onClose();
-    document.addEventListener('keydown', onKey);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    sheetRef.current?.focus();
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      document.body.style.overflow = prevOverflow;
-    };
-  }, [open, onClose]);
 
   const profileUrl =
     typeof window !== 'undefined' && user?.id ? `${window.location.origin}/profile/${user.id}` : '';
@@ -97,55 +69,13 @@ export default function ProfileDrawer({ open, onClose, user, initialView = 'menu
     }
   }, [copyLink, profileUrl, user]);
 
-  // Swipe-right-to-dismiss on the header.
-  const onPointerDown = (e) => {
-    if (e.target.closest('button')) return;
-    dragStart.current = e.clientX;
-    e.currentTarget.setPointerCapture?.(e.pointerId);
-  };
-  const onPointerMove = (e) => {
-    if (dragStart.current == null) return;
-    setDragX(Math.max(0, e.clientX - dragStart.current));
-  };
-  const onPointerUp = () => {
-    if (dragStart.current == null) return;
-    const shouldClose = dragX > DRAG_CLOSE_PX;
-    dragStart.current = null;
-    setDragX(0);
-    if (shouldClose) onClose();
-  };
-
-  if (!mounted) return null;
-
   const qrSrc = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=0&data=${encodeURIComponent(profileUrl)}`;
 
   return (
-    <div className="fixed inset-0 z-[60]">
-      <div
-        className={`absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity duration-300 motion-reduce:transition-none ${
-          shown ? 'opacity-100' : 'opacity-0'
-        }`}
-        onClick={onClose}
-        aria-hidden="true"
-      />
-
-      <div
-        ref={sheetRef}
-        tabIndex={-1}
-        role="dialog"
-        aria-modal="true"
-        aria-label={TITLES[view]}
-        style={{ transform: shown ? `translateX(${dragX}px)` : 'translateX(100%)' }}
-        className={`fixed right-0 top-0 h-full w-[85%] max-w-md bg-white dark:bg-neutral-900 text-slate-900 dark:text-white border-l border-slate-200 dark:border-neutral-800 shadow-2xl font-sans outline-none flex flex-col pt-[env(safe-area-inset-top)] pb-[max(1.25rem,env(safe-area-inset-bottom))] ${
-          dragStart.current == null ? 'transition-transform duration-300 ease-out motion-reduce:transition-none' : ''
-        }`}
-      >
+    <SlideDrawer open={open} onClose={onClose} label={TITLES[view]}>
         <div
+          data-drag-handle
           className="flex items-center justify-between px-5 py-4 touch-pan-y cursor-grab border-b border-slate-100 dark:border-neutral-800"
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerUp}
-          onPointerCancel={onPointerUp}
         >
           {view === 'menu' ? (
             <h2 className="font-extrabold tracking-tight text-lg">{TITLES.menu}</h2>
@@ -238,8 +168,7 @@ export default function ProfileDrawer({ open, onClose, user, initialView = 'menu
             </div>
           )}
         </div>
-      </div>
-    </div>
+    </SlideDrawer>
   );
 }
 

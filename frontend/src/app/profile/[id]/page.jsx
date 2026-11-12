@@ -38,13 +38,17 @@ export default function ProfilePage({ params }) {
   const [deleteTarget, setDeleteTarget] = useState(null); // video object pending delete confirmation, or null
   const [deleting, setDeleting] = useState(false);
   const menuRef = useRef(null);
+  const dropdownRef = useRef(null);
   const closeDrawer = useCallback(() => setIsMenuOpen(false), []); // stable: the drawer's effects depend on it
 
   // Close the ⋯ dropdown on an outside click, not just its own options.
   useEffect(() => {
     if (!showMenu) return;
     function onClickOutside(e) {
-      if (menuRef.current && !menuRef.current.contains(e.target)) {
+      if (
+        menuRef.current && !menuRef.current.contains(e.target) &&
+        !(dropdownRef.current && dropdownRef.current.contains(e.target))
+      ) {
         setShowMenu(false);
       }
     }
@@ -133,7 +137,7 @@ export default function ProfilePage({ params }) {
   }
 
   return (
-    <div className="min-h-screen bg-white dark:bg-[#0a090e] text-slate-900 dark:text-white pb-36 font-sans max-w-md mx-auto">
+    <div className="relative min-h-screen bg-white dark:bg-[#0a090e] text-slate-900 dark:text-white pb-36 font-sans max-w-md mx-auto">
       {/* Banner */}
       <div className="h-32 w-full bg-slate-50 dark:bg-zinc-900 relative overflow-hidden">
         {user.bannerUrl && (
@@ -157,45 +161,6 @@ export default function ProfilePage({ params }) {
                 >
                   <MenuIcon size={20} />
                 </button>
-                {showMenu && (
-                  <div
-                    role="menu"
-                    className="absolute right-0 top-10 w-48 bg-white dark:bg-neutral-900 border border-slate-200 dark:border-neutral-800 rounded-2xl shadow-xl overflow-hidden z-20 py-1"
-                  >
-                    <Link
-                      href="/studio"
-                      role="menuitem"
-                      onClick={() => setShowMenu(false)}
-                      className="flex items-center gap-2.5 px-4 py-3 text-sm font-extrabold tracking-tight text-slate-900 dark:text-white hover:bg-slate-100 dark:hover:bg-neutral-800"
-                    >
-                      <LayoutDashboard size={16} className="text-amber-600 dark:text-amber-500" /> Studio
-                    </Link>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => openDrawer('share')}
-                      className="w-full flex items-center gap-2.5 px-4 py-3 text-sm font-extrabold tracking-tight text-left text-slate-900 dark:text-white hover:bg-slate-100 dark:hover:bg-neutral-800"
-                    >
-                      <Share2 size={16} className="text-amber-600 dark:text-amber-500" /> Share
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => openDrawer('settings')}
-                      className="w-full flex items-center gap-2.5 px-4 py-3 text-sm font-extrabold tracking-tight text-left text-slate-900 dark:text-white hover:bg-slate-100 dark:hover:bg-neutral-800"
-                    >
-                      <SettingsIcon size={16} className="text-amber-600 dark:text-amber-500" /> Settings
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => openDrawer('menu')}
-                      className="w-full flex items-center gap-2.5 px-4 py-3 text-sm font-extrabold tracking-tight text-left text-slate-900 dark:text-white hover:bg-slate-100 dark:hover:bg-neutral-800"
-                    >
-                      <PanelRight size={16} className="text-amber-600 dark:text-amber-500" /> Menu
-                    </button>
-                  </div>
-                )}
               </>
             ) : (
               <>
@@ -431,6 +396,46 @@ export default function ProfilePage({ params }) {
         <ReportModal targetType="user" targetId={user.id} onClose={() => setShowReport(false)} />
       )}
 
+      {isSelf && showMenu && (
+        <div
+          ref={dropdownRef}
+          role="menu"
+          className="absolute right-4 top-16 w-56 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl shadow-2xl p-2 z-50 flex flex-col gap-1"
+        >
+<Link
+                      href="/studio"
+                      role="menuitem"
+                      onClick={() => setShowMenu(false)}
+                      className="flex items-center gap-2.5 px-3 py-3 rounded-xl text-sm font-bold text-black dark:text-white hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                    >
+                      <LayoutDashboard size={16} className="text-amber-600 dark:text-amber-500" /> Studio
+                    </Link>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => openDrawer('share')}
+                      className="w-full flex items-center gap-2.5 px-3 py-3 rounded-xl text-sm font-bold text-left text-black dark:text-white hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                    >
+                      <Share2 size={16} className="text-amber-600 dark:text-amber-500" /> Share
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => openDrawer('settings')}
+                      className="w-full flex items-center gap-2.5 px-3 py-3 rounded-xl text-sm font-bold text-left text-black dark:text-white hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                    >
+                      <SettingsIcon size={16} className="text-amber-600 dark:text-amber-500" /> Settings
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => openDrawer('menu')}
+                      className="w-full flex items-center gap-2.5 px-3 py-3 rounded-xl text-sm font-bold text-left text-black dark:text-white hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                    >
+                      <PanelRight size={16} className="text-amber-600 dark:text-amber-500" /> Menu
+                    </button>
+        </div>
+      )}
       {isSelf && <ProfileDrawer open={isMenuOpen} onClose={closeDrawer} user={user} initialView={drawerView} />}
     </div>
   );
