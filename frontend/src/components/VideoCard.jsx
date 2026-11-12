@@ -899,9 +899,10 @@ const VideoCard = forwardRef(function VideoCard(
           </button>
           <button
             onClick={() => {
-              // On desktop the comments are already visible in the persistent
-              // rail — no need to also pop the mobile sheet over the video.
-              if (window.innerWidth < 768) setShowComments(true);
+              // The persistent desktop rail only exists at md (768–1023) and xl (1280+);
+              // on phones and at lg (sidebar layout, no room for the rail) the in-card sheet is used.
+              const w = window.innerWidth;
+              if (w < 768 || (w >= 1024 && w < 1280)) setShowComments(true);
             }}
             className="flex flex-col items-center gap-1 p-2 -m-2 text-white hover:scale-110 transition-transform"
           >
@@ -1054,7 +1055,7 @@ const VideoCard = forwardRef(function VideoCard(
         // md:hidden — on desktop the persistent rail already shows comments,
         // so this mobile sheet stays out of the DOM's visible flow there
         // rather than risking a second copy covering the video.
-        <div className="md:hidden">
+        <div className="md:hidden lg:block xl:hidden">
           <CommentsPanel
             ref={commentsRef}
             videoId={video.id}

@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
-import { Suspense, useEffect, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { hasSeenWelcome, hasToken, isGuest } from '@/lib/onboarding';
 import { api } from '../lib/api';
@@ -12,7 +12,6 @@ import { useFeedScrolling } from '../hooks/useFeedScrolling';
 import DesktopRail from '../components/DesktopRail';
 import { loadTuningWeights } from '../components/TuneFeedPanel';
 import FeedFiltersDrawer from '../components/FeedFiltersDrawer';
-import { DesktopIconNav } from '@/components/DesktopNav';
 import Logo from '../components/Logo';
 import StoriesBar from '../components/StoriesBar';
 import TopHeaderNav from '../components/TopHeaderNav';
@@ -25,6 +24,15 @@ const FILTERS = [
   { label: 'Communities', href: '/communities' },
   { label: 'Collections', href: '/collections' },
 ];
+
+// Sidebar "Following" → /?tab=following selects the following-only feed.
+function TabParamSync({ onTab }) {
+  const searchParams = useSearchParams();
+  useEffect(() => {
+    onTab(searchParams.get('tab') === 'following' ? 'following' : null);
+  }, [searchParams, onTab]);
+  return null;
+}
 
 function CircleParamSync({ onCircle }) {
   const searchParams = useSearchParams();
@@ -84,6 +92,17 @@ export default function FeedPage() {
     setActiveTab(opt.label);
     setFilter(opt.value);
   }
+
+  // URL-driven tab (/?tab=following from the desktop sidebar). null = back to the default feed.
+  const handleUrlTab = useCallback((tab) => {
+    if (tab === 'following') {
+      setActiveTab('Following');
+      setFilter('following');
+    } else {
+      setActiveTab((t) => (t === 'Following' ? 'All' : t));
+      setFilter((f) => (f === 'following' ? null : f));
+    }
+  }, []);
 
   // Mobile TopHeaderNav Tab Handler
   function handleMobileTabSelect(tabLabel) {
@@ -323,7 +342,6 @@ export default function FeedPage() {
             </a>
           </>
         )}
-        <DesktopIconNav />
         <button
           type="button"
           onClick={() => setIsMuted((prev) => !prev)}
@@ -358,6 +376,7 @@ export default function FeedPage() {
     <main className="relative h-dvh w-full overflow-hidden bg-ink flex flex-col">
       <Suspense fallback={null}>
         <CircleParamSync onCircle={setCircle} />
+        <TabParamSync onTab={handleUrlTab} />
       </Suspense>
 
       {/* Guest browsing (chose "Continue as Guest" on /welcome): a slim, tappable nudge. */}
@@ -443,12 +462,12 @@ export default function FeedPage() {
 
       {/* Desktop Workspace */}
       {isDesktop === true && (
-        <div className="flex-1 min-h-0 flex gap-4 p-4 lg:w-full lg:max-w-7xl lg:mx-auto lg:px-6 lg:py-6 lg:grid lg:grid-cols-[1fr_420px] lg:gap-8 lg:items-start">
-          <div className="flex-1 flex items-center justify-center min-w-0">
+        <div className="flex-1 min-h-0 flex gap-4 p-4 lg:justify-center lg:items-center lg:px-4 lg:py-6 lg:gap-8">
+          <div className="flex-1 flex items-center justify-center min-w-0 lg:flex-none lg:w-full lg:max-w-md">
             <div className="h-full w-full max-w-[calc((100vh-6rem)*9/16+2rem)] flex items-center justify-center lg:h-auto bg-zinc-900/60 border border-zinc-800 rounded-2xl backdrop-blur-md shadow-2xl p-4 lg:max-w-none lg:bg-transparent lg:border-0 lg:shadow-none lg:backdrop-blur-none lg:p-0">
               <div
                 ref={desktopContainerRef}
-                className="feed-scroll h-full max-h-[calc(100vh-8rem)] w-auto aspect-[9/16] overflow-y-scroll snap-y snap-mandatory rounded-xl mx-auto lg:aspect-auto lg:w-full lg:max-w-lg lg:h-[min(80vh,calc(100dvh_-_14.5rem))] lg:rounded-2xl lg:shadow-2xl lg:border lg:border-zinc-800 lg:bg-black"
+                className="feed-scroll h-full max-h-[calc(100vh-8rem)] w-auto aspect-[9/16] overflow-y-scroll snap-y snap-mandatory rounded-xl mx-auto lg:aspect-auto lg:w-full lg:max-w-md lg:relative lg:overflow-hidden lg:h-[min(82vh,calc(100dvh_-_14.5rem))] lg:rounded-2xl lg:shadow-2xl lg:border lg:border-zinc-800 lg:bg-black"
                 {...scrollHandlers}
               >
                 {videos.map((video, i) => (
@@ -489,7 +508,7 @@ export default function FeedPage() {
           </div>
 
           {!focusMode && activeVideo && (
-            <div className="w-full max-w-md shrink-0 bg-zinc-900/60 border border-zinc-800 rounded-2xl backdrop-blur-md shadow-2xl p-4 overflow-hidden lg:max-w-none lg:h-[min(80vh,calc(100dvh_-_14.5rem))] lg:min-h-0 lg:overflow-y-auto lg:p-0 lg:bg-zinc-900/80">
+            <div className="w-full max-w-md shrink-0 bg-zinc-900/60 border border-zinc-800 rounded-2xl backdrop-blur-md shadow-2xl p-4 overflow-hidden lg:hidden xl:block xl:w-[420px] xl:max-w-none xl:h-[min(82vh,calc(100dvh_-_14.5rem))] lg:min-h-0 lg:overflow-y-auto lg:p-0 lg:bg-zinc-900/80">
               <DesktopRail
                 ref={desktopRailRef}
                 video={activeVideo}

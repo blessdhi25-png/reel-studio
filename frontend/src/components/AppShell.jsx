@@ -1,10 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { usePathname } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import LoadingScreen from '@/components/LoadingScreen';
 import BottomNav from '@/components/BottomNav';
-import DesktopTopNav from '@/components/DesktopNav';
+import DesktopSidebar, { sidebarShownFor } from '@/components/DesktopSidebar';
 import ChatHub from '@/components/ChatHub';
 import ScreenTimeTracker from '@/components/ScreenTimeTracker';
 import ThemeSurface from '@/components/ThemeSurface';
@@ -23,6 +24,7 @@ import SwipeNavigator from '@/components/SwipeNavigator';
 // should never be able to make the whole app unusable.
 export default function AppShell({ children }) {
   const { ready } = useAuth();
+  const pathname = usePathname();
   const [timedOut, setTimedOut] = useState(false);
 
   useEffect(() => {
@@ -36,8 +38,11 @@ export default function AppShell({ children }) {
 
   return (
     <>
-      <DesktopTopNav />
-      <ThemeSurface>{children}</ThemeSurface>
+      <DesktopSidebar />
+      {/* Below lg there is no sidebar, so the wrapper adds no padding and mobile layout is untouched. */}
+      <div className={sidebarShownFor(pathname) ? 'lg:pl-64' : undefined}>
+        <ThemeSurface>{children}</ThemeSurface>
+      </div>
       <SwipeNavigator />
       <ChatHub />
       <ScreenTimeTracker />

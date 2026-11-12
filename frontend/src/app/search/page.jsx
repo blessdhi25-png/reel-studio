@@ -82,6 +82,11 @@ export default function SearchPage() {
   const { user: me, isAuthenticated } = useAuth();
 
   const [q, setQ] = useState('');
+  // The desktop sidebar search box navigates here with ?q=…
+  useEffect(() => {
+    const initial = new URLSearchParams(window.location.search).get('q');
+    if (initial) setQ(initial);
+  }, []);
   const [tab, setTab] = useState('top');
   const inputRef = useRef(null);
 
