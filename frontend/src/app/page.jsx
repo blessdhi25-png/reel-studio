@@ -255,8 +255,29 @@ export default function FeedPage() {
       return () => setActiveIndex(Math.round(el.scrollTop / el.clientHeight));
     }
 
+    // Desktop cards are shorter than the scroller (88vh + gap), so index-by-height
+    // doesn't work: the active card is the one whose centre is nearest the scroller's centre.
+    function makeCenterHandler(el) {
+      return () => {
+        const box = el.getBoundingClientRect();
+        const mid = box.top + box.height / 2;
+        const count = Math.min(el.children.length, videos.length);
+        let best = 0;
+        let bestDist = Infinity;
+        for (let i = 0; i < count; i++) {
+          const r = el.children[i].getBoundingClientRect();
+          const d = Math.abs(r.top + r.height / 2 - mid);
+          if (d < bestDist) {
+            bestDist = d;
+            best = i;
+          }
+        }
+        setActiveIndex(best);
+      };
+    }
+
     const onMobileScroll = mobileEl && makeScrollHandler(mobileEl);
-    const onDesktopScroll = desktopEl && makeScrollHandler(desktopEl);
+    const onDesktopScroll = desktopEl && makeCenterHandler(desktopEl);
 
     mobileEl?.addEventListener('scroll', onMobileScroll);
     desktopEl?.addEventListener('scroll', onDesktopScroll);
@@ -270,8 +291,48 @@ export default function FeedPage() {
     const clamped = Math.max(0, Math.min(videos.length - 1, i));
     const el = isDesktop ? desktopContainerRef.current : mobileContainerRef.current;
     if (!el) return;
+    if (isDesktop) {
+      const card = el.children[clamped];
+      if (!card) return;
+      const box = el.getBoundingClientRect();
+      const r = card.getBoundingClientRect();
+      el.scrollTo({ top: el.scrollTop + (r.top + r.height / 2) - (box.top + box.height / 2), behavior: 'smooth' });
+      return;
+    }
     el.scrollTo({ top: clamped * el.clientHeight, behavior: 'smooth' });
   }
+
+  // Keyboard: ArrowDown / ArrowUp step through the feed on desktop. Ignored while typing,
+  // with modifier keys held, or while a dialog is open.
+  const scrollToIndexRef = useRef(null);
+  scrollToIndexRef.current = scrollToIndex;
+  const keyTargetRef = useRef(null);
+  const keyTimerRef = useRef(null);
+  const activeIndexRef = useRef(0);
+  activeIndexRef.current = activeIndex;
+  useEffect(() => {
+    if (!isDesktop) return;
+    function onKeyDown(e) {
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+      if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      if (window.innerWidth < 1024) return;
+      const t = e.target;
+      if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      if (document.querySelector('[aria-modal="true"]')) return;
+      e.preventDefault();
+      const base = keyTargetRef.current ?? activeIndexRef.current;
+      const next = Math.max(0, base + (e.key === 'ArrowDown' ? 1 : -1));
+      keyTargetRef.current = next;
+      clearTimeout(keyTimerRef.current);
+      keyTimerRef.current = setTimeout(() => { keyTargetRef.current = null; }, 450);
+      scrollToIndexRef.current?.(next);
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      clearTimeout(keyTimerRef.current);
+    };
+  }, [isDesktop]);
 
   // Video currently centered in the feed — feeds the desktop side rail
   // (comments/details) and its seek callback below. This was previously
@@ -282,7 +343,7 @@ export default function FeedPage() {
 
   // Desktop Header
   const desktopHeader = (
-    <header className="hidden md:flex h-16 items-center justify-between gap-6 px-6 border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-md shrink-0 z-30 relative">
+    <header className="hidden md:flex lg:hidden h-16 items-center justify-between gap-6 px-6 border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-md shrink-0 z-30 relative">
       <div className="flex items-center gap-4 min-w-0 flex-1">
         <a href="/" className="shrink-0" aria-label="Reel Studio home">
           <Logo size="sm" showText />
@@ -395,7 +456,7 @@ export default function FeedPage() {
       {!focusMode && isDesktop && (
         <>
           {desktopHeader}
-          <StoriesBar className="border-b border-zinc-800 bg-zinc-950/80" />
+          <StoriesBar className="border-b border-zinc-800 bg-zinc-950/80 lg:hidden" />
         </>
       )}
 
@@ -460,18 +521,59 @@ export default function FeedPage() {
         </div>
       )}
 
+      {/* lg+: the top header bar is gone (the sidebar carries navigation); the feed-specific
+          controls it held float over the top of the feed. */}
+      {!focusMode && isDesktop === true && (
+        <div className="hidden lg:flex absolute top-3 left-0 right-0 z-30 justify-center pointer-events-none">
+          <div className="pointer-events-auto flex items-center gap-1 rounded-full bg-black/70 backdrop-blur-md border border-neutral-800 p-1 text-sm font-extrabold tracking-tight">
+            {FILTERS.map((opt) => (
+              <button
+                key={opt.label}
+                type="button"
+                onClick={() => handleFilterClick(opt)}
+                className={`px-3.5 py-1.5 rounded-full transition-colors ${
+                  (opt.value === filter && !opt.href) || activeTab === opt.label
+                    ? 'bg-amber-500 text-black'
+                    : 'text-neutral-300 hover:text-white'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+            <span className="w-px h-5 bg-neutral-700 mx-1" />
+            <button
+              type="button"
+              onClick={() => setIsMuted((prev) => !prev)}
+              aria-label={isMuted ? 'Unmute' : 'Mute'}
+              className="px-3 py-1.5 rounded-full text-neutral-300 hover:text-white"
+            >
+              {isMuted ? '🔇' : '🔊'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setFiltersOpen(true)}
+              aria-label="Filters and feed tuning"
+              className="relative px-3 py-1.5 rounded-full text-neutral-300 hover:text-white"
+            >
+              <DotsIcon />
+              {circle !== null && <span className="absolute top-1 right-1.5 w-2 h-2 rounded-full bg-amber-500" />}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Desktop Workspace */}
       {isDesktop === true && (
-        <div className="flex-1 min-h-0 flex gap-4 p-4 lg:justify-center lg:items-center lg:px-4 lg:py-6 lg:gap-8">
-          <div className="flex-1 flex items-center justify-center min-w-0 lg:flex-none lg:w-full lg:max-w-md">
-            <div className="h-full w-full max-w-[calc((100vh-6rem)*9/16+2rem)] flex items-center justify-center lg:h-auto bg-zinc-900/60 border border-zinc-800 rounded-2xl backdrop-blur-md shadow-2xl p-4 lg:max-w-none lg:bg-transparent lg:border-0 lg:shadow-none lg:backdrop-blur-none lg:p-0">
+        <div className="relative flex-1 min-h-0 flex gap-4 p-4 lg:p-0 lg:gap-0 lg:items-stretch">
+          <div className="flex-1 flex items-center justify-center min-w-0 lg:items-stretch lg:justify-center">
+            <div className="h-full w-full max-w-[calc((100vh-6rem)*9/16+2rem)] flex items-center justify-center lg:h-full bg-zinc-900/60 border border-zinc-800 rounded-2xl backdrop-blur-md shadow-2xl p-4 lg:max-w-none lg:bg-transparent lg:border-0 lg:shadow-none lg:backdrop-blur-none lg:p-0">
               <div
                 ref={desktopContainerRef}
-                className="feed-scroll h-full max-h-[calc(100vh-8rem)] w-auto aspect-[9/16] overflow-y-scroll snap-y snap-mandatory rounded-xl mx-auto lg:aspect-auto lg:w-full lg:max-w-md lg:relative lg:overflow-hidden lg:h-[min(82vh,calc(100dvh_-_14.5rem))] lg:rounded-2xl lg:shadow-2xl lg:border lg:border-zinc-800 lg:bg-black"
+                className="feed-scroll h-full max-h-[calc(100vh-8rem)] w-auto aspect-[9/16] overflow-y-scroll snap-y snap-mandatory rounded-xl mx-auto lg:aspect-auto lg:w-full lg:max-h-none lg:mx-0 lg:rounded-none lg:flex lg:flex-col lg:items-center lg:pt-14 lg:pb-6"
                 {...scrollHandlers}
               >
                 {videos.map((video, i) => (
-                  <div key={video.id} className="h-full w-full snap-start">
+                  <div key={video.id} className="h-full w-full snap-start lg:h-[88vh] lg:max-w-md lg:shrink-0 lg:snap-center lg:snap-always lg:flex lg:items-center lg:justify-center lg:relative lg:mb-8 lg:rounded-2xl lg:overflow-hidden lg:shadow-2xl lg:bg-neutral-950">
                     <VideoCard
                       ref={(el) => { videoCardRefs.current[video.id] = el; }}
                       video={video}
@@ -489,12 +591,12 @@ export default function FeedPage() {
                   </div>
                 ))}
                 {loadingMore && (
-                  <div className="h-full w-full snap-start">
+                  <div className="h-full w-full snap-start lg:h-[88vh] lg:max-w-md lg:shrink-0 lg:rounded-2xl lg:overflow-hidden lg:mb-8">
                     <FeedSkeletonCard />
                   </div>
                 )}
                 {videos.length === 0 && initialLoading && (
-                  <div className="h-full w-full snap-start">
+                  <div className="h-full w-full snap-start lg:h-[88vh] lg:max-w-md lg:shrink-0 lg:rounded-2xl lg:overflow-hidden lg:mb-8">
                     <FeedSkeletonCard />
                   </div>
                 )}
@@ -508,7 +610,7 @@ export default function FeedPage() {
           </div>
 
           {!focusMode && activeVideo && (
-            <div className="w-full max-w-md shrink-0 bg-zinc-900/60 border border-zinc-800 rounded-2xl backdrop-blur-md shadow-2xl p-4 overflow-hidden lg:hidden xl:block xl:w-[420px] xl:max-w-none xl:h-[min(82vh,calc(100dvh_-_14.5rem))] lg:min-h-0 lg:overflow-y-auto lg:p-0 lg:bg-zinc-900/80">
+            <div className="w-full max-w-md shrink-0 bg-zinc-900/60 border border-zinc-800 rounded-2xl backdrop-blur-md shadow-2xl p-4 overflow-hidden lg:hidden xl:block xl:w-[420px] xl:max-w-none xl:h-[88vh] xl:self-center xl:mr-6 lg:min-h-0 lg:overflow-y-auto lg:p-0 lg:bg-zinc-900/80">
               <DesktopRail
                 ref={desktopRailRef}
                 video={activeVideo}

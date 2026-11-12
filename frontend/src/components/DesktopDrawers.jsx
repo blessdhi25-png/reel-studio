@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useTheme } from 'next-themes';
 import {
   X, Maximize2, Search, Settings, Languages, Moon, SunMedium, Monitor,
-  LayoutDashboard, TrendingUp, Radio, Wallet, ChevronRight, LogOut, Bell,
+  LayoutDashboard, Shield, TrendingUp, Radio, Wallet, ChevronRight, LogOut, Bell,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
@@ -263,7 +263,7 @@ function MoreRow({ href, icon: Icon, children, onClose, trailing }) {
 
 function MoreDrawer({ onClose }) {
   const { theme, setTheme } = useTheme();
-  const { isAuthenticated, logout } = useAuth();
+  const { user, isAuthenticated, logout } = useAuth();
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -312,6 +312,10 @@ function MoreDrawer({ onClose }) {
       <MoreRow href="/promote" icon={TrendingUp} onClose={onClose}>Promote post</MoreRow>
       <MoreRow href="/live" icon={Radio} onClose={onClose} trailing={<ChevronRight className="w-4 h-4 text-neutral-500" />}>LIVE tools</MoreRow>
       <MoreRow href="/earnings" icon={Wallet} onClose={onClose}>Earnings</MoreRow>
+      {(user?.role === 'moderator' || user?.role === 'admin') && (
+        <MoreRow href="/moderator" icon={Shield} onClose={onClose}>Moderator portal</MoreRow>
+      )}
+      {user?.role === 'admin' && <MoreRow href="/admin" icon={Shield} onClose={onClose}>Admin dashboard</MoreRow>}
 
       {isAuthenticated && (
         <button
