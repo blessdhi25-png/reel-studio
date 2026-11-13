@@ -111,6 +111,11 @@ function getStoredAudioEnabled() {
 
 // Renders the caption with #hashtags split into their own bold spans so they
 // share the caption's high-legibility styling (and can be linked later).
+function fmtClock(sec) {
+  const s = Math.max(0, Math.floor(Number.isFinite(sec) ? sec : 0));
+  return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+}
+
 function renderCaption(caption) {
   if (!caption) return null;
   return caption.split(/(#[\p{L}\p{N}_]+)/u).map((part, i) =>
@@ -167,6 +172,8 @@ const VideoCard = forwardRef(function VideoCard(
   const [showSoundPicker, setShowSoundPicker] = useState(false);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+  const scrubRef = useRef(null);
+  const scrubbingRef = useRef(false);
   const toggleAudio = () => {
     setAudioEnabled((prev) => {
       const next = !prev;
@@ -531,6 +538,16 @@ const VideoCard = forwardRef(function VideoCard(
   // ("video chapters"). Exposed on the ref so the desktop rail (which
   // renders its own copy of the comments list, outside this component) can
   // drive this card's player too.
+  const playerTotal = liveDuration || video.durationSeconds || 0;
+  function scrubTo(e) {
+    const el = videoRef.current;
+    const box = scrubRef.current?.getBoundingClientRect();
+    if (!el || !box || !playerTotal) return;
+    const ratio = Math.max(0, Math.min(1, (e.clientX - box.left) / box.width));
+    el.currentTime = ratio * playerTotal;
+    setCurrentTime(el.currentTime);
+  }
+
   function seekTo(seconds) {
     const el = videoRef.current;
     if (!el || !Number.isFinite(seconds)) return;
@@ -690,7 +707,9 @@ const VideoCard = forwardRef(function VideoCard(
   }));
 
   return (
-    <div ref={containerRef} className="relative h-full w-full flex items-center justify-center bg-ink lg:rounded-2xl lg:shadow-2xl lg:bg-neutral-950">
+    <div ref={containerRef} className="relative h-full w-full flex flex-col bg-ink lg:rounded-2xl lg:shadow-2xl lg:bg-neutral-950">
+      {/* Player box: the media + its on-video controls. Captions live BELOW this box. */}
+      <div className="relative flex-1 min-h-0 w-full flex items-center justify-center overflow-hidden bg-black lg:rounded-2xl">
       {isPhoto ? (
         <div
           onClick={handleVideoTap}
@@ -767,35 +786,6 @@ const VideoCard = forwardRef(function VideoCard(
         </div>
       )}
 
-      {/* Explicit mute toggle — audioEnabled previously only ever turned on
-          implicitly via the first tap-to-play (see togglePlayPause) with no
-          visible control and no way to mute again afterward. */}
-      {!isPhoto && (
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          toggleAudio();
-        }}
-        className={`lg:hidden absolute top-4 right-4 z-10 w-9 h-9 rounded-full bg-ink/50 flex items-center justify-center text-bone transition-opacity duration-200 ${clearDisplay ? 'opacity-0 pointer-events-none' : ''}`}
-        aria-label={audioEnabled ? 'Mute' : 'Unmute'}
-      >
-        {audioEnabled ? (
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-            <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
-            <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
-          </svg>
-        ) : (
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-            <line x1="23" y1="9" x2="17" y2="15" />
-            <line x1="17" y1="9" x2="23" y2="15" />
-          </svg>
-        )}
-      </button>
-      )}
-
       {/* Paused indicator — appears when the viewer taps the video to pause it */}
       {paused && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
@@ -805,15 +795,108 @@ const VideoCard = forwardRef(function VideoCard(
         </div>
       )}
 
-      {/* ClipPulse watermark — always visible (even in focus mode / while
-          scrolling) so shared screen recordings stay attributed. Subtle,
-          semi-transparent, bottom-right, non-interactive. */}
-      <div
-        className="absolute right-3 bottom-[4.75rem] z-[6] pointer-events-none select-none text-[10px] font-bold tracking-wide text-white/60 drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]"
-        aria-hidden="true"
-      >
-        ⚡ ClipPulse @{video.user?.username}
-      </div>
+      {/* Bottom control bar (TikTok-style): play/pause, scrubber + time, Auto scroll,
+          speed, volume, more. data-no-swipe keeps scrubbing from triggering feed swipes. */}
+      {!isPhoto && (
+        <div
+          data-no-swipe
+          onClick={(e) => e.stopPropagation()}
+          className={`absolute inset-x-0 bottom-0 z-[8] px-3 pt-8 pb-2 bg-gradient-to-t from-black/75 to-transparent text-white transition-opacity duration-200 ${
+            clearDisplay || focusMode ? 'opacity-0 pointer-events-none' : ''
+          }`}
+        >
+          <div
+            ref={scrubRef}
+            role="slider"
+            tabIndex={0}
+            aria-label="Seek"
+            aria-valuemin={0}
+            aria-valuemax={Math.round(playerTotal)}
+            aria-valuenow={Math.round(currentTime)}
+            onPointerDown={(e) => {
+              e.currentTarget.setPointerCapture?.(e.pointerId);
+              scrubbingRef.current = true;
+              scrubTo(e);
+            }}
+            onPointerMove={(e) => scrubbingRef.current && scrubTo(e)}
+            onPointerUp={() => (scrubbingRef.current = false)}
+            onPointerCancel={() => (scrubbingRef.current = false)}
+            onKeyDown={(e) => {
+              if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+              e.preventDefault();
+              const el = videoRef.current;
+              if (!el) return;
+              el.currentTime = Math.max(0, Math.min(playerTotal || el.currentTime, el.currentTime + (e.key === 'ArrowRight' ? 5 : -5)));
+              setCurrentTime(el.currentTime);
+            }}
+            className="group h-5 flex items-center cursor-pointer touch-none outline-none"
+          >
+            <div className="relative w-full h-1 group-hover:h-1.5 rounded-full bg-white/30 transition-all">
+              <div className="absolute inset-y-0 left-0 rounded-full bg-white" style={{ width: `${playerTotal ? Math.min(100, (currentTime / playerTotal) * 100) : 0}%` }} />
+              <div
+                className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-white shadow opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity"
+                style={{ left: `${playerTotal ? Math.min(100, (currentTime / playerTotal) * 100) : 0}%` }}
+              />
+            </div>
+          </div>
+
+          <div className="mt-0.5 flex items-center gap-2 sm:gap-3 text-xs font-bold tracking-tight tabular-nums">
+            <button type="button" onClick={togglePlayPause} aria-label={paused ? 'Play' : 'Pause'} className="p-1 -m-1 hover:scale-110 transition-transform">
+              {paused ? (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+              ) : (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zM14 5h4v14h-4z" /></svg>
+              )}
+            </button>
+            <span className="whitespace-nowrap">{fmtClock(currentTime)} / {fmtClock(playerTotal)}</span>
+            <span className="flex-1" />
+            <button
+              type="button"
+              role="switch"
+              aria-checked={!!prefs.autoScroll}
+              onClick={() => setFeedPlayerPref('autoScroll', !prefs.autoScroll)}
+              className="flex items-center gap-1.5 whitespace-nowrap"
+            >
+              <span className="text-[11px]">Auto scroll</span>
+              <span className={`relative w-7 h-4 rounded-full transition-colors ${prefs.autoScroll ? 'bg-amber-500' : 'bg-white/30'}`}>
+                <span className={`absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white transition-transform ${prefs.autoScroll ? 'translate-x-3' : ''}`} />
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const speeds = [0.5, 1, 1.5, 2];
+                const i = speeds.indexOf(prefs.speed);
+                setFeedPlayerPref('speed', speeds[(i + 1) % speeds.length]);
+              }}
+              aria-label="Playback speed"
+              className="px-1 min-w-[2.25rem] text-center hover:text-amber-300"
+            >
+              {Number(prefs.speed || 1).toFixed(1)}x
+            </button>
+            <button type="button" onClick={toggleAudio} aria-label={audioEnabled ? 'Mute' : 'Unmute'} className="p-1 -m-1 hover:scale-110 transition-transform">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                {audioEnabled ? (
+                  <>
+                    <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+                  </>
+                ) : (
+                  <>
+                    <line x1="23" y1="9" x2="17" y2="15" />
+                    <line x1="17" y1="9" x2="23" y2="15" />
+                  </>
+                )}
+              </svg>
+            </button>
+            <button type="button" onClick={() => setShowLongPressMenu(true)} aria-label="More options" className="p-1 -m-1 hover:scale-110 transition-transform">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" /></svg>
+            </button>
+          </div>
+        </div>
+      )}
+      </div>{/* /player box */}
 
       {/* Everything below is "chrome" that focus mode (F) hides so the video
           is unobstructed, and that also fades out while the feed is being
@@ -821,24 +904,18 @@ const VideoCard = forwardRef(function VideoCard(
       <div
         className={
           focusMode || isScrolling || clearDisplay
-            ? 'opacity-0 pointer-events-none transition-opacity duration-200'
-            : 'opacity-100 transition-opacity duration-300'
+            ? 'shrink-0 opacity-0 pointer-events-none transition-opacity duration-200'
+            : 'shrink-0 opacity-100 transition-opacity duration-300'
         }
       >
-        {/* Legibility gradient — sits behind the caption/rail so text stays
-            readable over bright video. Purely visual, never intercepts taps. */}
-        <div className="absolute inset-x-0 bottom-0 h-72 bg-gradient-to-t from-black/80 via-black/40 to-transparent pointer-events-none lg:rounded-b-2xl" />
-
         {/* Caption + creator — bottom-24 clears the fixed bottom nav on mobile */}
         <div
-          className={`absolute bottom-24 left-10 right-24 lg:right-6 lg:bottom-8 lg:left-6 text-white font-bold drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] ${
-            // Expanded captions can get tall: cap the height and let them
-            // scroll internally so they never run under the top header, and
-            // keep extra padding between the text and the bottom nav.
-            isExpanded ? 'pb-4 max-h-[50dvh] overflow-y-auto' : ''
+          className={`px-4 pt-3 pb-3 pr-20 lg:pr-4 text-white font-bold ${
+            // Expanded captions can get tall: cap the height and scroll inside the block.
+            isExpanded ? 'max-h-[30dvh] overflow-y-auto' : ''
           }`}
         >
-          <a href={`/profile/${video.user?.id}`} className="font-display text-2xl font-extrabold tracking-tight text-white">
+          <a href={`/profile/${video.user?.id}`} className="font-extrabold text-base tracking-tight text-white">
             @{video.user?.username}
           </a>
           {video.caption && (
@@ -857,7 +934,7 @@ const VideoCard = forwardRef(function VideoCard(
                     setIsExpanded((v) => !v);
                   }}
                   aria-expanded={isExpanded}
-                  className="mt-0.5 py-1 text-sm font-extrabold tracking-tight text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] underline-offset-2 active:opacity-70"
+                  className="mt-0.5 py-1 text-sm font-extrabold tracking-tight text-white underline-offset-2 active:opacity-70"
                 >
                   {isExpanded ? 'less' : '...more'}
                 </button>
@@ -893,7 +970,7 @@ const VideoCard = forwardRef(function VideoCard(
             Pure white icons + heavy drop shadows (rather than the app's
             softer `bone` token) so these stay legible over any video
             content, TikTok-style. */}
-        <div className="absolute bottom-20 right-6 flex flex-col items-center gap-5 lg:bottom-0 lg:right-auto lg:left-full lg:ml-5">
+        <div className="absolute bottom-20 right-6 flex flex-col items-center gap-5 lg:bottom-24 lg:right-auto lg:left-full lg:ml-5">
           {!isOwnVideo && (
             <a href={`/profile/${video.user?.id}`} className="relative block w-11 h-11 mb-1">
               <span className="block w-11 h-11 rounded-full overflow-hidden border-2 border-white shadow-[0_2px_6px_rgba(0,0,0,0.6)] bg-ink2">
@@ -983,30 +1060,6 @@ const VideoCard = forwardRef(function VideoCard(
             </button>
           )}
           </div>
-          <button
-            type="button"
-            onClick={toggleAudio}
-            className="hidden lg:flex flex-col items-center gap-1 p-2 -m-2 text-white hover:scale-110 transition-transform"
-            aria-label={audioEnabled ? 'Mute' : 'Unmute'}
-          >
-            <svg className="w-8 h-8 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-              {audioEnabled ? (
-                <>
-                  <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
-                  <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
-                </>
-              ) : (
-                <>
-                  <line x1="23" y1="9" x2="17" y2="15" />
-                  <line x1="17" y1="9" x2="23" y2="15" />
-                </>
-              )}
-            </svg>
-            <span className="text-xs font-extrabold tracking-tight text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
-              {audioEnabled ? 'Sound' : 'Muted'}
-            </span>
-          </button>
           <div className="relative" ref={menuRef}>
             <button
               onClick={() => setShowMenu((v) => !v)}

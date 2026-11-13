@@ -4,7 +4,6 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 're
 import { useCameraDevices } from '../lib/useCameraDevices';
 import { describeCameraError, openCameraStream } from '../lib/cameraStream';
 import CameraDeviceSelect from './CameraDeviceSelect';
-import { drawWatermark } from '../lib/watermark';
 import {
   computeDrawRect,
   createBeautyRenderer,
@@ -332,7 +331,7 @@ const CameraRecorder = forwardRef(function CameraRecorder(
   //
   // Per frame: the camera frame goes through a WebGL pass (skin smoothing +
   // colour look, see lib/beautyRenderer.js) into an offscreen canvas, which is
-  // copied onto this 2D canvas; effects, text and the watermark are then drawn
+  // copied onto this 2D canvas; effects and text are then drawn
   // on top in 2D. If WebGL is unavailable the base layer falls back to a
   // plain 2D draw with a CSS filter.
   //
@@ -496,8 +495,8 @@ const CameraRecorder = forwardRef(function CameraRecorder(
       // 3. Text overlay, topmost.
       drawTextOverlay(ctx, textOverlayRef.current, w, h);
 
-      // 4. ClipPulse watermark — last, so nothing covers it.
-      drawWatermark(ctx, usernameRef.current, w, h);
+      // (No watermark is burned into recordings any more: the ClipPulse mark and creator tag
+      // are stamped only when a viewer downloads the clip — see lib/downloadWithWatermark.js.)
 
       frame += 1;
     }

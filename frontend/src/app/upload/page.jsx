@@ -1466,23 +1466,6 @@ function BottomCaptureControls({
   onToggleFavoriteEffect,
   onOpenFavorites,
 }) {
-  const DURATION_TABS = [
-    { id: '10m', label: '10m' },
-    { id: '60s', label: '60s' },
-    { id: '15s', label: '15s' },
-    { id: 'photo', label: 'PHOTO' },
-    { id: 'text', label: 'TEXT' },
-  ];
-  // The two flanking each side of the shutter — a quick-access subset, not
-  // the full set (that's what the Filters icon in the right column opens
-  // via FilterSheet). Index 0 is "Original", so these start at Beautify.
-  const leftFilters = FILTERS.slice(1, 3);
-  const rightFilters = FILTERS.slice(3, 5);
-  const flankIds = [...leftFilters, ...rightFilters].map((f) => f.id);
-  // Slower refresh than the sheet (these sit over the live preview all the
-  // time) and fully paused while recording.
-  const registerFlank = useLensPreviews(flankIds, drawFilterPreview, { intervalMs: 1000, paused: isRecording });
-
   return (
     <div className="absolute bottom-0 inset-x-0 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
       <div className="mb-2">
@@ -1495,35 +1478,7 @@ function BottomCaptureControls({
         />
       </div>
 
-      <div className="flex justify-center gap-2 overflow-x-auto no-scrollbar px-6 mb-4">
-        {DURATION_TABS.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => onSelectDuration(t.id)}
-            disabled={isRecording}
-            className={`shrink-0 px-3 py-1 font-mono text-[11px] uppercase tracking-widest rounded-full transition-colors disabled:opacity-40 ${
-              durationMode === t.id ? 'text-amber-400 font-bold' : 'text-white/70'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
       <div className="flex items-center justify-center gap-5 px-6">
-        {leftFilters.map((f) => (
-          <LensPreview
-            key={f.id}
-            lens={f}
-            active={activeFilterId === f.id}
-            onSelect={onSelectFilter}
-            register={registerFlank}
-            sizeClass="w-10 h-10"
-            canvasSize={80}
-            label={false}
-          />
-        ))}
-
         <ShutterButton
           recording={isRecording}
           secondsLeft={recordingSecondsLeft}
@@ -1531,18 +1486,6 @@ function BottomCaptureControls({
           onPress={onShutterPress}
         />
 
-        {rightFilters.map((f) => (
-          <LensPreview
-            key={f.id}
-            lens={f}
-            active={activeFilterId === f.id}
-            onSelect={onSelectFilter}
-            register={registerFlank}
-            sizeClass="w-10 h-10"
-            canvasSize={80}
-            label={false}
-          />
-        ))}
       </div>
 
       <div className="flex items-center justify-between px-6 mt-4">
