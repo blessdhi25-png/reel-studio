@@ -620,14 +620,15 @@ export default function FeedPage() {
 
       {/* Mobile Feed */}
       {isDesktop === false && (
-        <div className="h-full w-full flex-1 min-h-0 pt-14">
+        <div className="pt-16 pb-20 lg:pt-0 lg:pb-0 h-full w-full flex-1 min-h-0 flex flex-col items-center">
           <div
             ref={mobileContainerRef}
             className="feed-scroll h-full w-full overflow-y-scroll snap-y snap-mandatory"
             {...scrollHandlers}
           >
             {videos.map((video, i) => (
-              <div key={video.id} className="h-dvh w-full snap-start">
+              <div key={video.id} className="h-full w-full snap-start flex justify-center">
+               <div className="h-full w-full max-w-sm rounded-2xl overflow-hidden">
                 <VideoCard
                   ref={(el) => { videoCardRefs.current[video.id] = el; }}
                   video={video}
@@ -641,20 +642,21 @@ export default function FeedPage() {
                   onToggleFollow={handleToggleFollow}
                   onDeleted={handleVideoDeleted}
                 />
+               </div>
               </div>
             ))}
             {loadingMore && (
-              <div className="h-dvh w-full snap-start">
+              <div className="h-full w-full snap-start">
                 <FeedSkeletonCard />
               </div>
             )}
             {videos.length === 0 && initialLoading && (
-              <div className="h-dvh w-full snap-start">
+              <div className="h-full w-full snap-start">
                 <FeedSkeletonCard />
               </div>
             )}
             {videos.length === 0 && !initialLoading && (
-              <div className="h-dvh flex items-center justify-center">
+              <div className="h-full flex items-center justify-center">
                 <p className="font-body text-smoke">No videos found for this filter.</p>
               </div>
             )}

@@ -221,7 +221,7 @@ export default function MenuPage() {
       </div>
 
       {/* ── Grid ── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto p-6 md:p-10">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto p-6 md:p-10 pb-28 lg:pb-12">
         {filteredCategories.map((cat) => (
           <div
             key={cat.key}
@@ -231,7 +231,7 @@ export default function MenuPage() {
               <span className="text-amber-500">
                 <cat.icon />
               </span>
-              <h2 className="font-body font-bold text-sm uppercase tracking-widest dark:text-white text-zinc-900">
+              <h2 className="font-extrabold text-xs uppercase tracking-wider text-neutral-500">
                 {cat.title}
               </h2>
             </div>
@@ -273,8 +273,8 @@ function MenuRow({ item, userId, balanceCents }) {
         {item.icon}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block font-medium dark:text-white text-zinc-900 text-sm">{item.title}</span>
-        <span className="block dark:text-zinc-400 text-zinc-500 text-xs truncate">{item.description}</span>
+        <span className="block font-bold text-sm text-neutral-900 dark:text-neutral-100">{item.title}</span>
+        <span className="block font-medium text-xs text-neutral-500 truncate">{item.description}</span>
       </span>
       {badge ? (
         <span className="shrink-0 font-mono text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-full bg-amber-500/15 text-amber-500 border border-amber-500/30">
