@@ -100,6 +100,7 @@ export default function BottomNav() {
     // paddingBottom overrides py-2's bottom padding so the bar still grows by the device's
     // home-indicator inset (otherwise the centred + button sits in the iOS swipe-up dead zone).
     <nav
+      data-bottom-nav
       className="fixed bottom-0 inset-x-0 z-50 lg:hidden bg-black border-t border-neutral-800 py-2"
       style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}
     >

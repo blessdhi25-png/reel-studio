@@ -84,6 +84,7 @@ export default function FeedPage() {
   const [celebration, setCelebration] = useState(null);
 
   const [isDesktop, setIsDesktop] = useState(null);
+  const [bottomNavH, setBottomNavH] = useState(null); // measured BottomNav height (px) so the mobile feed ends exactly at its top edge
 
   // Background sync / offline state
   const [pendingNew, setPendingNew] = useState([]); // newer clips fetched in the background, not yet in the feed
@@ -337,6 +338,20 @@ export default function FeedPage() {
     }
     el.scrollTo({ top: clamped * el.clientHeight, behavior: 'smooth' });
   }
+
+  // Measure the real bottom-nav height (it grows with the device's safe-area inset), so the
+  // feed fills the space above it with no gap and no overlap.
+  useEffect(() => {
+    if (isDesktop !== false) return undefined;
+    const nav = document.querySelector('[data-bottom-nav]');
+    if (!nav) return undefined;
+    const measure = () => setBottomNavH(Math.round(nav.getBoundingClientRect().height));
+    measure();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(measure);
+    ro.observe(nav);
+    return () => ro.disconnect();
+  }, [isDesktop]);
 
   // ---- Silent background refresh, pruning, offline media cache ----
   const MAX_FEED_VIDEOS = 30; // sliding window of clips kept in React state
@@ -620,15 +635,15 @@ export default function FeedPage() {
 
       {/* Mobile Feed */}
       {isDesktop === false && (
-        <div className="pt-16 pb-20 lg:pt-0 lg:pb-0 h-full w-full flex-1 min-h-0 flex flex-col items-center">
+        <div className="pt-16 pb-20 lg:pt-0 lg:pb-0 h-full w-full flex-1 min-h-0 flex flex-col items-center" style={bottomNavH ? { paddingBottom: bottomNavH } : undefined}>
           <div
             ref={mobileContainerRef}
             className="feed-scroll h-full w-full overflow-y-scroll snap-y snap-mandatory"
             {...scrollHandlers}
           >
             {videos.map((video, i) => (
-              <div key={video.id} className="h-full w-full snap-start flex justify-center">
-               <div className="h-full w-full max-w-sm rounded-2xl overflow-hidden">
+              <div key={video.id} className="h-full w-full snap-start flex items-center justify-center relative">
+               <div className="h-full w-full">
                 <VideoCard
                   ref={(el) => { videoCardRefs.current[video.id] = el; }}
                   video={video}
