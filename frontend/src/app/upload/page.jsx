@@ -15,7 +15,6 @@ import DesktopUploadLanding from '@/components/DesktopUploadLanding';
 import TextOverlayEditor from '@/components/TextOverlayEditor';
 import { stitchClips } from '@/lib/stitchClips';
 import { templateSetup } from '@/lib/templates';
-import { FilterSheet, LensPreview, useLensPreviews } from '@/components/studio/LensPicker';
 import { DEFAULT_FILTER_ID, FILTERS } from '@/lib/cameraFilters';
 
 const CAPTION_MAX = 2200;
@@ -960,16 +959,6 @@ function UploadPageInner() {
             </div>
           )}
 
-          {showFilterGrid && (
-            <FilterSheet
-              activeId={activeFilterId}
-              onSelect={setActiveFilterId}
-              onClose={() => setShowFilterGrid(false)}
-              drawPreview={drawFilterPreview}
-              paused={isRecording}
-            />
-          )}
-
           {showFavoritesDrawer && (
             <FavoritesDrawer
               favoriteIds={favoriteEffectIds}
@@ -1197,7 +1186,6 @@ function RightToolColumn({
       onClick: onCycleTimer,
       active: timerSeconds > 0,
     },
-    { key: 'filters', icon: FilterIcon, label: 'Filters', onClick: onOpenFilters, active: false },
     { key: 'mic', icon: MicIcon, label: micOn ? 'Mic' : 'Muted', onClick: onToggleMic, active: !micOn, muted: !micOn },
     { key: 'aspect', icon: ExpandIcon, label: 'Expand', onClick: onToggleAspect, active: expandedAspect },
   ];
