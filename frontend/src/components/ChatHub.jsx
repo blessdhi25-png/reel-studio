@@ -302,7 +302,7 @@ export default function ChatHub() {
         // it. z-50 also fixes a separate issue: this and BottomNav
         // (z-40) were tied, so which one visually won any overlap came
         // down to DOM paint order rather than anything intentional.
-        className="fixed bottom-28 left-6 lg:left-24 xl:left-[17rem] z-40 bottom-[calc(7rem+env(safe-area-inset-bottom))] p-3 rounded-full bg-zinc-900/90 border border-zinc-700 text-yellow-400 shadow-xl hover:scale-105 transition"
+        className={`${pathname === '/' ? 'lg:hidden ' : ''}fixed bottom-28 left-6 lg:left-24 xl:left-[17rem] z-40 bottom-[calc(7rem+env(safe-area-inset-bottom))] p-3 rounded-full bg-zinc-900/90 border border-zinc-700 text-yellow-400 shadow-xl hover:scale-105 transition`}
       >
         <ChatBubbleIcon />
         {!open && totalBadge > 0 && (

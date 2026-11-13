@@ -99,7 +99,7 @@ function SidebarInner() {
     <>
       <aside
         aria-label="Sidebar"
-        className="hidden lg:flex flex-col w-20 xl:w-64 fixed left-0 top-0 h-screen bg-black border-r border-neutral-800 z-40 p-3 text-white overflow-y-auto"
+        className="hidden lg:flex flex-col w-20 xl:w-64 fixed left-0 top-0 h-screen bg-black border-r border-neutral-800 z-40 p-3 text-white overflow-y-auto overflow-x-hidden no-scrollbar [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
       >
         <Link href="/" className="flex items-center justify-center xl:justify-start gap-2.5 xl:px-1 mb-4" aria-label="ClipPulse home">
           <BrandMark />
