@@ -662,13 +662,13 @@ const VideoCard = forwardRef(function VideoCard(
   }));
 
   return (
-    <div ref={containerRef} className="relative h-full w-full flex items-center justify-center bg-ink">
+    <div ref={containerRef} className="relative h-full w-full flex items-center justify-center bg-ink lg:rounded-2xl lg:shadow-2xl lg:bg-neutral-950">
       {isPhoto ? (
         <div
           onClick={handleVideoTap}
           {...longPress.handlers}
           style={longPressStyle}
-          className="h-full w-full max-w-md mx-auto cursor-pointer touch-manipulation"
+          className="h-full w-full max-w-md mx-auto cursor-pointer touch-manipulation lg:max-w-none lg:mx-0 lg:rounded-2xl lg:overflow-hidden"
         >
           <PhotoMedia
             src={shouldLoad ? video.videoUrl : null}
@@ -700,7 +700,7 @@ const VideoCard = forwardRef(function VideoCard(
             if (Number.isFinite(d)) setLiveDuration(d);
             applySpeed();
           }}
-          className="h-full w-full max-w-md object-cover mx-auto cursor-pointer touch-manipulation"
+          className="h-full w-full max-w-md object-cover mx-auto cursor-pointer touch-manipulation lg:max-w-none lg:mx-0 lg:rounded-2xl"
           poster={video.thumbnailUrl}
         />
 
@@ -799,11 +799,11 @@ const VideoCard = forwardRef(function VideoCard(
       >
         {/* Legibility gradient — sits behind the caption/rail so text stays
             readable over bright video. Purely visual, never intercepts taps. */}
-        <div className="absolute inset-x-0 bottom-0 h-72 bg-gradient-to-t from-black/80 via-black/40 to-transparent pointer-events-none" />
+        <div className="absolute inset-x-0 bottom-0 h-72 bg-gradient-to-t from-black/80 via-black/40 to-transparent pointer-events-none lg:rounded-b-2xl" />
 
         {/* Caption + creator — bottom-24 clears the fixed bottom nav on mobile */}
         <div
-          className={`absolute bottom-24 left-10 right-24 text-white font-bold drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] ${
+          className={`absolute bottom-24 left-10 right-24 lg:right-6 lg:bottom-8 lg:left-6 text-white font-bold drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] ${
             // Expanded captions can get tall: cap the height and let them
             // scroll internally so they never run under the top header, and
             // keep extra padding between the text and the bottom nav.
@@ -865,7 +865,7 @@ const VideoCard = forwardRef(function VideoCard(
             Pure white icons + heavy drop shadows (rather than the app's
             softer `bone` token) so these stay legible over any video
             content, TikTok-style. */}
-        <div className="absolute bottom-24 right-6 flex flex-col items-center gap-5">
+        <div className="absolute bottom-24 right-6 flex flex-col items-center gap-5 lg:bottom-0 lg:right-auto lg:left-full lg:ml-5">
           {!isOwnVideo && (
             <a href={`/profile/${video.user?.id}`} className="relative block w-11 h-11 mb-1">
               <span className="block w-11 h-11 rounded-full overflow-hidden border-2 border-white shadow-[0_2px_6px_rgba(0,0,0,0.6)] bg-ink2">

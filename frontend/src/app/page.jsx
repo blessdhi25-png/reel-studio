@@ -521,6 +521,21 @@ export default function FeedPage() {
         </div>
       )}
 
+      {/* lg+: compact account shortcut, top-right */}
+      {!focusMode && isDesktop === true && (
+        <a
+          href="/profile"
+          aria-label="Your profile"
+          className="fixed top-4 right-6 z-40 hidden lg:flex w-10 h-10 rounded-full overflow-hidden bg-zinc-800 border border-zinc-600 hover:border-amber-400 items-center justify-center font-extrabold text-amber-400 text-sm shadow-lg transition-colors"
+        >
+          {user?.avatarUrl ? (
+            <img src={user.avatarUrl} alt="" className="w-full h-full object-cover" />
+          ) : (
+            user?.username?.[0]?.toUpperCase() || '?'
+          )}
+        </a>
+      )}
+
       {/* lg+: the top header bar is gone (the sidebar carries navigation); the feed-specific
           controls it held float over the top of the feed. */}
       {!focusMode && isDesktop === true && (
@@ -541,14 +556,6 @@ export default function FeedPage() {
               </button>
             ))}
             <span className="w-px h-5 bg-neutral-700 mx-1" />
-            <button
-              type="button"
-              onClick={() => setIsMuted((prev) => !prev)}
-              aria-label={isMuted ? 'Unmute' : 'Mute'}
-              className="px-3 py-1.5 rounded-full text-neutral-300 hover:text-white"
-            >
-              {isMuted ? '🔇' : '🔊'}
-            </button>
             <button
               type="button"
               onClick={() => setFiltersOpen(true)}
@@ -573,7 +580,7 @@ export default function FeedPage() {
                 {...scrollHandlers}
               >
                 {videos.map((video, i) => (
-                  <div key={video.id} className="h-full w-full snap-start lg:h-[88vh] lg:max-w-[560px] lg:shrink-0 lg:snap-center lg:snap-always lg:flex lg:items-center lg:justify-center lg:relative lg:mb-8 lg:rounded-2xl lg:overflow-hidden lg:shadow-2xl lg:bg-neutral-950">
+                  <div key={video.id} className="h-full w-full snap-start lg:h-[88vh] lg:max-w-[560px] lg:shrink-0 lg:snap-center lg:snap-always lg:flex lg:items-center lg:justify-center lg:relative lg:mb-8">
                     <VideoCard
                       ref={(el) => { videoCardRefs.current[video.id] = el; }}
                       video={video}
