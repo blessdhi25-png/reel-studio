@@ -166,6 +166,14 @@ const VideoCard = forwardRef(function VideoCard(
   const [showSoundPicker, setShowSoundPicker] = useState(false);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+  const toggleAudio = () => {
+    setAudioEnabled((prev) => {
+      const next = !prev;
+      try { window.localStorage.setItem('feedAudioEnabled', String(next)); } catch {}
+      onMuteChange?.(!next);
+      return next;
+    });
+  };
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [bookmarked, setBookmarked] = useState(Boolean(video.isBookmarked));
@@ -739,14 +747,9 @@ const VideoCard = forwardRef(function VideoCard(
         type="button"
         onClick={(e) => {
           e.stopPropagation();
-          setAudioEnabled((prev) => {
-            const next = !prev;
-            window.localStorage.setItem('feedAudioEnabled', String(next));
-            onMuteChange?.(!next);
-            return next;
-          });
+          toggleAudio();
         }}
-        className={`absolute top-4 right-4 z-10 w-9 h-9 rounded-full bg-ink/50 flex items-center justify-center text-bone transition-opacity duration-200 ${clearDisplay ? 'opacity-0 pointer-events-none' : ''}`}
+        className={`lg:hidden absolute top-4 right-4 z-10 w-9 h-9 rounded-full bg-ink/50 flex items-center justify-center text-bone transition-opacity duration-200 ${clearDisplay ? 'opacity-0 pointer-events-none' : ''}`}
         aria-label={audioEnabled ? 'Mute' : 'Unmute'}
       >
         {audioEnabled ? (
@@ -911,6 +914,7 @@ const VideoCard = forwardRef(function VideoCard(
               {commentCount}
             </span>
           </button>
+          <div className="contents lg:hidden">
           <button
             onClick={() => {
               if (!localStorage.getItem('token')) {
@@ -950,6 +954,31 @@ const VideoCard = forwardRef(function VideoCard(
               </span>
             </button>
           )}
+          </div>
+          <button
+            type="button"
+            onClick={toggleAudio}
+            className="hidden lg:flex flex-col items-center gap-1 p-2 -m-2 text-white hover:scale-110 transition-transform"
+            aria-label={audioEnabled ? 'Mute' : 'Unmute'}
+          >
+            <svg className="w-8 h-8 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+              {audioEnabled ? (
+                <>
+                  <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                  <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+                </>
+              ) : (
+                <>
+                  <line x1="23" y1="9" x2="17" y2="15" />
+                  <line x1="17" y1="9" x2="23" y2="15" />
+                </>
+              )}
+            </svg>
+            <span className="text-xs font-extrabold tracking-tight text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+              {audioEnabled ? 'Sound' : 'Muted'}
+            </span>
+          </button>
           <div className="relative" ref={menuRef}>
             <button
               onClick={() => setShowMenu((v) => !v)}
@@ -960,6 +989,29 @@ const VideoCard = forwardRef(function VideoCard(
             </button>
             {showMenu && (
               <div className="absolute bottom-full right-0 mb-2 bg-ink2 border border-smoke/20 rounded-sprocket overflow-hidden z-10 w-40">
+                <button
+                  onClick={() => {
+                    setShowMenu(false);
+                    if (!localStorage.getItem('token')) {
+                      window.location.href = '/login';
+                      return;
+                    }
+                    setShowSaveModal(true);
+                  }}
+                  className="hidden lg:block w-full text-left px-4 py-2.5 text-xs text-bone hover:bg-smoke/10 font-body font-bold tracking-tight"
+                >
+                  {bookmarked ? 'Saved' : 'Save'} · {bookmarkCount}
+                </button>
+                <button
+                  onClick={() => {
+                    setShowMenu(false);
+                    if (video.user?.stripeOnboarded) setShowTip(true);
+                    else setShowTipUnavailable(true);
+                  }}
+                  className="hidden lg:block w-full text-left px-4 py-2.5 text-xs text-bone hover:bg-smoke/10 font-body font-bold tracking-tight"
+                >
+                  Tip creator
+                </button>
                 {isOwnVideo ? (
                   <button
                     onClick={() => {

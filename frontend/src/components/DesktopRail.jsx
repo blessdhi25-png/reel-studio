@@ -47,11 +47,11 @@ const DesktopRail = forwardRef(function DesktopRail({ video, onToggleFollow, cur
   return (
     <div className="flex flex-col h-full w-full max-w-md border-l border-smoke/10 bg-ink2/40 pb-20 lg:max-w-none lg:border-l-0 lg:pb-4 lg:min-h-0">
       {/* Creator profile + video metadata */}
-      <div className="p-6 border-b border-smoke/10 shrink-0">
+      <div className="p-4 xl:p-4 border-b border-smoke/10 shrink-0">
         <div className="flex items-center gap-3">
           <a
             href={`/profile/${video.user?.id}`}
-            className="w-12 h-12 rounded-full overflow-hidden bg-ink2 border border-smoke/20 shrink-0"
+            className="w-10 h-10 rounded-full overflow-hidden bg-ink2 border border-smoke/20 shrink-0"
           >
             {video.user?.avatarUrl ? (
               <img src={video.user.avatarUrl} alt="" className="w-full h-full object-cover" />
@@ -63,14 +63,14 @@ const DesktopRail = forwardRef(function DesktopRail({ video, onToggleFollow, cur
           </a>
           <a
             href={`/profile/${video.user?.id}`}
-            className="font-display text-lg text-bone tracking-wide truncate flex-1 min-w-0"
+            className="font-extrabold text-sm text-neutral-100 tracking-tight truncate flex-1 min-w-0"
           >
             @{video.user?.username}
           </a>
           {!isSelf && (
             <button
               onClick={toggleFollow}
-              className={`px-4 py-1.5 rounded-sprocket font-body text-xs font-semibold shrink-0 ${
+              className={`px-4 py-1.5 rounded-sprocket font-bold text-xs shrink-0 ${
                 following ? 'border border-smoke/30 text-smoke' : 'bg-reel text-ink'
               }`}
             >
@@ -81,14 +81,14 @@ const DesktopRail = forwardRef(function DesktopRail({ video, onToggleFollow, cur
 
         {!isSelf && <TipWidget video={video} />}
 
-        {video.caption && <p className="font-body text-sm text-bone mt-4">{video.caption}</p>}
+        {video.caption && <p className="font-semibold text-sm text-neutral-100 leading-snug mt-3">{video.caption}</p>}
 
         {tags.length > 0 && (
           <div className="flex flex-wrap gap-2 mt-3">
             {tags.map((t) => (
               <span
                 key={t}
-                className="font-mono text-[11px] text-reel border border-reel/30 rounded-sprocket px-2 py-0.5"
+                className="font-bold text-[11px] text-reel border border-reel/30 rounded-sprocket px-2 py-0.5"
               >
                 {t}
               </span>
@@ -96,7 +96,7 @@ const DesktopRail = forwardRef(function DesktopRail({ video, onToggleFollow, cur
           </div>
         )}
 
-        <p className="font-mono text-[10px] text-smoke uppercase tracking-widest mt-4">
+        <p className="font-extrabold text-[11px] text-neutral-400 uppercase tracking-wider mt-3">
           {video.videoType === 'long' ? 'Feature' : 'Short'} · {commentCount} comments
         </p>
       </div>

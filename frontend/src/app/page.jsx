@@ -573,7 +573,7 @@ export default function FeedPage() {
                 {...scrollHandlers}
               >
                 {videos.map((video, i) => (
-                  <div key={video.id} className="h-full w-full snap-start lg:h-[88vh] lg:max-w-md lg:shrink-0 lg:snap-center lg:snap-always lg:flex lg:items-center lg:justify-center lg:relative lg:mb-8 lg:rounded-2xl lg:overflow-hidden lg:shadow-2xl lg:bg-neutral-950">
+                  <div key={video.id} className="h-full w-full snap-start lg:h-[88vh] lg:max-w-[560px] lg:shrink-0 lg:snap-center lg:snap-always lg:flex lg:items-center lg:justify-center lg:relative lg:mb-8 lg:rounded-2xl lg:overflow-hidden lg:shadow-2xl lg:bg-neutral-950">
                     <VideoCard
                       ref={(el) => { videoCardRefs.current[video.id] = el; }}
                       video={video}
@@ -591,12 +591,12 @@ export default function FeedPage() {
                   </div>
                 ))}
                 {loadingMore && (
-                  <div className="h-full w-full snap-start lg:h-[88vh] lg:max-w-md lg:shrink-0 lg:rounded-2xl lg:overflow-hidden lg:mb-8">
+                  <div className="h-full w-full snap-start lg:h-[88vh] lg:max-w-[560px] lg:shrink-0 lg:rounded-2xl lg:overflow-hidden lg:mb-8">
                     <FeedSkeletonCard />
                   </div>
                 )}
                 {videos.length === 0 && initialLoading && (
-                  <div className="h-full w-full snap-start lg:h-[88vh] lg:max-w-md lg:shrink-0 lg:rounded-2xl lg:overflow-hidden lg:mb-8">
+                  <div className="h-full w-full snap-start lg:h-[88vh] lg:max-w-[560px] lg:shrink-0 lg:rounded-2xl lg:overflow-hidden lg:mb-8">
                     <FeedSkeletonCard />
                   </div>
                 )}
@@ -610,7 +610,7 @@ export default function FeedPage() {
           </div>
 
           {!focusMode && activeVideo && (
-            <div className="w-full max-w-md shrink-0 bg-zinc-900/60 border border-zinc-800 rounded-2xl backdrop-blur-md shadow-2xl p-4 overflow-hidden lg:hidden xl:block xl:w-[420px] xl:max-w-none xl:h-[88vh] xl:self-center xl:mr-6 lg:min-h-0 lg:overflow-y-auto lg:p-0 lg:bg-zinc-900/80">
+            <div className="w-full max-w-md shrink-0 bg-zinc-900/60 border border-zinc-800 rounded-2xl backdrop-blur-md shadow-2xl p-4 overflow-hidden lg:hidden xl:block xl:w-[320px] xl:max-w-[320px] xl:h-[88vh] xl:self-center xl:mr-6 lg:min-h-0 lg:overflow-y-auto lg:p-0 lg:bg-zinc-900/80">
               <DesktopRail
                 ref={desktopRailRef}
                 video={activeVideo}

@@ -155,13 +155,13 @@ const CommentsPanel = forwardRef(function CommentsPanel(
 
   const body = (
     <>
-      <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
         {loading && <LoadingSpinner label="Loading…" />}
         {!loading && comments.length === 0 && (
           <div className="h-full flex flex-col items-center justify-center text-center py-12 gap-2">
             <span className="text-4xl text-zinc-400">💬</span>
-            <p className="font-body text-zinc-400 text-sm">No comments yet</p>
-            <p className="font-body text-zinc-400/70 text-xs">Be the first to say something.</p>
+            <p className="font-bold tracking-tight text-neutral-300 text-sm">No comments yet</p>
+            <p className="font-semibold text-neutral-400 text-xs">Be the first to say something.</p>
           </div>
         )}
         {comments.map((c) => {
@@ -178,12 +178,12 @@ const CommentsPanel = forwardRef(function CommentsPanel(
                 isActive ? 'bg-reel/10 ring-1 ring-reel/40' : ''
               } ${c.pending ? 'opacity-60' : ''}`}
             >
-              <div className="w-8 h-8 rounded-full bg-reel/20 flex items-center justify-center font-mono text-xs text-reel shrink-0">
+              <div className="w-8 h-8 rounded-full bg-reel/20 flex items-center justify-center font-extrabold text-xs text-reel shrink-0">
                 {c.user?.username?.[0]?.toUpperCase() || '?'}
               </div>
               <div className="min-w-0">
-                <p className="font-body text-sm text-bone">
-                  <span className="text-reel">@{c.user?.username}</span>{' '}
+                <p className="font-semibold text-sm text-neutral-100 leading-snug tracking-tight break-words">
+                  <span className="font-extrabold text-reel">@{c.user?.username}</span>{' '}
                   {parts.map((p, i) =>
                     p.type === 'timestamp' ? (
                       <button
@@ -193,7 +193,7 @@ const CommentsPanel = forwardRef(function CommentsPanel(
                           e.stopPropagation();
                           handleSeek(p.seconds);
                         }}
-                        className="inline-flex items-center px-1.5 py-0.5 mx-0.5 rounded-sprocket bg-reel/20 text-reel font-mono text-xs align-middle hover:bg-reel/30 active:bg-reel/40"
+                        className="inline-flex items-center px-1.5 py-0.5 mx-0.5 rounded-sprocket bg-reel/20 text-reel font-bold text-xs align-middle hover:bg-reel/30 active:bg-reel/40"
                         title={`Jump to ${p.value}`}
                       >
                         ▶ {p.value}
@@ -203,7 +203,7 @@ const CommentsPanel = forwardRef(function CommentsPanel(
                     )
                   )}
                 </p>
-                <p className="font-mono text-[10px] text-smoke mt-1">
+                <p className="font-bold text-[11px] text-neutral-400 mt-1">
                   {c.pending ? 'Posting…' : new Date(c.createdAt).toLocaleDateString()}
                 </p>
               </div>
@@ -228,17 +228,17 @@ const CommentsPanel = forwardRef(function CommentsPanel(
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder="Add a comment… try a timestamp like 0:14"
-            className="flex-1 bg-zinc-800/80 border border-zinc-700 text-white font-body text-sm rounded-sprocket px-3 py-2 outline-none focus:ring-2 focus:ring-amber-500/50"
+            className="flex-1 bg-zinc-800/80 border border-zinc-700 text-white placeholder:text-neutral-400 placeholder:font-bold font-bold text-xs rounded-sprocket px-3 py-2 min-w-0 outline-none focus:ring-2 focus:ring-amber-500/50"
           />
           <button
             type="submit"
             disabled={posting || !text.trim()}
-            className="bg-amber-500 hover:bg-amber-400 text-black font-bold px-4 py-2 rounded-xl transition-all disabled:opacity-50 disabled:hover:bg-amber-500"
+            className="bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs px-4 py-2 rounded-xl transition-all disabled:opacity-50 disabled:hover:bg-amber-500"
           >
             Post
           </button>
         </div>
-        <p className="font-mono text-[10px] text-smoke/60 px-1">
+        <p className="font-semibold text-[11px] text-neutral-400 px-1 leading-snug">
           Timestamps like 0:14 or 1:25 become clickable chapter markers.
         </p>
       </form>
@@ -253,9 +253,9 @@ const CommentsPanel = forwardRef(function CommentsPanel(
     <div className="absolute inset-0 z-30 flex items-end" data-no-swipe>
       <div className="absolute inset-0 bg-ink/70" onClick={onClose} />
       <div className="relative w-full max-h-[70%] bg-ink2 rounded-t-2xl flex flex-col">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-smoke/10">
-          <p className="font-display text-xl text-bone tracking-wide">Comments</p>
-          <button onClick={onClose} className="text-smoke text-sm font-body">
+        <div className="flex items-center justify-between px-4 py-4 border-b border-smoke/10">
+          <p className="font-extrabold text-xs tracking-wider uppercase text-neutral-400">Comments</p>
+          <button onClick={onClose} className="text-neutral-300 text-xs font-bold">
             Close
           </button>
         </div>
