@@ -233,6 +233,8 @@ const VideoCard = forwardRef(function VideoCard(
   // rather than guessing from a character count.
   const captionRef = useRef(null);
   const [isExpanded, setIsExpanded] = useState(false);
+  const captionWrapRef = useRef(null);
+  const [captionBaseH, setCaptionBaseH] = useState(0);
   const [captionOverflows, setCaptionOverflows] = useState(false);
   useLayoutEffect(() => {
     const el = captionRef.current;
@@ -786,6 +788,34 @@ const VideoCard = forwardRef(function VideoCard(
         </div>
       )}
 
+      {/* Mobile-only mute toggle (the desktop control bar carries its own volume button). */}
+      {!isPhoto && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleAudio();
+          }}
+          className={`lg:hidden absolute top-4 right-4 z-10 w-9 h-9 rounded-full bg-ink/50 flex items-center justify-center text-bone transition-opacity duration-200 ${clearDisplay ? 'opacity-0 pointer-events-none' : ''}`}
+          aria-label={audioEnabled ? 'Mute' : 'Unmute'}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+            {audioEnabled ? (
+              <>
+                <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+              </>
+            ) : (
+              <>
+                <line x1="23" y1="9" x2="17" y2="15" />
+                <line x1="17" y1="9" x2="23" y2="15" />
+              </>
+            )}
+          </svg>
+        </button>
+      )}
+
       {/* Paused indicator — appears when the viewer taps the video to pause it */}
       {paused && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
@@ -795,13 +825,13 @@ const VideoCard = forwardRef(function VideoCard(
         </div>
       )}
 
-      {/* Bottom control bar (TikTok-style): play/pause, scrubber + time, Auto scroll,
+      {/* Bottom bar: the thin seek track shows on every viewport; the button row is lg+ only. Play/pause, scrubber + time, Auto scroll,
           speed, volume, more. data-no-swipe keeps scrubbing from triggering feed swipes. */}
       {!isPhoto && (
         <div
           data-no-swipe
           onClick={(e) => e.stopPropagation()}
-          className={`absolute inset-x-0 bottom-0 z-[8] px-3 pt-8 pb-2 bg-gradient-to-t from-black/75 to-transparent text-white transition-opacity duration-200 ${
+          className={`absolute inset-x-0 bottom-0 z-[8] lg:px-3 lg:pt-8 lg:pb-2 lg:bg-gradient-to-t lg:from-black/75 lg:to-transparent text-white transition-opacity duration-200 lg:mb-0 ${
             clearDisplay || focusMode ? 'opacity-0 pointer-events-none' : ''
           }`}
         >
@@ -829,9 +859,9 @@ const VideoCard = forwardRef(function VideoCard(
               el.currentTime = Math.max(0, Math.min(playerTotal || el.currentTime, el.currentTime + (e.key === 'ArrowRight' ? 5 : -5)));
               setCurrentTime(el.currentTime);
             }}
-            className="group h-5 flex items-center cursor-pointer touch-none outline-none"
+            className="group h-4 lg:h-5 flex items-end lg:items-center cursor-pointer touch-none outline-none"
           >
-            <div className="relative w-full h-1 group-hover:h-1.5 rounded-full bg-white/30 transition-all">
+            <div className="relative w-full h-1 group-hover:h-1.5 lg:rounded-full bg-white/25 transition-all cursor-pointer">
               <div className="absolute inset-y-0 left-0 rounded-full bg-white" style={{ width: `${playerTotal ? Math.min(100, (currentTime / playerTotal) * 100) : 0}%` }} />
               <div
                 className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-white shadow opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity"
@@ -840,7 +870,7 @@ const VideoCard = forwardRef(function VideoCard(
             </div>
           </div>
 
-          <div className="mt-0.5 flex items-center gap-2 sm:gap-3 text-xs font-bold tracking-tight tabular-nums">
+          <div className="hidden lg:flex items-center justify-between gap-3 px-1 py-2 text-xs font-bold tracking-tight tabular-nums">
             <button type="button" onClick={togglePlayPause} aria-label={paused ? 'Play' : 'Pause'} className="p-1 -m-1 hover:scale-110 transition-transform">
               {paused ? (
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
@@ -910,9 +940,18 @@ const VideoCard = forwardRef(function VideoCard(
       >
         {/* Caption + creator — bottom-24 clears the fixed bottom nav on mobile */}
         <div
-          className={`px-4 pt-3 pb-3 pr-20 lg:pr-4 text-white font-bold ${
-            // Expanded captions can get tall: cap the height and scroll inside the block.
-            isExpanded ? 'max-h-[30dvh] overflow-y-auto' : ''
+          ref={captionWrapRef}
+          className="relative px-3 py-2 pr-20 lg:pr-3"
+          style={isExpanded && captionBaseH ? { minHeight: captionBaseH } : undefined}
+        >
+        {/* Collapsed: sits in flow right under the player. Expanded: lifts off the flow and
+            overlays upward over the video (the wrapper keeps its height, so nothing reflows),
+            scrolling internally if it's long. */}
+        <div
+          className={`bg-black text-white p-2 rounded-lg font-bold ${
+            isExpanded
+              ? 'absolute bottom-2 left-3 right-20 lg:right-3 z-20 max-h-[45dvh] overflow-y-auto shadow-2xl ring-1 ring-white/10'
+              : ''
           }`}
         >
           <a href={`/profile/${video.user?.id}`} className="font-extrabold text-base tracking-tight text-white">
@@ -931,6 +970,7 @@ const VideoCard = forwardRef(function VideoCard(
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
+                    if (!isExpanded) setCaptionBaseH(captionWrapRef.current?.offsetHeight || 0); // keep the layout height while the text overlays
                     setIsExpanded((v) => !v);
                   }}
                   aria-expanded={isExpanded}
@@ -965,6 +1005,7 @@ const VideoCard = forwardRef(function VideoCard(
             </div>
           )}
         </div>
+        </div>{/* /caption wrapper */}
 
         {/* Engagement rail — bottom-24 clears the fixed bottom nav on mobile.
             Pure white icons + heavy drop shadows (rather than the app's
