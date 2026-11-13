@@ -1,5 +1,7 @@
 'use client';
 
+import { Fingerprint } from 'lucide-react';
+import { disableBiometric, getBiometricStatus, isBiometricSupported, registerBiometricCredential } from '@/lib/biometrics';
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTheme } from 'next-themes';
@@ -57,6 +59,36 @@ export default function SettingsDashboardPage() {
   const [avgSeconds, setAvgSeconds] = useState(null);
 
   const [confirmLogout, setConfirmLogout] = useState(false);
+
+  // Biometric lock (device-local; see lib/biometrics.js)
+  const [bioSupported, setBioSupported] = useState(false);
+  const [bioEnabled, setBioEnabled] = useState(false);
+  const [bioBusy, setBioBusy] = useState(false);
+  useEffect(() => {
+    if (!user?.id) return;
+    isBiometricSupported().then(setBioSupported);
+    getBiometricStatus().then((st) => setBioEnabled(!!st.enabled)).catch(() => {});
+  }, [user?.id]);
+
+  async function toggleBiometric(next) {
+    if (!user?.id || bioBusy) return;
+    setBioBusy(true);
+    try {
+      if (next) {
+        await registerBiometricCredential(user); // server issues the challenge, verifies and stores the public key
+        setBioEnabled(true);
+        toast.success('Biometric lock on');
+      } else {
+        await disableBiometric(user); // needs a server-verified fingerprint
+        setBioEnabled(false);
+        toast.success('Biometric lock off');
+      }
+    } catch (err) {
+      toast.error(err.message || "Couldn't change the biometric lock");
+    } finally {
+      setBioBusy(false);
+    }
+  }
 
   // Appearance (next-themes). Read only after mount to avoid a hydration mismatch.
   const { theme, setTheme } = useTheme();
@@ -241,6 +273,16 @@ export default function SettingsDashboardPage() {
           checked={dataSaver}
           onChange={setDataSaver}
         />
+        {bioSupported && (
+          <ToggleRow
+            icon={<Fingerprint className="w-5 h-5 text-amber-500" strokeWidth={2.5} />}
+            title="Biometric Security Lock"
+            subtitle="Require fingerprint to switch accounts or edit profile"
+            checked={bioEnabled}
+            disabled={bioBusy}
+            onChange={toggleBiometric}
+          />
+        )}
         <SettingsRow
           icon="🗂️"
           title="Storage & Cache"

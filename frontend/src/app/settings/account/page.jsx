@@ -8,6 +8,7 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
 import { MAX_ACCOUNTS } from '@/lib/accounts';
+import { verifyBiometric } from '@/lib/biometrics';
 import { SettingsGroup, SettingsPage, SettingsRow, VerifiedBadge } from '@/components/settings/SettingsUI';
 
 const BIO_MAX = 150;
@@ -142,6 +143,7 @@ export default function AccountDetailsPage() {
   const [form, setForm] = useState(null);
   const [currentPassword, setCurrentPassword] = useState('');
   const [saving, setSaving] = useState(false);
+  const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState(null);
   const [loadError, setLoadError] = useState(null);
 
@@ -192,9 +194,16 @@ export default function AccountDetailsPage() {
       externalLinks: form.links.filter((l) => l.label.trim() && l.url.trim()).map((l) => ({ label: l.label.trim(), url: l.url.trim() })),
     };
     if (emailChanging && saved.hasPassword) body.currentPassword = currentPassword;
+    setVerifying(true);
+    const bioCheck = await verifyBiometric(user.id, 'profile');
+    setVerifying(false);
+    if (!bioCheck.verified) {
+      setError('Fingerprint verification required to save changes');
+      return;
+    }
     setSaving(true);
     try {
-      const res = await api.updateAccountProfile(body);
+      const res = await api.updateAccountProfile(body, bioCheck.stepUpToken);
       setSaved(res);
       setForm(toForm(res));
       setCurrentPassword('');
@@ -293,10 +302,10 @@ export default function AccountDetailsPage() {
           {error && <p role="alert" className="text-sm font-bold text-red-400 mb-3 px-1">{error}</p>}
           <button
             type="submit"
-            disabled={!dirty || saving || (emailChanging && saved.hasPassword && !currentPassword)}
+            disabled={!dirty || saving || verifying || (emailChanging && saved.hasPassword && !currentPassword)}
             className="w-full py-4 rounded-2xl bg-amber-500 hover:bg-amber-400 text-black font-extrabold tracking-tight disabled:opacity-40 mb-6"
           >
-            {saving ? 'Saving…' : 'Save changes'}
+            {verifying ? 'Verifying Fingerprint…' : saving ? 'Saving…' : 'Save changes'}
           </button>
         </form>
       )}

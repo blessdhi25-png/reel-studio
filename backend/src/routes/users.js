@@ -1,6 +1,7 @@
 import { notInPrivateCommunity } from '../utils/communityVisibility.js';
 import { Router } from 'express';
 import prisma from '../config/db.js';
+import { requireBiometric } from '../middleware/biometric.js';
 import { requireAuth } from '../middleware/auth.js';
 import { notify } from '../utils/notify.js';
 import { uploadAvatar, uploadBanner } from '../utils/upload.js';
@@ -125,7 +126,7 @@ router.get('/:id', optionalAuth, asyncHandler(async (req, res) => {
   res.json({ ...user, totalLikes: likeSum._sum.likeCount || 0, blockedByMe });
 }));
 
-router.patch('/me', requireAuth, validate(updateProfileSchema), asyncHandler(async (req, res) => {
+router.patch('/me', requireAuth, requireBiometric('profile'), validate(updateProfileSchema), asyncHandler(async (req, res) => {
   // bannerUrl was missing here before — the frontend's edit-profile page
   // sends it (for the rare case it's set as a plain URL rather than via
   // the file-upload route below), but Prisma only writes fields explicitly

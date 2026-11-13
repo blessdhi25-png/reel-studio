@@ -1,5 +1,6 @@
 'use client';
 
+import { verifyBiometric } from '@/lib/biometrics';
 import BackButton from '@/components/BackButton';
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -19,6 +20,7 @@ export default function EditProfilePage() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [verifying, setVerifying] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [uploadingBanner, setUploadingBanner] = useState(false);
   const [error, setError] = useState(null);
@@ -92,10 +94,17 @@ export default function EditProfilePage() {
 
   async function handleSave(e) {
     e.preventDefault();
-    setSaving(true);
     setError(null);
+    setVerifying(true);
+    const bioCheck = await verifyBiometric(userId, 'profile');
+    setVerifying(false);
+    if (!bioCheck.verified) {
+      setError('Fingerprint verification required to save changes');
+      return;
+    }
+    setSaving(true);
     try {
-      const updated = await api.updateProfile({ displayName: displayName.trim(), bio: bio.trim() });
+      const updated = await api.updateProfile({ displayName: displayName.trim(), bio: bio.trim() }, bioCheck.stepUpToken);
       syncStoredUser({ displayName: updated.displayName });
       router.push(`/profile/${userId}`);
     } catch (err) {
@@ -199,10 +208,10 @@ export default function EditProfilePage() {
 
         <button
           type="submit"
-          disabled={saving}
+          disabled={saving || verifying}
           className="w-full py-3 rounded-xl bg-amber-500 text-black text-sm font-extrabold uppercase tracking-wider hover:bg-amber-400 transition-all disabled:opacity-50"
         >
-          {saving ? 'Saving…' : 'Save changes'}
+          {verifying ? 'Verifying Fingerprint…' : saving ? 'Saving…' : 'Save changes'}
         </button>
       </form>
     </div>

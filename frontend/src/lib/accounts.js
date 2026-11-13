@@ -51,3 +51,12 @@ export function updateAccountUser(id, patch) {
   write(next);
   return next;
 }
+
+// Biometric lock: swap an account's stored full session token for the server's
+// restricted "locked" token. It can't call any normal endpoint; the only way
+// back to a full session is passing the fingerprint prompt (lib/biometrics.js).
+export function lockAccount(id, lockedToken) {
+  const next = read().map((a) => (a.id === id ? { ...a, token: lockedToken, locked: true } : a));
+  write(next);
+  return next;
+}

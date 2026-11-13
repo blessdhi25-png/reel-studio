@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import prisma from '../config/db.js';
+import { requireBiometric } from '../middleware/biometric.js';
 import { requireAuth } from '../middleware/auth.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { validate } from '../middleware/validate.js';
@@ -29,7 +30,7 @@ router.get('/profile', requireAuth, asyncHandler(async (req, res) => {
 }));
 
 // Partial update: only the keys sent are written. '' clears phone/whatsapp/bio.
-router.patch('/profile', requireAuth, validate(updateAccountSchema), asyncHandler(async (req, res) => {
+router.patch('/profile', requireAuth, requireBiometric('profile'), validate(updateAccountSchema), asyncHandler(async (req, res) => {
   const { email, currentPassword, phone, bio, whatsapp, externalLinks } = req.body;
   const current = await prisma.user.findUnique({ where: { id: req.userId }, select: ACCOUNT_SELECT });
   if (!current) return res.status(404).json({ error: 'User not found' });

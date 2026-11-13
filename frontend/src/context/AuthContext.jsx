@@ -1,9 +1,10 @@
 'use client';
 
 import { clearVideoCache } from '../lib/offlineCache';
+import { lockActiveSession, unlockAccount } from '../lib/biometrics';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { deleteCookie, setCookie } from '../lib/cookies';
-import { getAccounts, removeAccount, saveAccount, updateAccountUser } from '../lib/accounts';
+import { getAccounts, lockAccount, removeAccount, saveAccount, updateAccountUser } from '../lib/accounts';
 import { API_BASE } from '../lib/api';
 
 const AuthContext = createContext(null);
@@ -141,21 +142,38 @@ export function AuthProvider({ children }) {
   const switchAccount = useCallback(async (id) => {
     const target = getAccounts().find((a) => a.id === id);
     if (!target) return { ok: false, error: 'That account is no longer saved on this device.' };
+    // Biometric lock (server-verified): an account that has it on is stored here under a
+    // restricted token. Entering it needs a fingerprint, which the server verifies against
+    // the public key it holds before issuing a real session token.
+    let token = target.token;
+    if (target.locked) {
+      const unlocked = await unlockAccount(target.token);
+      if (!unlocked.ok) return { ok: false, error: 'Fingerprint verification required to switch accounts' };
+      token = unlocked.token;
+    }
     try {
-      const res = await fetch(`${API_BASE}/auth/me`, { headers: { Authorization: `Bearer ${target.token}` } });
+      const res = await fetch(`${API_BASE}/auth/me`, { headers: { Authorization: `Bearer ${token}` } });
       if (res.status === 401 || res.status === 403) {
         setAccounts(removeAccount(id));
         return { ok: false, error: `The session for @${target.user.username} expired — log in again to re-add it.` };
       }
       if (!res.ok) throw new Error('bad status');
       const fresh = await res.json().catch(() => ({}));
-      login(target.token, { ...target.user, ...fresh });
+      // Secure the account we're leaving: if it has the lock on, the server hands back a
+      // restricted token to store in its place (best effort — an expired session just skips).
+      if (user?.id && user.id !== id) {
+        try {
+          const lock = await lockActiveSession();
+          if (lock?.locked) lockAccount(user.id, lock.lockedToken);
+        } catch {}
+      }
+      login(token, { ...target.user, ...fresh });
     } catch {
       return { ok: false, error: "Couldn't reach the server — try again." };
     }
     window.location.assign('/');
     return { ok: true };
-  }, [login]);
+  }, [login, user?.id]);
 
   const forgetAccount = useCallback((id) => setAccounts(removeAccount(id)), []);
 

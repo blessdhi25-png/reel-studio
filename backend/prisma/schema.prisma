@@ -200,6 +200,8 @@ model User {
   watchLogs WatchLog[]
   interests UserInterest[]
   reposts   Repost[]
+  webauthnCredentials WebAuthnCredential[]
+  webauthnChallenges  WebAuthnChallenge[]
 }
 
 model Block {
@@ -694,4 +696,32 @@ model Repost {
 
   @@unique([userId, videoId])
   @@index([videoId])
+}
+
+// Passkey / platform-authenticator credentials for the biometric lock
+// (routes/webauthn.js). A user has the lock on iff they have >= 1 row here.
+model WebAuthnCredential {
+  id          String    @id // credential ID, base64url
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  publicKey   Bytes
+  counter     Int       @default(0)
+  transports  String[]
+  deviceName  String?
+  createdAt   DateTime  @default(now())
+  lastUsedAt  DateTime?
+
+  @@index([userId])
+}
+
+// Single-use, short-lived server-issued challenges.
+model WebAuthnChallenge {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  challenge String   @unique
+  purpose   String
+  expiresAt DateTime
+
+  @@index([userId])
 }

@@ -62,10 +62,11 @@ export function getStoredUser() {
   }
 }
 
-async function request(path, { method = 'GET', body, isForm = false, timeoutMs = 15000, _isRetry = false } = {}) {
+async function request(path, { method = 'GET', body, isForm = false, timeoutMs = 15000, _isRetry = false, headers: extraHeaders } = {}) {
   const headers = {};
   const token = getToken();
   if (token) headers.Authorization = `Bearer ${token}`;
+  if (extraHeaders) Object.assign(headers, extraHeaders);
   if (!isForm && body) headers['Content-Type'] = 'application/json';
 
   const url = `${API_BASE}${path}`;
@@ -101,7 +102,7 @@ async function request(path, { method = 'GET', body, isForm = false, timeoutMs =
     // wouldn't help.
     if (networkErr.name === 'AbortError' && !_isRetry) {
       console.warn(`[api] Timed out requesting ${url} — retrying once (likely a cold start)`);
-      return request(path, { method, body, isForm, timeoutMs, _isRetry: true });
+      return request(path, { method, body, isForm, timeoutMs, _isRetry: true, headers: extraHeaders });
     }
 
     // fetch() throws a bare TypeError ("Failed to fetch") for anything from
@@ -247,10 +248,29 @@ export const api = {
   logEvent: (id, eventType, watchDurationMs) =>
     request(`/videos/${id}/events`, { method: 'POST', body: { eventType, watchDurationMs } }),
   getUser: (id) => request(`/users/${id}`),
-  updateProfile: (data) => request('/users/me', { method: 'PATCH', body: data }),
+  updateProfile: (data, biometricToken) =>
+    request('/users/me', { method: 'PATCH', body: data, headers: biometricToken ? { 'X-Biometric-Token': biometricToken } : undefined }),
   // Private account details (email, phone, bio, WhatsApp, external links) — backend/src/routes/userProfile.js
   getAccountProfile: () => request('/user/profile'),
-  updateAccountProfile: (data) => request('/user/profile', { method: 'PATCH', body: data }),
+  updateAccountProfile: (data, biometricToken) =>
+    request('/user/profile', { method: 'PATCH', body: data, headers: biometricToken ? { 'X-Biometric-Token': biometricToken } : undefined }),
+
+  // Biometric lock (server-verified WebAuthn). Locked-session calls pass the
+  // restricted token as the Authorization header instead of the active session's.
+  webauthnStatus: () => request('/webauthn/status'),
+  webauthnRegisterOptions: (stepUp) =>
+    request('/webauthn/register/options', { method: 'POST', body: {}, headers: stepUp ? { 'X-Biometric-Token': stepUp } : undefined }),
+  webauthnRegisterVerify: (data, stepUp) =>
+    request('/webauthn/register/verify', { method: 'POST', body: data, headers: stepUp ? { 'X-Biometric-Token': stepUp } : undefined }),
+  webauthnAuthOptions: (scope) => request('/webauthn/auth/options', { method: 'POST', body: { scope } }),
+  webauthnAuthVerify: (scope, response) => request('/webauthn/auth/verify', { method: 'POST', body: { scope, response } }),
+  webauthnDisable: (stepUp) =>
+    request('/webauthn/disable', { method: 'POST', body: {}, headers: { 'X-Biometric-Token': stepUp } }),
+  webauthnLockSession: () => request('/webauthn/session/lock', { method: 'POST', body: {} }),
+  webauthnUnlockOptions: (lockedToken) =>
+    request('/webauthn/unlock/options', { method: 'POST', body: {}, headers: { Authorization: `Bearer ${lockedToken}` } }),
+  webauthnUnlockVerify: (lockedToken, response) =>
+    request('/webauthn/unlock/verify', { method: 'POST', body: { response }, headers: { Authorization: `Bearer ${lockedToken}` } }),
   // Reposts — backend/src/routes/posts.js
   repost: (videoId) => request('/posts/repost', { method: 'POST', body: { videoId } }),
   getMyReposts: () => request('/posts/reposts'),
