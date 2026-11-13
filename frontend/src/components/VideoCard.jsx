@@ -233,8 +233,6 @@ const VideoCard = forwardRef(function VideoCard(
   // rather than guessing from a character count.
   const captionRef = useRef(null);
   const [isExpanded, setIsExpanded] = useState(false);
-  const captionWrapRef = useRef(null);
-  const [captionBaseH, setCaptionBaseH] = useState(0);
   const [captionOverflows, setCaptionOverflows] = useState(false);
   useLayoutEffect(() => {
     const el = captionRef.current;
@@ -940,18 +938,9 @@ const VideoCard = forwardRef(function VideoCard(
       >
         {/* Caption + creator — bottom-24 clears the fixed bottom nav on mobile */}
         <div
-          ref={captionWrapRef}
-          className="relative px-3 py-2 pr-20 lg:pr-3"
-          style={isExpanded && captionBaseH ? { minHeight: captionBaseH } : undefined}
-        >
-        {/* Collapsed: sits in flow right under the player. Expanded: lifts off the flow and
-            overlays upward over the video (the wrapper keeps its height, so nothing reflows),
-            scrolling internally if it's long. */}
-        <div
-          className={`bg-black text-white p-2 rounded-lg font-bold ${
-            isExpanded
-              ? 'absolute bottom-2 left-3 right-20 lg:right-3 z-20 max-h-[45dvh] overflow-y-auto shadow-2xl ring-1 ring-white/10'
-              : ''
+          className={`px-4 pt-3 pb-3 pr-20 lg:pr-4 text-white font-bold ${
+            // Expanded captions can get tall: cap the height and scroll inside the block.
+            isExpanded ? 'max-h-[30dvh] overflow-y-auto' : ''
           }`}
         >
           <a href={`/profile/${video.user?.id}`} className="font-extrabold text-base tracking-tight text-white">
@@ -970,7 +959,6 @@ const VideoCard = forwardRef(function VideoCard(
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (!isExpanded) setCaptionBaseH(captionWrapRef.current?.offsetHeight || 0); // keep the layout height while the text overlays
                     setIsExpanded((v) => !v);
                   }}
                   aria-expanded={isExpanded}
@@ -1005,7 +993,6 @@ const VideoCard = forwardRef(function VideoCard(
             </div>
           )}
         </div>
-        </div>{/* /caption wrapper */}
 
         {/* Engagement rail — bottom-24 clears the fixed bottom nav on mobile.
             Pure white icons + heavy drop shadows (rather than the app's
