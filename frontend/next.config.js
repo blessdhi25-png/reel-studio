@@ -1,5 +1,14 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Common legal URLs (and old links, e.g. from app-store listings or emails) map to the real pages.
+  async redirects() {
+    return [
+      { source: '/terms', destination: '/legal/terms', permanent: true },
+      { source: '/privacy', destination: '/legal/privacy', permanent: true },
+      { source: '/terms-of-service', destination: '/legal/terms', permanent: true },
+      { source: '/privacy-policy', destination: '/legal/privacy', permanent: true },
+    ];
+  },
   images: {
     // next/image's built-in optimizer refuses to serve SVGs by default
     // (returns a 400, which shows up as a broken image icon) — it treats
