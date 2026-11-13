@@ -18,6 +18,7 @@ import { useFeedPlayerPrefs, setFeedPlayerPref } from '../hooks/useFeedPlayerPre
 import { downloadWithWatermark, WatermarkUnsupportedError } from '../lib/downloadWithWatermark';
 import { downloadPlain, PlainDownloadUnsupportedError } from '../lib/downloadPlain';
 import { usePref } from '../lib/settingsPrefs';
+import { getCachedVideoResponse, isVideoInManifest } from '../lib/offlineCache';
 
 // A second tap/click arriving within this window counts as a double-tap
 // (like) rather than two separate single-taps (play/pause). 300ms matches
@@ -256,6 +257,9 @@ const VideoCard = forwardRef(function VideoCard(
     },
   });
 
+  const inViewRef = useRef(false);
+  inViewRef.current = inView;
+
   // Hold-to-open options sheet (400ms, cancelled by any drag/scroll).
   const longPress = useLongPress(() => setShowLongPressMenu(true), {
     delay: 400,
@@ -423,6 +427,8 @@ const VideoCard = forwardRef(function VideoCard(
     }
 
     let hls;
+    let objectUrl = null;
+    let cancelled = false;
     if (video.videoUrl.endsWith('.m3u8') && !el.canPlayType('application/vnd.apple.mpegurl')) {
       import('hls.js').then(({ default: Hls }) => {
         if (Hls.isSupported()) {
@@ -438,11 +444,33 @@ const VideoCard = forwardRef(function VideoCard(
           hls.attachMedia(el);
         }
       });
+    } else if (isVideoInManifest(video.videoUrl)) {
+      // Offline cache hit (lib/offlineCache.js): play from a blob: URL so the
+      // clip works with no network. The manifest check is synchronous, so
+      // cards that were never cached set src immediately, exactly as before.
+      (async () => {
+        try {
+          const cachedRes = await getCachedVideoResponse(video.videoUrl);
+          if (cachedRes && !cancelled) objectUrl = URL.createObjectURL(await cachedRes.blob());
+        } catch {}
+        if (cancelled) {
+          if (objectUrl) URL.revokeObjectURL(objectUrl);
+          objectUrl = null;
+          return;
+        }
+        el.src = objectUrl || video.videoUrl;
+        // The in-view observer may already have fired play() before src existed.
+        if (inViewRef.current) el.play().catch(() => {});
+      })();
     } else {
       el.src = video.videoUrl;
     }
 
-    return () => hls?.destroy();
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      hls?.destroy();
+    };
   }, [video.videoUrl, shouldLoad, dataSaver]);
 
   // A fresh src (new video, or shouldLoad just turned on for this card) is

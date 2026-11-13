@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
-import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { hasSeenWelcome, hasToken, isGuest } from '@/lib/onboarding';
 import { api } from '../lib/api';
@@ -15,6 +15,8 @@ import FeedFiltersDrawer from '../components/FeedFiltersDrawer';
 import Logo from '../components/Logo';
 import StoriesBar from '../components/StoriesBar';
 import TopHeaderNav from '../components/TopHeaderNav';
+import { useFeedSync } from '../hooks/useFeedSync';
+import { getOfflineFeed, precacheVideo } from '../lib/offlineCache';
 
 const FILTERS = [
   { label: 'All', value: null },
@@ -83,6 +85,11 @@ export default function FeedPage() {
 
   const [isDesktop, setIsDesktop] = useState(null);
 
+  // Background sync / offline state
+  const [pendingNew, setPendingNew] = useState([]); // newer clips fetched in the background, not yet in the feed
+  const [offlineMode, setOfflineMode] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+
   // Unified click handler for filter tabs
   function handleFilterClick(opt) {
     if (opt.href) {
@@ -142,6 +149,11 @@ export default function FeedPage() {
 
   const mobileContainerRef = useRef(null);
   const desktopContainerRef = useRef(null);
+  const seenIdsRef = useRef(new Set()); // every clip id ever loaded (survives pruning) so pruned clips never look "new"
+  const videosRef = useRef([]);
+  const feedParamsRef = useRef({});
+  const offlineModeRef = useRef(false);
+  const pruneAnchorRef = useRef(null);
   const videoCardRefs = useRef({});
   const desktopRailRef = useRef(null);
 
@@ -175,8 +187,29 @@ export default function FeedPage() {
     api.getCircles().then(setCircles).catch(() => {});
   }, []);
 
+  // Rebuilds the feed from clips whose .mp4 is verifiably in the Cache API, so
+  // an offline user never lands on a black, unplayable card.
+  async function enterOfflineFeed() {
+    const cached = await getOfflineFeed();
+    setOfflineMode(true);
+    setVideos(cached);
+    setNextCursor(null);
+    setPendingNew([]);
+    setActiveIndex(0);
+    setInitialLoading(false);
+    desktopContainerRef.current?.scrollTo({ top: 0 });
+    mobileContainerRef.current?.scrollTo({ top: 0 });
+  }
+
   useEffect(() => {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      enterOfflineFeed();
+      return;
+    }
+    setOfflineMode(false);
     setInitialLoading(true);
+    seenIdsRef.current = new Set();
+    setPendingNew([]);
     api
       .getFeed(filter, undefined, tuningWeights, circle)
       .then((data) => {
@@ -200,9 +233,12 @@ export default function FeedPage() {
         setVideos(videos);
         setNextCursor(data.nextCursor || null);
       })
-      .catch(() => {})
+      .catch(() => {
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) enterOfflineFeed();
+      })
       .finally(() => setInitialLoading(false));
-  }, [filter, tuningWeights, circle]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filter, tuningWeights, circle, reloadKey]);
 
   useEffect(() => {
     if (!nextCursor || loadingMore) return;
@@ -301,6 +337,111 @@ export default function FeedPage() {
     }
     el.scrollTo({ top: clamped * el.clientHeight, behavior: 'smooth' });
   }
+
+  // ---- Silent background refresh, pruning, offline media cache ----
+  const MAX_FEED_VIDEOS = 30; // sliding window of clips kept in React state
+  const KEEP_ABOVE_ACTIVE = 8; // watched clips kept above the current one so a short scroll-back still works
+
+  videosRef.current = videos;
+  feedParamsRef.current = { filter, tuningWeights, circle };
+  offlineModeRef.current = offlineMode;
+  useEffect(() => {
+    videos.forEach((v) => seenIdsRef.current.add(v.id));
+  }, [videos]);
+
+  // 1) Poll for newer clips (every 60s while visible, plus on focus/online).
+  //    Found clips are only queued in `pendingNew`; the feed itself isn't touched here.
+  useFeedSync({
+    enabled: !offlineMode && !initialLoading,
+    check: async () => {
+      const { filter: f, tuningWeights: w, circle: c } = feedParamsRef.current;
+      const data = await api.getFeed(f, undefined, w, c);
+      const fresh = (data.videos || []).filter((v) => !seenIdsRef.current.has(v.id));
+      if (!fresh.length) return;
+      setPendingNew((prev) => {
+        const queued = new Set(prev.map((v) => v.id));
+        const add = fresh.filter((v) => !queued.has(v.id));
+        return add.length ? [...add, ...prev] : prev;
+      });
+    },
+  });
+
+  // 2) At the top of the feed and idle: slot the queued clips in right AFTER the
+  //    playing one, so nothing shifts above it and playback isn't interrupted.
+  useEffect(() => {
+    if (!pendingNew.length || offlineMode || activeIndex !== 0 || isScrolling) return;
+    const incoming = pendingNew;
+    setPendingNew([]);
+    setVideos((prev) => {
+      const seen = new Set(prev.map((v) => v.id));
+      const add = incoming.filter((v) => !seen.has(v.id));
+      return add.length ? [...prev.slice(0, 1), ...add, ...prev.slice(1)] : prev;
+    });
+  }, [pendingNew, activeIndex, isScrolling, offlineMode]);
+
+  // Pill tap (user is further down): put the new clips on top, then glide to them.
+  function showNewClips() {
+    const incoming = pendingNew;
+    setPendingNew([]);
+    setVideos((prev) => {
+      const seen = new Set(prev.map((v) => v.id));
+      return [...incoming.filter((v) => !seen.has(v.id)), ...prev];
+    });
+    setTimeout(() => scrollToIndexRef.current?.(0), 60);
+  }
+
+  // 3) Bulk pruning: once more than MAX_FEED_VIDEOS are loaded, drop watched clips
+  //    far above the current one. The active card's on-screen position is recorded
+  //    first and restored in the layout effect below, so the view doesn't jump.
+  useEffect(() => {
+    if (offlineMode || isScrolling || videos.length <= MAX_FEED_VIDEOS) return;
+    const drop = activeIndex - KEEP_ABOVE_ACTIVE;
+    if (drop <= 0) return;
+    const el = isDesktop ? desktopContainerRef.current : mobileContainerRef.current;
+    const anchor = el?.children[activeIndex];
+    pruneAnchorRef.current = el && anchor ? { el, anchor, top: anchor.getBoundingClientRect().top } : null;
+    setVideos((prev) => prev.slice(drop));
+    setActiveIndex((i) => Math.max(0, i - drop));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [videos.length, activeIndex, isScrolling, offlineMode, isDesktop]);
+
+  useLayoutEffect(() => {
+    const a = pruneAnchorRef.current;
+    if (!a) return;
+    pruneAnchorRef.current = null;
+    if (!a.anchor.isConnected) return;
+    const delta = a.anchor.getBoundingClientRect().top - a.top;
+    if (delta) a.el.scrollTop += delta;
+  }, [videos]);
+
+  // 4) Pre-cache the playing clip + the next 3 (debounced so fast flicking doesn't spawn fetches).
+  useEffect(() => {
+    if (offlineMode) return undefined;
+    const t = setTimeout(() => {
+      videos.slice(activeIndex, activeIndex + 4).forEach((v) => precacheVideo(v));
+    }, 1200);
+    return () => clearTimeout(t);
+  }, [activeIndex, videos, offlineMode]);
+
+  // 5) Offline / online switching.
+  useEffect(() => {
+    function onOffline() {
+      enterOfflineFeed();
+    }
+    function onOnline() {
+      if (offlineModeRef.current) {
+        setOfflineMode(false);
+        setReloadKey((k) => k + 1); // refetch the live feed
+      }
+    }
+    window.addEventListener('offline', onOffline);
+    window.addEventListener('online', onOnline);
+    return () => {
+      window.removeEventListener('offline', onOffline);
+      window.removeEventListener('online', onOnline);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Keyboard: ArrowDown / ArrowUp step through the feed on desktop. Ignored while typing,
   // with modifier keys held, or while a dialog is open.
@@ -636,6 +777,22 @@ export default function FeedPage() {
             <span className="text-lg">🎉</span>
             <span>You just got tipped ${(celebration.amountCents / 100).toFixed(2)}!</span>
           </div>
+        </div>
+      )}
+
+      {pendingNew.length > 0 && activeIndex > 0 && !offlineMode && (
+        <button
+          type="button"
+          onClick={showNewClips}
+          className="fixed top-24 lg:top-20 left-1/2 lg:left-[calc(50%+2.5rem)] xl:left-[calc(50%+8rem)] -translate-x-1/2 z-[45] px-4 py-2 rounded-full bg-amber-500 text-black text-xs font-extrabold tracking-tight shadow-xl hover:bg-amber-400 transition-colors animate-[fadeIn_0.2s_ease-out]"
+        >
+          ↑ New clips available
+        </button>
+      )}
+
+      {offlineMode && (
+        <div className="fixed bottom-24 lg:bottom-6 left-1/2 lg:left-[calc(50%+2.5rem)] xl:left-[calc(50%+8rem)] -translate-x-1/2 z-[45] px-4 py-2 rounded-full bg-zinc-900/90 border border-zinc-700 text-neutral-200 text-xs font-bold tracking-tight shadow-xl pointer-events-none">
+          Offline · {videos.length ? 'showing saved clips' : 'no saved clips yet'}
         </div>
       )}
 

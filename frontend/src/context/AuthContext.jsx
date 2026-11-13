@@ -1,5 +1,6 @@
 'use client';
 
+import { clearVideoCache } from '../lib/offlineCache';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { deleteCookie, setCookie } from '../lib/cookies';
 import { getAccounts, removeAccount, saveAccount, updateAccountUser } from '../lib/accounts';
@@ -124,6 +125,7 @@ export function AuthProvider({ children }) {
     // usable credential behind in the switcher list.
     const current = readStoredUser();
     if (current?.id) setAccounts(removeAccount(current.id));
+    clearVideoCache(); // cached clips may include private posts
     window.localStorage.removeItem(TOKEN_KEY);
     window.localStorage.removeItem(USER_KEY);
     deleteCookie(TOKEN_KEY);
