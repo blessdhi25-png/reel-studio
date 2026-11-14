@@ -19,7 +19,8 @@ export const PREF_DEFAULTS = {
   twoStep: false, // 2-step verification (preference only — see settings/security)
   watermark: true, // burn the ClipPulse watermark into exported clips
   dataSaver: false, // cap video resolution on cellular networks
-  breakReminder: false, // "Take a break after 60 mins"
+  breakReminder: false, // "Take a break after N mins" (N = breakReminderMinutes)
+  breakReminderMinutes: 30, // 15 / 30 / 45 / 60
 };
 
 const listeners = new Set();

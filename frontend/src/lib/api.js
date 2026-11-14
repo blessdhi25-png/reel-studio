@@ -228,6 +228,7 @@ export const api = {
   getCommunityPosts: (id, cursor) =>
     request(`/communities/${id}/posts${cursor ? `?cursor=${cursor}` : ''}`),
 
+  getVideo: (id) => request(`/videos/${id}`),
   likeVideo: (id) => request(`/videos/${id}/like`, { method: 'POST' }),
   unlikeVideo: (id) => request(`/videos/${id}/like`, { method: 'DELETE' }),
   deleteVideo: (id) => request(`/videos/${id}`, { method: 'DELETE' }),

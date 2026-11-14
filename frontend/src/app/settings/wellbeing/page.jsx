@@ -6,7 +6,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { usePref } from '@/lib/settingsPrefs';
 import { dailyAverageSeconds, formatDuration, readUsage, weekUsage } from '@/lib/screenTime';
-import { SettingsGroup, SettingsPage, ToggleRow } from '@/components/settings/SettingsUI';
+import { Segmented, SettingsBlock, SettingsGroup, SettingsPage, ToggleRow } from '@/components/settings/SettingsUI';
 
 // Usage is kept for 28 days (lib/screenTime.js), so this week plus three back.
 const MAX_WEEKS_BACK = 3;
@@ -35,6 +35,7 @@ export default function WellbeingPage() {
   const router = useRouter();
   const { ready, isAuthenticated } = useAuth();
   const [breakReminder, setBreakReminder] = usePref('breakReminder');
+  const [reminderMinutes, setReminderMinutes] = usePref('breakReminderMinutes');
 
   const [usage, setUsage] = useState(null); // null until read on the client (localStorage)
   const [weeksBack, setWeeksBack] = useState(0);
@@ -186,10 +187,24 @@ export default function WellbeingPage() {
         <ToggleRow
           icon="⏰"
           title="Daily Reminder"
-          subtitle="Take a break after 60 mins"
+          subtitle={`Take a break after ${reminderMinutes || 30} mins`}
           checked={breakReminder}
           onChange={setBreakReminder}
         />
+        <SettingsBlock icon="⏱️" title="Remind me after" subtitle="Continuous time with ClipPulse open">
+          <Segmented
+            label="Reminder interval"
+            value={reminderMinutes || 30}
+            onChange={setReminderMinutes}
+            disabled={!breakReminder}
+            options={[
+              { value: 15, label: '15 min' },
+              { value: 30, label: '30 min' },
+              { value: 45, label: '45 min' },
+              { value: 60, label: '60 min' },
+            ]}
+          />
+        </SettingsBlock>
       </SettingsGroup>
     </SettingsPage>
   );

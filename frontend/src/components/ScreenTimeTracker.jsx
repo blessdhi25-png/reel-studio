@@ -10,10 +10,10 @@ const TICK_MS = 10_000;
 // A gap longer than this between ticks means the tab was hidden/asleep — count
 // it as a break rather than as time spent in the app.
 const BREAK_GAP_MS = 2 * 60_000;
-const REMINDER_AFTER_SECONDS = 60 * 60;
+const DEFAULT_REMINDER_MINUTES = 30;
 
 // Records foreground time for Pulse Wellbeing and, if the user enabled it,
-// nudges them after 60 continuous minutes. Renders nothing; mounted in AppShell.
+// nudges them after N continuous minutes (default 30, chosen in Wellbeing settings). Renders nothing; mounted in AppShell.
 export default function ScreenTimeTracker() {
   const { isAuthenticated } = useAuth();
   const toast = useToast();
@@ -41,10 +41,13 @@ export default function ScreenTimeTracker() {
       addSeconds(seconds);
       streak += seconds;
 
-      if (streak >= REMINDER_AFTER_SECONDS) {
+      // Read each tick so a changed setting applies immediately; the streak keeps counting while the
+      // reminder is off, so switching it on mid-session doesn't wait out a fresh window.
+      const minutes = Number(getPref('breakReminderMinutes')) || DEFAULT_REMINDER_MINUTES;
+      if (streak >= minutes * 60) {
         streak = 0;
         if (getPref('breakReminder')) {
-          toastRef.current.info("You've been on ClipPulse for an hour. Time for a break?");
+          toastRef.current.info(`You've been on ClipPulse for ${minutes} minutes. Time for a break?`);
         }
       }
     }, TICK_MS);

@@ -47,6 +47,30 @@ function CircleParamSync({ onCircle }) {
   return null;
 }
 
+// Survives client-side navigation (Home -> Profile -> Home) for as long as the tab lives, so coming
+// back restores the same clips at the same position instead of reloading from the first video.
+const FEED_SESSION_TTL_MS = 30 * 60 * 1000;
+let feedSession = null; // { key, videos, nextCursor, activeId, savedAt }
+
+function readDeepLink() {
+  if (typeof window === 'undefined') return null;
+  const sp = new URLSearchParams(window.location.search);
+  return sp.get('video') || sp.get('postId') || null;
+}
+
+// In-app navigations to "/?video=ID" while the feed is already mounted (the page doesn't remount).
+function VideoParamSync({ onVideo }) {
+  const searchParams = useSearchParams();
+  useEffect(() => {
+    onVideo(searchParams.get('video') || searchParams.get('postId') || null);
+  }, [searchParams, onVideo]);
+  return null;
+}
+
+function feedKey(filter, circle, weights) {
+  return JSON.stringify([filter || null, circle || null, weights || null]);
+}
+
 export default function FeedPage() {
   const router = useRouter();
   const [guest, setGuest] = useState(false);
@@ -101,6 +125,13 @@ export default function FeedPage() {
     setFilter(opt.value);
   }
 
+  const handleUrlVideo = useCallback((id) => {
+    if (!id || id === handledDeepLinkRef.current) return;
+    handledDeepLinkRef.current = id;
+    deepLinkRef.current = id;
+    setReloadKey((k) => k + 1); // reload around the requested clip
+  }, []);
+
   // URL-driven tab (/?tab=following from the desktop sidebar). null = back to the default feed.
   const handleUrlTab = useCallback((tab) => {
     if (tab === 'following') {
@@ -146,6 +177,7 @@ export default function FeedPage() {
 
   useEffect(() => {
     setTuningWeights(loadTuningWeights());
+    setWeightsReady(true); // the feed waits for this, so it loads once with the real weights
   }, []);
 
   const mobileContainerRef = useRef(null);
@@ -156,6 +188,11 @@ export default function FeedPage() {
   const offlineModeRef = useRef(false);
   const pruneAnchorRef = useRef(null);
   const videoCardRefs = useRef({});
+  const deepLinkRef = useRef(readDeepLink()); // clip id from ?video= / ?postId=, consumed once the feed has loaded it
+  const handledDeepLinkRef = useRef(deepLinkRef.current);
+  const [weightsReady, setWeightsReady] = useState(false);
+  const pendingStartRef = useRef(null); // index to jump to (instantly) once the list has rendered
+  const loadedKeyRef = useRef(null); // feed key the current `videos` belong to
   const desktopRailRef = useRef(null);
 
   useEffect(() => {
@@ -203,6 +240,7 @@ export default function FeedPage() {
   }
 
   useEffect(() => {
+    if (!weightsReady) return;
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
       enterOfflineFeed();
       return;
@@ -211,9 +249,46 @@ export default function FeedPage() {
     setInitialLoading(true);
     seenIdsRef.current = new Set();
     setPendingNew([]);
-    api
-      .getFeed(filter, undefined, tuningWeights, circle)
-      .then((data) => {
+
+    // Deep link: /?video=ID (profile grid, friends, collections, shared links) or /?postId=ID.
+    const targetId = deepLinkRef.current;
+    const key = feedKey(filter, circle, tuningWeights);
+    const cached =
+      feedSession && feedSession.key === key && Date.now() - feedSession.savedAt < FEED_SESSION_TTL_MS && reloadKey === 0
+        ? feedSession
+        : null;
+
+    const finish = (list, cursor, startIndex) => {
+      loadedKeyRef.current = key;
+      pendingStartRef.current = startIndex;
+      setVideos(list);
+      setNextCursor(cursor);
+      setActiveIndex(startIndex);
+      if (targetId) {
+        // Consumed: later tab/filter changes shouldn't re-pin this clip. Tidy the URL too.
+        deepLinkRef.current = null;
+        try {
+          const u = new URL(window.location.href);
+          u.searchParams.delete('video');
+          u.searchParams.delete('postId');
+          window.history.replaceState(window.history.state, '', u.pathname + u.search + u.hash);
+        } catch {}
+      }
+    };
+
+    // Returning to the feed with no deep link: restore the clips and the active video as they were.
+    if (cached && !targetId) {
+      const idx = Math.max(0, cached.videos.findIndex((v) => v.id === cached.activeId));
+      finish(cached.videos, cached.nextCursor, idx);
+      setInitialLoading(false);
+      return;
+    }
+
+    const base = cached
+      ? Promise.resolve({ videos: cached.videos, nextCursor: cached.nextCursor })
+      : api.getFeed(filter, undefined, tuningWeights, circle);
+    base
+      .then(async (data) => {
         let videos = data.videos || [];
         const PENDING_TTL_MS = 5 * 60 * 1000;
         const pendingRaw = typeof window !== 'undefined' ? sessionStorage.getItem('pendingUpload') : null;
@@ -224,22 +299,35 @@ export default function FeedPage() {
             const expired = !pending.postedAt || Date.now() - pending.postedAt > PENDING_TTL_MS;
             if (alreadyInResults || expired) {
               sessionStorage.removeItem('pendingUpload');
-            } else if (filter === null || filter === pending.videoType) {
+            } else if (!targetId && (filter === null || filter === pending.videoType)) {
               videos = [pending, ...videos];
             }
           } catch {
             sessionStorage.removeItem('pendingUpload');
           }
         }
-        setVideos(videos);
-        setNextCursor(data.nextCursor || null);
+        let startIndex = 0;
+        if (targetId) {
+          startIndex = videos.findIndex((v) => v.id === targetId);
+          if (startIndex === -1) {
+            // Not in the loaded page: fetch that clip and put it first, so it plays immediately.
+            try {
+              const target = await api.getVideo(targetId);
+              videos = [target, ...videos.filter((v) => v.id !== target.id)];
+              startIndex = 0;
+            } catch {
+              startIndex = 0; // deleted / unavailable: fall back to the normal feed
+            }
+          }
+        }
+        finish(videos, data.nextCursor || null, startIndex);
       })
       .catch(() => {
         if (typeof navigator !== 'undefined' && navigator.onLine === false) enterOfflineFeed();
       })
       .finally(() => setInitialLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filter, tuningWeights, circle, reloadKey]);
+  }, [filter, tuningWeights, circle, reloadKey, weightsReady]);
 
   useEffect(() => {
     if (!nextCursor || loadingMore) return;
@@ -352,6 +440,30 @@ export default function FeedPage() {
     ro.observe(nav);
     return () => ro.disconnect();
   }, [isDesktop]);
+
+  // Instant jump to the start index chosen by the loader (deep-linked clip, or the restored position).
+  useLayoutEffect(() => {
+    const idx = pendingStartRef.current;
+    if (idx === null || isDesktop === null || !videos.length) return;
+    const el = isDesktop ? desktopContainerRef.current : mobileContainerRef.current;
+    if (!el || !el.children[idx]) return;
+    pendingStartRef.current = null;
+    if (isDesktop) {
+      const box = el.getBoundingClientRect();
+      const r = el.children[idx].getBoundingClientRect();
+      el.scrollTo({ top: el.scrollTop + (r.top + r.height / 2) - (box.top + box.height / 2), behavior: 'instant' });
+    } else {
+      el.scrollTo({ top: idx * el.clientHeight, behavior: 'instant' });
+    }
+  }, [videos, isDesktop]);
+
+  // Remember the feed + active clip for the next visit (only once the list belongs to the current key).
+  useEffect(() => {
+    if (offlineMode || !videos.length) return;
+    const key = feedKey(filter, circle, tuningWeights);
+    if (loadedKeyRef.current !== key) return;
+    feedSession = { key, videos, nextCursor, activeId: videos[activeIndex]?.id ?? null, savedAt: Date.now() };
+  }, [videos, nextCursor, activeIndex, filter, circle, tuningWeights, offlineMode]);
 
   // ---- Silent background refresh, pruning, offline media cache ----
   const MAX_FEED_VIDEOS = 30; // sliding window of clips kept in React state
@@ -592,6 +704,7 @@ export default function FeedPage() {
   return (
     <main className="relative h-dvh w-full overflow-hidden bg-ink flex flex-col">
       <Suspense fallback={null}>
+        <VideoParamSync onVideo={handleUrlVideo} />
         <CircleParamSync onCircle={setCircle} />
         <TabParamSync onTab={handleUrlTab} />
       </Suspense>

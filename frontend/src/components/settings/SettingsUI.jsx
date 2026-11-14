@@ -138,7 +138,7 @@ export function ToggleRow({ icon, title, subtitle, checked, onChange, disabled }
 
 export function Segmented({ label, options, value, onChange, disabled }) {
   return (
-    <div role="radiogroup" aria-label={label} className="grid grid-cols-3 gap-1 bg-white dark:bg-neutral-950 border border-slate-200 dark:border-neutral-800 rounded-xl p-1">
+    <div role="radiogroup" aria-label={label} style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }} className="grid gap-1 bg-white dark:bg-neutral-950 border border-slate-200 dark:border-neutral-800 rounded-xl p-1">
       {options.map((opt) => {
         const active = value === opt.value;
         return (

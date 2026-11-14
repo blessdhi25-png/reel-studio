@@ -299,7 +299,7 @@ router.get('/feed', optionalAuth, async (req, res) => {
   res.json({ videos: videosWithFollow, nextCursor });
 });
 
-router.get('/:id', async (req, res) => {
+router.get('/:id', optionalAuth, async (req, res) => {
   const video = await prisma.video.findUnique({
     where: { id: req.params.id },
     include: {
@@ -308,8 +308,25 @@ router.get('/:id', async (req, res) => {
     },
   });
   if (!video) return res.status(404).json({ error: 'Video not found' });
+  // Viewer-specific flags, so a deep-linked clip (/?video=ID) renders with the right like/bookmark/follow state.
+  let isLiked = false;
+  let isBookmarked = false;
+  let isFollowing = false;
+  if (req.userId) {
+    const [like, bookmark, follow] = await Promise.all([
+      prisma.like.findFirst({ where: { userId: req.userId, videoId: video.id }, select: { videoId: true } }),
+      prisma.bookmark.findFirst({ where: { userId: req.userId, videoId: video.id }, select: { videoId: true } }),
+      prisma.follow.findFirst({ where: { followerId: req.userId, followeeId: video.userId }, select: { followeeId: true } }),
+    ]);
+    isLiked = !!like;
+    isBookmarked = !!bookmark;
+    isFollowing = !!follow;
+  }
   res.json({
     ...video,
+    isLiked,
+    isBookmarked,
+    user: { ...video.user, isFollowing },
     track: video.track
       ? {
           id: video.track.id,
