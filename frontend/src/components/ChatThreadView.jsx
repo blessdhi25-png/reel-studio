@@ -3,12 +3,28 @@
 import BackButton from '@/components/BackButton';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Phone, Video, MoreVertical, Paperclip, Smile, Send, X } from 'lucide-react';
+import { Phone, Video, MoreVertical, Paperclip, Smile, Send, X, Film, FileText } from 'lucide-react';
 import { api } from '../lib/api';
 import { getSocket } from '../lib/socket';
 import { useSocketContext } from '../context/SocketContext';
 import ReportModal from './ReportModal';
+import CallModal from './CallModal';
 import { LoadingSpinner } from './LoadingScreen';
+
+const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+const ACCEPT = 'image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip';
+
+function fileKind(file) {
+  if (file.type.startsWith('image/')) return 'image';
+  if (file.type.startsWith('video/')) return 'video';
+  return 'file';
+}
+
+function formatBytes(n) {
+  if (!n) return '';
+  if (n < 1024 * 1024) return `${Math.max(1, Math.round(n / 1024))} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 const EMOJIS = ['😀', '😂', '❤️', '🔥', '👍', '🙏', '😍', '😅', '🎉', '👏', '😢', '😮'];
 
@@ -56,6 +72,10 @@ export default function ChatThreadView({ otherUserId }) {
   const [confirmBlock, setConfirmBlock] = useState(false);
   const [toast, setToast] = useState(null);
   const bottomRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const [isCalling, setIsCalling] = useState(false);
+  const [callType, setCallType] = useState('voice'); // 'voice' | 'video'
+  const [attachedFile, setAttachedFile] = useState(null); // { file, previewUrl, kind }
 
   function flashToast(msg) {
     setToast(msg);
@@ -117,6 +137,34 @@ export default function ChatThreadView({ otherUserId }) {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // Object URLs hold the file in memory until revoked.
+  useEffect(() => {
+    return () => {
+      if (attachedFile?.previewUrl) URL.revokeObjectURL(attachedFile.previewUrl);
+    };
+  }, [attachedFile]);
+
+  function startCall(type) {
+    if (otherUser?.blockedByMe) {
+      flashToast("Unblock this person to call them");
+      return;
+    }
+    setCallType(type);
+    setIsCalling(true);
+  }
+
+  function handleFilePicked(e) {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // allow re-picking the same file after removing it
+    if (!file) return;
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      setError('That file is too large — the limit is 25 MB.');
+      return;
+    }
+    setError(null);
+    setAttachedFile({ file, previewUrl: URL.createObjectURL(file), kind: fileKind(file) });
+  }
+
   const isOnline = useMemo(() => onlineUsers?.has?.(otherUserId), [onlineUsers, otherUserId]);
 
   async function handleSend(e) {
@@ -129,15 +177,16 @@ export default function ChatThreadView({ otherUserId }) {
     const content = attachedVideo
       ? `${text.trim() ? `${text.trim()} ` : ''}${window.location.origin}/?video=${attachedVideo.id}`
       : text.trim();
-    if (!content || !otherUserId) return;
+    if ((!content && !attachedFile) || !otherUserId) return;
 
     setSending(true);
     setError(null);
     try {
-      const message = await api.sendMessage(otherUserId, content);
+      const message = await api.sendMessage(otherUserId, content, attachedFile?.file);
       setMessages((prev) => [...prev, message]);
       setText('');
       setAttachedVideo(null);
+      setAttachedFile(null);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -189,14 +238,14 @@ export default function ChatThreadView({ otherUserId }) {
 
         <div className="flex items-center gap-1 shrink-0 relative">
           <button
-            onClick={() => flashToast("Voice calls aren't available yet")}
+            onClick={() => startCall('voice')}
             aria-label="Audio call"
             className="w-9 h-9 rounded-full text-zinc-300 hover:text-white hover:bg-zinc-800 flex items-center justify-center"
           >
             <Phone size={18} />
           </button>
           <button
-            onClick={() => flashToast("Video calls aren't available yet")}
+            onClick={() => startCall('video')}
             aria-label="Video call"
             className="w-9 h-9 rounded-full text-zinc-300 hover:text-white hover:bg-zinc-800 flex items-center justify-center"
           >
@@ -249,6 +298,7 @@ export default function ChatThreadView({ otherUserId }) {
                       : 'bg-zinc-800 text-white rounded-2xl rounded-tl-none px-4 py-2 max-w-[75%]'
                   }
                 >
+                  {m.attachmentUrl && <Attachment message={m} mine={mine} />}
                   {m.content}
                 </div>
                 <p className={`text-[10px] text-zinc-400 mt-1 flex items-center gap-1 ${mine ? 'justify-end' : 'justify-start'}`}>
@@ -327,15 +377,54 @@ export default function ChatThreadView({ otherUserId }) {
         </div>
       )}
 
+      {/* Local file attachment preview */}
+      {attachedFile && (
+        <div className="px-3 pb-2 shrink-0">
+          <div className="inline-flex items-center gap-2.5 bg-zinc-900 border border-zinc-800 rounded-xl p-1.5 pr-2 max-w-full">
+            <span className="w-12 h-12 rounded-lg overflow-hidden bg-zinc-800 shrink-0 flex items-center justify-center text-zinc-400">
+              {attachedFile.kind === 'image' ? (
+                <img src={attachedFile.previewUrl} alt="" className="w-full h-full object-cover" />
+              ) : attachedFile.kind === 'video' ? (
+                <video src={attachedFile.previewUrl} muted playsInline preload="metadata" className="w-full h-full object-cover" />
+              ) : (
+                <FileText size={20} />
+              )}
+            </span>
+            <span className="min-w-0">
+              <span className="block font-body text-xs font-semibold text-zinc-200 truncate max-w-[200px]">{attachedFile.file.name}</span>
+              <span className="block font-mono text-[10px] text-zinc-500">{formatBytes(attachedFile.file.size)}</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => setAttachedFile(null)}
+              aria-label="Remove attachment"
+              className="w-7 h-7 shrink-0 rounded-full text-zinc-400 hover:text-white hover:bg-zinc-800 flex items-center justify-center"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Bottom input dock */}
       <form onSubmit={handleSend} className="p-3 bg-zinc-950 border-t border-zinc-800 flex items-center gap-2 shrink-0">
+        <input ref={fileInputRef} type="file" accept={ACCEPT} onChange={handleFilePicked} className="hidden" />
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          aria-label="Attach a file"
+          disabled={otherUser?.blockedByMe}
+          className="text-zinc-400 hover:text-white shrink-0 disabled:opacity-40"
+        >
+          <Paperclip size={20} />
+        </button>
         <button
           type="button"
           onClick={openSharePicker}
-          aria-label="Share a video"
+          aria-label="Share one of your videos"
           className="text-zinc-400 hover:text-white shrink-0"
         >
-          <Paperclip size={20} />
+          <Film size={20} />
         </button>
         <button
           type="button"
@@ -354,13 +443,15 @@ export default function ChatThreadView({ otherUserId }) {
         />
         <button
           type="submit"
-          disabled={sending || (!text.trim() && !attachedVideo) || otherUser?.blockedByMe}
+          disabled={sending || (!text.trim() && !attachedVideo && !attachedFile) || otherUser?.blockedByMe}
           aria-label="Send"
           className="bg-amber-500 hover:bg-amber-400 text-black p-2.5 rounded-full transition-colors disabled:opacity-40 shrink-0"
         >
           <Send size={18} />
         </button>
       </form>
+
+      {isCalling && <CallModal user={otherUser} callType={callType} onEnd={() => setIsCalling(false)} />}
 
       {showReport && <ReportModal targetType="user" targetId={otherUserId} onClose={() => setShowReport(false)} />}
 
@@ -389,5 +480,35 @@ export default function ChatThreadView({ otherUserId }) {
         </div>
       )}
     </div>
+  );
+}
+
+function Attachment({ message, mine }) {
+  const { attachmentUrl: url, attachmentType: type, attachmentName: name, attachmentSize: size } = message;
+  const hasText = !!message.content;
+  if (type === 'image') {
+    return (
+      <a href={url} target="_blank" rel="noreferrer" className={`block ${hasText ? 'mb-2' : ''} -mx-2 -mt-1`}>
+        <img src={url} alt={name || ''} className="rounded-xl max-h-64 w-full object-cover" />
+      </a>
+    );
+  }
+  if (type === 'video') {
+    return <video src={url} controls playsInline preload="metadata" className={`rounded-xl max-h-64 w-full ${hasText ? 'mb-2' : ''} -mx-2 -mt-1`} />;
+  }
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noreferrer"
+      download={name || true}
+      className={`flex items-center gap-2 rounded-xl px-3 py-2 ${hasText ? 'mb-2' : ''} ${mine ? 'bg-black/10' : 'bg-white/10'}`}
+    >
+      <FileText size={18} className="shrink-0" />
+      <span className="min-w-0">
+        <span className="block text-xs font-semibold truncate">{name || 'Attachment'}</span>
+        {size ? <span className="block text-[10px] opacity-70">{formatBytes(size)}</span> : null}
+      </span>
+    </a>
   );
 }

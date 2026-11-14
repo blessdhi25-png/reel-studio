@@ -4,6 +4,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { notify } from '../utils/notify.js';
 import { isBlocked } from './privacy.js';
 import { emitToUser } from '../realtime/socket.js';
+import { uploadMessageAttachment } from '../utils/upload.js';
 
 const router = Router();
 
@@ -54,7 +55,7 @@ router.get('/conversations', requireAuth, async (req, res) => {
     if (!byOtherUser.has(otherUser.id)) {
       byOtherUser.set(otherUser.id, {
         user: otherUser,
-        lastMessage: m.content,
+        lastMessage: m.content || (m.attachmentUrl ? `📎 ${m.attachmentName || 'Attachment'}` : ''),
         lastMessageAt: m.createdAt,
         unreadCount: 0,
       });
@@ -92,12 +93,23 @@ router.get('/conversations/:otherUserId', requireAuth, async (req, res) => {
   res.json(messages);
 });
 
-router.post('/conversations/:otherUserId', requireAuth, async (req, res) => {
-  const { otherUserId } = req.params;
-  const { content } = req.body;
+// Accepts JSON ({ content }) or multipart (content + one `attachment` file).
+// multer only runs for multipart requests, so existing JSON clients are unaffected.
+function maybeAttachment(req, res, next) {
+  if (!req.is('multipart/form-data')) return next();
+  uploadMessageAttachment.single('attachment')(req, res, (err) => {
+    if (err) return res.status(400).json({ error: err.message || 'Upload failed' });
+    next();
+  });
+}
 
-  if (!content || !content.trim()) {
-    return res.status(400).json({ error: 'content is required' });
+router.post('/conversations/:otherUserId', requireAuth, maybeAttachment, async (req, res) => {
+  const { otherUserId } = req.params;
+  const content = (req.body.content || '').trim();
+  const file = req.file;
+
+  if (!content && !file) {
+    return res.status(400).json({ error: 'content or an attachment is required' });
   }
   if (otherUserId === req.userId) {
     return res.status(400).json({ error: "Can't message yourself" });
@@ -109,7 +121,21 @@ router.post('/conversations/:otherUserId', requireAuth, async (req, res) => {
   }
 
   const message = await prisma.message.create({
-    data: { senderId: req.userId, receiverId: otherUserId, content: content.trim() },
+    data: {
+      senderId: req.userId,
+      receiverId: otherUserId,
+      content,
+      ...(file && {
+        attachmentUrl: file.path,
+        attachmentType: file.mimetype.startsWith('image/')
+          ? 'image'
+          : file.mimetype.startsWith('video/')
+          ? 'video'
+          : 'file',
+        attachmentName: (file.originalname || 'file').slice(0, 200),
+        attachmentSize: file.size,
+      }),
+    },
   });
 
   const actor = await prisma.user.findUnique({ where: { id: req.userId }, select: { username: true, avatarUrl: true } });

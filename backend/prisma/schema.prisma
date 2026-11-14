@@ -513,6 +513,11 @@ model Message {
   receiverId String
   receiver   User     @relation("receivedMessages", fields: [receiverId], references: [id])
   content    String
+  // Optional file attachment (image / video / document), stored on Cloudinary.
+  attachmentUrl  String?
+  attachmentType String? // 'image' | 'video' | 'file'
+  attachmentName String?
+  attachmentSize Int?
   read       Boolean  @default(false)
   createdAt  DateTime @default(now())
 

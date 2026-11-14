@@ -254,3 +254,33 @@ export function cloudinaryPublicIdFromUrl(url) {
   const match = url.match(/\/upload\/(?:v\d+\/)?(.+?)(?:\.[a-zA-Z0-9]+)?(?:\?.*)?$/);
   return match ? match[1] : null;
 }
+
+// Chat attachments: images, videos and common documents. resource_type 'auto'
+// lets Cloudinary route images/videos to their pipelines and store everything
+// else (pdf/docx/zip/...) as a raw file.
+const MESSAGE_ATTACHMENT_TYPES = [
+  'image/jpeg', 'image/png', 'image/webp', 'image/gif',
+  'video/mp4', 'video/quicktime', 'video/webm',
+  'application/pdf', 'text/plain', 'text/csv', 'application/zip',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+];
+
+const messageAttachmentStorage = cloudinaryStorage(async (req) => ({
+  folder: 'reel/message-attachments',
+  resource_type: 'auto',
+  public_id: `${req.userId}-${Date.now()}`,
+}));
+
+export const uploadMessageAttachment = multer({
+  storage: messageAttachmentStorage,
+  fileFilter: (_req, file, cb) => {
+    if (MESSAGE_ATTACHMENT_TYPES.includes(file.mimetype)) cb(null, true);
+    else cb(new Error('Unsupported file type'));
+  },
+  limits: { fileSize: 25 * 1024 * 1024 }, // 25MB cap
+});

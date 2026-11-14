@@ -312,8 +312,14 @@ export const api = {
   getEarnings: () => request('/users/me/earnings'),
   getConversations: () => request('/conversations'),
   getThread: (otherUserId) => request(`/conversations/${otherUserId}`),
-  sendMessage: (otherUserId, content) =>
-    request(`/conversations/${otherUserId}`, { method: 'POST', body: { content } }),
+  // With a file, sends multipart (field `attachment`, 25MB cap); otherwise plain JSON as before.
+  sendMessage: (otherUserId, content, file) => {
+    if (!file) return request(`/conversations/${otherUserId}`, { method: 'POST', body: { content } });
+    const form = new FormData();
+    form.append('content', content || '');
+    form.append('attachment', file);
+    return request(`/conversations/${otherUserId}`, { method: 'POST', body: form, isForm: true, timeoutMs: 120000 });
+  },
   fileReport: (targetType, targetId, reason, details) =>
     request('/reports', { method: 'POST', body: { targetType, targetId, reason, details } }),
 

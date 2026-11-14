@@ -22,7 +22,11 @@ export default function LiveRoomPage({ params }) {
   const router = useRouter();
 
   const [stream, setStream] = useState(null);
-  const [joined, setJoined] = useState(false);
+  // Lifecycle: IDLE -> CONNECTING -> LIVE | ERROR. Camera acquisition and the socket room join
+  // run concurrently; the phase is derived from both results (see evaluatePhase).
+  const [phase, setPhase] = useState('IDLE');
+  const [localStream, setLocalStream] = useState(null);
+  const [cameraIssue, setCameraIssue] = useState(null); // null | denied | busy | missing | unsupported | play
   const [cameraOn, setCameraOn] = useState(true);
   const [micOn, setMicOn] = useState(true);
   const [viewerCount, setViewerCount] = useState(0);
@@ -42,6 +46,11 @@ export default function LiveRoomPage({ params }) {
   const localStreamRef = useRef(null);
   const peerConnectionsRef = useRef({}); // socketId -> RTCPeerConnection
   const chatScrollRef = useRef(null);
+  const attemptRef = useRef(0); // bumps on every (re)connect and on unmount; stale async results check it
+  const timeoutRef = useRef(null);
+  const statusRef = useRef({ cam: 'pending', join: 'pending' });
+  const cameraPromiseRef = useRef(Promise.resolve());
+  const joined = phase !== 'IDLE';
   const { devices, selectedDeviceId, setSelectedDeviceId, builtInDeviceId, buildConstraints } =
     useCameraDevices();
 
@@ -72,6 +81,25 @@ export default function LiveRoomPage({ params }) {
     if (el) el.scrollTop = el.scrollHeight;
   }, [chatMessages]);
 
+  // Bind the camera stream to the preview <video>. The element is always rendered once joined, so
+  // the ref is set by the time this effect runs (assigning inside the click handler hit a null ref).
+  useEffect(() => {
+    const el = localVideoRef.current;
+    if (!el || !localStream) return undefined;
+    let cancelled = false;
+    (async () => {
+      el.srcObject = localStream;
+      try {
+        await el.play();
+      } catch (err) {
+        if (!cancelled && err?.name !== 'AbortError') setCameraIssue((c) => c || 'play');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [localStream, joined]);
+
   function createPeerConnection(socketId, socket) {
     const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
 
@@ -96,27 +124,51 @@ export default function LiveRoomPage({ params }) {
     return pc;
   }
 
-  async function handleJoin() {
-    setError(null);
-    let media;
+  function classifyMediaError(err) {
+    const name = err?.name || '';
+    if (name === 'NotAllowedError' || name === 'PermissionDeniedError' || name === 'SecurityError') return 'denied';
+    if (name === 'NotReadableError' || name === 'TrackStartError' || name === 'AbortError') return 'busy';
+    if (name === 'NotFoundError' || name === 'DevicesNotFoundError' || name === 'OverconstrainedError') return 'missing';
+    return 'denied';
+  }
+
+  // Never rejects: resolves { media } or { issue }.
+  async function acquireCamera() {
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      return { issue: 'unsupported' };
+    }
     try {
-      media = await navigator.mediaDevices.getUserMedia(buildConstraints({ audio: true }));
-    } catch {
-      setError('Camera/mic access is required to join with video. You can still watch and chat below.');
+      const media = await navigator.mediaDevices.getUserMedia(buildConstraints({ audio: true }));
+      return { media };
+    } catch (err) {
+      return { issue: classifyMediaError(err) };
     }
+  }
 
-    if (media) {
-      localStreamRef.current = media;
-      if (localVideoRef.current) localVideoRef.current.srcObject = media;
+  // Moves to LIVE only once BOTH the socket join is acked and the camera attempt has settled
+  // (stream or a handled failure), whichever order they resolve in. Viewers without a camera
+  // still go LIVE and get the banner.
+  function evaluatePhase(attempt) {
+    if (attempt !== attemptRef.current) return;
+    const { cam, join } = statusRef.current;
+    if (join === 'acked' && cam !== 'pending') {
+      clearTimeout(timeoutRef.current);
+      setError(null);
+      setPhase('LIVE');
     }
+  }
 
+  function detachListeners() {
     const socket = getSocket();
-    if (!socket) {
-      setError('Not authenticated.');
-      return;
-    }
+    ['live:existing-peers', 'live:peer-joined', 'live:signal', 'live:peer-left', 'live:viewer-count',
+      'live:chat-message', 'live:pin-message', 'live:reaction', 'live:tip'].forEach((ev) => socket?.off(ev));
+  }
+
+  function attachListeners(socket) {
+    detachListeners();
 
     socket.on('live:existing-peers', async (existingPeers) => {
+      await cameraPromiseRef.current; // offers must include our tracks
       for (const { socketId, username } of existingPeers) {
         setPeers((prev) => ({ ...prev, [socketId]: { username } }));
         const pc = createPeerConnection(socketId, socket);
@@ -131,6 +183,7 @@ export default function LiveRoomPage({ params }) {
     });
 
     socket.on('live:signal', async ({ from, signal }) => {
+      await cameraPromiseRef.current;
       let pc = peerConnectionsRef.current[from];
       if (!pc) pc = createPeerConnection(from, socket);
 
@@ -183,26 +236,129 @@ export default function LiveRoomPage({ params }) {
         },
       ]);
     });
+  }
 
-    socket.emit('live:join', streamId);
-    setJoined(true);
+  // Resolves when the server acks live:join. Older backends don't ack but always answer with
+  // live:existing-peers, so that event counts as the ack too.
+  function joinRoom(socket) {
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        socket.off('live:existing-peers', finish);
+        resolve();
+      };
+      socket.on('live:existing-peers', finish);
+      socket.emit('live:join', streamId, finish);
+    });
+  }
+
+  async function startSession() {
+    const attempt = ++attemptRef.current;
+    clearTimeout(timeoutRef.current);
+    setError(null);
+    setCameraIssue(null);
+    setPhase('CONNECTING');
+
+    const socket = getSocket();
+    if (!socket) {
+      setError('Not authenticated.');
+      setPhase('ERROR');
+      return;
+    }
+
+    // Reconnect: drop stale peers/listeners, and leave so the re-join is clean.
+    Object.values(peerConnectionsRef.current).forEach((pc) => pc.close());
+    peerConnectionsRef.current = {};
+    setPeers({});
+    socket.emit('live:leave');
+
+    statusRef.current = {
+      cam: localStreamRef.current?.getTracks().some((t) => t.readyState === 'live') ? 'ready' : 'pending',
+      join: 'pending',
+    };
+
+    // 8s budget for the signaling handshake. (Camera permission prompts are user-paced, so the
+    // camera is deliberately not part of this budget.)
+    timeoutRef.current = setTimeout(() => {
+      if (attempt !== attemptRef.current || statusRef.current.join === 'acked') return;
+      setError('Connection timed out. Tap to reconnect');
+      setPhase('ERROR');
+    }, 8000);
+
+    attachListeners(socket);
+
+    const camera =
+      statusRef.current.cam === 'ready'
+        ? Promise.resolve({ media: localStreamRef.current })
+        : acquireCamera();
+
+    cameraPromiseRef.current = camera.then((res) => {
+      if (attempt !== attemptRef.current) {
+        // Superseded or unmounted while the prompt was open: don't leak the device.
+        if (res.media && res.media !== localStreamRef.current) res.media.getTracks().forEach((t) => t.stop());
+        return;
+      }
+      if (res.media) {
+        localStreamRef.current = res.media;
+        setLocalStream(res.media);
+        setCameraOn(res.media.getVideoTracks()[0]?.enabled !== false);
+        statusRef.current.cam = 'ready';
+      } else {
+        setCameraIssue(res.issue);
+        statusRef.current.cam = 'failed';
+      }
+      evaluatePhase(attempt);
+    });
+
+    joinRoom(socket).then(() => {
+      if (attempt !== attemptRef.current) return;
+      statusRef.current.join = 'acked';
+      evaluatePhase(attempt);
+    });
+  }
+
+  // "Tap to enable camera": re-ask for the device, then add the new tracks to any open peer
+  // connections and renegotiate so existing peers start receiving video.
+  async function retryCamera() {
+    setCameraIssue(null);
+    const res = await acquireCamera();
+    if (!res.media) {
+      setCameraIssue(res.issue);
+      return;
+    }
+    localStreamRef.current = res.media;
+    setLocalStream(res.media);
+    setCameraOn(true);
+    setMicOn(true);
+    const socket = getSocket();
+    for (const [socketId, pc] of Object.entries(peerConnectionsRef.current)) {
+      res.media.getTracks().forEach((track) => pc.addTrack(track, res.media));
+      try {
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        socket?.emit('live:signal', { to: socketId, signal: offer });
+      } catch {
+        // peer will pick the tracks up on its next negotiation
+      }
+    }
+  }
+
+  function resumePreview() {
+    setCameraIssue(null);
+    localVideoRef.current?.play().catch(() => setCameraIssue('play'));
   }
 
   function cleanupAll() {
+    attemptRef.current += 1; // invalidates any in-flight start/retry
+    clearTimeout(timeoutRef.current);
     Object.values(peerConnectionsRef.current).forEach((pc) => pc.close());
     peerConnectionsRef.current = {};
     localStreamRef.current?.getTracks().forEach((t) => t.stop());
     const socket = getSocket();
     socket?.emit('live:leave');
-    socket?.off('live:existing-peers');
-    socket?.off('live:peer-joined');
-    socket?.off('live:signal');
-    socket?.off('live:peer-left');
-    socket?.off('live:viewer-count');
-    socket?.off('live:chat-message');
-    socket?.off('live:pin-message');
-    socket?.off('live:reaction');
-    socket?.off('live:tip');
+    detachListeners();
   }
 
   function toggleCamera() {
@@ -275,17 +431,18 @@ export default function LiveRoomPage({ params }) {
         {joined ? (
           <div className="w-full h-full grid grid-cols-1">
             <div className="relative w-full h-full bg-zinc-900">
-              {localStreamRef.current ? (
-                <video
-                  ref={localVideoRef}
-                  autoPlay
-                  muted
-                  playsInline
-                  className={`w-full h-full object-cover ${cameraOn ? '' : 'hidden'}`}
-                />
-              ) : null}
-              {(!cameraOn || !localStreamRef.current) && (
-                <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-zinc-900 to-zinc-950">
+              {/* Always mounted once joined so the stream effect can bind it; sits at the bottom of the stack. */}
+              <video
+                ref={localVideoRef}
+                autoPlay
+                muted
+                playsInline
+                className={`absolute inset-0 z-0 w-full h-full object-cover ${
+                  localStream && cameraOn ? '' : 'invisible'
+                }`}
+              />
+              {(!cameraOn || !localStream) && (
+                <div className="absolute inset-0 z-0 flex items-center justify-center bg-gradient-to-br from-zinc-900 to-zinc-950">
                   <div className="w-24 h-24 rounded-full bg-zinc-800 overflow-hidden">
                     {stream.host?.avatarUrl ? (
                       <img src={stream.host.avatarUrl} alt="" className="w-full h-full object-cover" />
@@ -406,7 +563,7 @@ export default function LiveRoomPage({ params }) {
 
       <div className="flex-1" />
 
-      {error && (
+      {error && phase !== 'ERROR' && (
         <div className="relative z-20 px-4 mb-2">
           <p className="text-sm text-red-400 bg-zinc-900/80 backdrop-blur-md border border-red-500/30 rounded-xl px-4 py-2 max-w-sm">
             {error}
@@ -427,10 +584,50 @@ export default function LiveRoomPage({ params }) {
             />
           )}
           <button
-            onClick={handleJoin}
+            onClick={startSession}
             className="bg-amber-500 hover:bg-amber-400 text-black font-bold px-8 py-3.5 rounded-2xl transition-all shadow-2xl"
           >
             Join with camera
+          </button>
+        </div>
+      )}
+
+      {/* ---------- Connection state ---------- */}
+      {phase === 'CONNECTING' && (
+        <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 z-30 px-4 flex justify-center pointer-events-none">
+          <div className="bg-zinc-900/90 backdrop-blur-md border border-zinc-800 rounded-2xl px-5 py-3 flex items-center gap-3">
+            <span className="w-4 h-4 rounded-full border-2 border-amber-500 border-t-transparent animate-spin" />
+            <span className="text-sm font-semibold text-zinc-200">
+              {statusRef.current.join === 'acked' ? 'Waiting for camera permission…' : 'Connecting…'}
+            </span>
+          </div>
+        </div>
+      )}
+      {phase === 'ERROR' && (
+        <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 z-30 px-4 flex justify-center">
+          <button
+            onClick={startSession}
+            className="bg-red-600 hover:bg-red-500 text-white font-bold text-sm px-6 py-3.5 rounded-2xl shadow-2xl transition-all"
+          >
+            {error || 'Connection failed. Tap to reconnect'}
+          </button>
+        </div>
+      )}
+      {joined && cameraIssue && (
+        <div className="absolute inset-x-0 top-28 z-30 px-4 flex justify-center">
+          <button
+            onClick={cameraIssue === 'play' ? resumePreview : retryCamera}
+            className="max-w-sm bg-amber-500 hover:bg-amber-400 text-black font-bold text-sm px-5 py-3 rounded-2xl shadow-2xl transition-all text-center"
+          >
+            {cameraIssue === 'busy'
+              ? 'Camera is in use by another app. Close it, then tap to retry.'
+              : cameraIssue === 'missing'
+              ? 'No camera found. Connect one, then tap to retry.'
+              : cameraIssue === 'unsupported'
+              ? 'This browser does not support camera access.'
+              : cameraIssue === 'play'
+              ? 'Tap to start the camera preview'
+              : 'Camera access required. Please tap to enable camera'}
           </button>
         </div>
       )}
@@ -587,8 +784,21 @@ function ChatLine({ message, isHostMsg, canPin, onPin }) {
 
 function PeerVideo({ peer }) {
   const ref = useRef(null);
+  const [gaveUp, setGaveUp] = useState(false);
+
   useEffect(() => {
-    if (ref.current && peer.mediaStream) ref.current.srcObject = peer.mediaStream;
+    const el = ref.current;
+    if (el && peer.mediaStream) {
+      el.srcObject = peer.mediaStream;
+      el.play?.().catch(() => {});
+    }
+  }, [peer.mediaStream]);
+
+  // A peer without a camera never sends a track; don't show "Connecting…" forever.
+  useEffect(() => {
+    if (peer.mediaStream) return undefined;
+    const t = setTimeout(() => setGaveUp(true), 8000);
+    return () => clearTimeout(t);
   }, [peer.mediaStream]);
 
   return (
@@ -597,7 +807,7 @@ function PeerVideo({ peer }) {
         <video ref={ref} autoPlay playsInline className="w-full h-full object-cover" />
       ) : (
         <div className="w-full h-full flex items-center justify-center text-[10px] text-zinc-500">
-          Connecting…
+          {gaveUp ? 'No video' : 'Connecting…'}
         </div>
       )}
       <span className="absolute bottom-1 left-1 text-[10px] text-white bg-black/70 px-1.5 py-0.5 rounded-md">

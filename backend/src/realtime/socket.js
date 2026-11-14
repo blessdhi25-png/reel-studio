@@ -84,7 +84,7 @@ export function initSocket(httpServer) {
 
     // ---- Live stream: join/leave, WebRTC signaling, chat ----
 
-    socket.on('live:join', (streamId) => {
+    socket.on('live:join', (streamId, ack) => {
       const room = `live:${streamId}`;
       const existingPeers = [...(io.sockets.adapter.rooms.get(room) || [])];
 
@@ -105,7 +105,11 @@ export function initSocket(httpServer) {
         username: socket.data.username,
       });
 
-      io.to(room).emit('live:viewer-count', { count: io.sockets.adapter.rooms.get(room)?.size || 0 });
+      const count = io.sockets.adapter.rooms.get(room)?.size || 0;
+      io.to(room).emit('live:viewer-count', { count });
+
+      // Optional ack so the client can tell the room join actually completed.
+      if (typeof ack === 'function') ack({ ok: true, count });
     });
 
     socket.on('live:signal', ({ to, signal }) => {
