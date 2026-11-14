@@ -2,6 +2,7 @@ import './globals.css';
 import { AuthProvider } from '@/context/AuthContext';
 import { ToastProvider } from '@/context/ToastContext';
 import { SocketProvider } from '@/context/SocketContext';
+import { CallProvider } from '@/context/CallContext';
 import AppShell from '@/components/AppShell';
 import Providers from '@/components/Providers';
 
@@ -49,7 +50,9 @@ export default function RootLayout({ children }) {
           <AuthProvider>
             <ToastProvider>
               <SocketProvider>
-                <AppShell>{children}</AppShell>
+                <CallProvider>
+                  <AppShell>{children}</AppShell>
+                </CallProvider>
               </SocketProvider>
             </ToastProvider>
           </AuthProvider>

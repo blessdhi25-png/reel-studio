@@ -1,6 +1,7 @@
 import { Server } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import prisma from '../config/db.js';
+import { canMessage } from '../utils/messagingAccess.js';
 
 let io;
 
@@ -11,6 +12,27 @@ let io;
 export function getOnlineUserIds(ids) {
   if (!io) return [];
   return ids.filter((id) => (io.sockets.adapter.rooms.get(`user:${id}`)?.size || 0) > 0);
+}
+
+// ---- 1:1 voice/video call signaling (WebRTC) ----
+// The server only relays SDP/ICE between the two users; media flows peer-to-peer.
+// userId -> { callId, peerId, at }: a user in (or ringing for) a call is "busy" to new callers.
+const activeCalls = new Map();
+const CALL_STALE_MS = 3 * 60 * 60 * 1000;
+const MAX_SDP_CHARS = 20000;
+
+function getBusyCall(userId) {
+  const c = activeCalls.get(userId);
+  if (!c) return null;
+  if (Date.now() - c.at > CALL_STALE_MS) {
+    activeCalls.delete(userId);
+    return null;
+  }
+  return c;
+}
+
+function clearCall(callId) {
+  for (const [uid, c] of activeCalls) if (c.callId === callId) activeCalls.delete(uid);
 }
 
 export function initSocket(httpServer) {
@@ -143,6 +165,81 @@ export function initSocket(httpServer) {
         username: socket.data.username,
         at: Date.now(),
       });
+    });
+
+    // ---- Calls ----
+    function validCallId(id) {
+      return typeof id === 'string' && id.length > 0 && id.length <= 64;
+    }
+
+    socket.on('call:offer', async ({ toUserId, callId, callType, sdp } = {}) => {
+      const me = socket.data.userId;
+      if (typeof toUserId !== 'string' || !validCallId(callId)) return;
+      if (callType !== 'voice' && callType !== 'video') return;
+      if (!sdp || typeof sdp.sdp !== 'string' || sdp.sdp.length > MAX_SDP_CHARS) return;
+      if (toUserId === me) return;
+
+      const fail = (event, extra = {}) => socket.emit(event, { callId, ...extra });
+
+      if (!(await canMessage(me, toUserId))) return fail('call:unavailable', { reason: 'not-allowed' });
+      if ((io.sockets.adapter.rooms.get(`user:${toUserId}`)?.size || 0) === 0) {
+        return fail('call:unavailable', { reason: 'offline' });
+      }
+      if (getBusyCall(toUserId) || getBusyCall(me)) return fail('call:busy');
+
+      const now = Date.now();
+      activeCalls.set(me, { callId, peerId: toUserId, at: now });
+      activeCalls.set(toUserId, { callId, peerId: me, at: now });
+      socket.data.activeCallId = callId;
+
+      const caller = await prisma.user.findUnique({
+        where: { id: me },
+        select: { id: true, username: true, avatarUrl: true },
+      });
+      io.to(`user:${toUserId}`).emit('call:offer', { callId, callType, sdp, from: caller });
+    });
+
+    socket.on('call:answer', ({ toUserId, callId, sdp } = {}) => {
+      const me = socket.data.userId;
+      const c = getBusyCall(me);
+      if (!c || c.callId !== callId || c.peerId !== toUserId) return;
+      if (!sdp || typeof sdp.sdp !== 'string' || sdp.sdp.length > MAX_SDP_CHARS) return;
+      socket.data.activeCallId = callId;
+      // Other tabs/devices of the callee stop ringing.
+      socket.to(`user:${me}`).emit('call:handled', { callId });
+      io.to(`user:${toUserId}`).emit('call:answer', { callId, sdp });
+    });
+
+    socket.on('call:ice', ({ toUserId, callId, candidate } = {}) => {
+      const c = getBusyCall(socket.data.userId);
+      if (!c || c.callId !== callId || c.peerId !== toUserId || !candidate) return;
+      io.to(`user:${toUserId}`).emit('call:ice', { callId, candidate });
+    });
+
+    // decline (callee) and end (either side, incl. caller cancelling while ringing) share cleanup.
+    function endCall(event) {
+      return ({ toUserId, callId } = {}) => {
+        const me = socket.data.userId;
+        const c = getBusyCall(me);
+        if (!c || c.callId !== callId || c.peerId !== toUserId) return;
+        clearCall(callId);
+        socket.data.activeCallId = null;
+        io.to(`user:${toUserId}`).emit(event, { callId });
+        if (event === 'call:decline') socket.to(`user:${me}`).emit('call:handled', { callId });
+      };
+    }
+    socket.on('call:decline', endCall('call:decline'));
+    socket.on('call:end', endCall('call:end'));
+
+    socket.on('disconnect', () => {
+      const callId = socket.data.activeCallId;
+      if (!callId) return;
+      const me = socket.data.userId;
+      const c = getBusyCall(me);
+      if (c && c.callId === callId) {
+        clearCall(callId);
+        io.to(`user:${c.peerId}`).emit('call:end', { callId });
+      }
     });
 
     socket.on('live:leave', () => leaveLiveRoom(socket));

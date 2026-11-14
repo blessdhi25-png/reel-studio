@@ -8,7 +8,7 @@ import { api } from '../lib/api';
 import { getSocket } from '../lib/socket';
 import { useSocketContext } from '../context/SocketContext';
 import ReportModal from './ReportModal';
-import CallModal from './CallModal';
+import { useCall } from '../context/CallContext';
 import { LoadingSpinner } from './LoadingScreen';
 
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
@@ -73,8 +73,7 @@ export default function ChatThreadView({ otherUserId }) {
   const [toast, setToast] = useState(null);
   const bottomRef = useRef(null);
   const fileInputRef = useRef(null);
-  const [isCalling, setIsCalling] = useState(false);
-  const [callType, setCallType] = useState('voice'); // 'voice' | 'video'
+  const { startCall: beginCall, inCall } = useCall();
   const [attachedFile, setAttachedFile] = useState(null); // { file, previewUrl, kind }
 
   function flashToast(msg) {
@@ -145,12 +144,16 @@ export default function ChatThreadView({ otherUserId }) {
   }, [attachedFile]);
 
   function startCall(type) {
+    if (!otherUser?.id) return;
     if (otherUser?.blockedByMe) {
       flashToast("Unblock this person to call them");
       return;
     }
-    setCallType(type);
-    setIsCalling(true);
+    if (inCall) {
+      flashToast("You're already in a call");
+      return;
+    }
+    beginCall(otherUser, type);
   }
 
   function handleFilePicked(e) {
@@ -450,8 +453,6 @@ export default function ChatThreadView({ otherUserId }) {
           <Send size={18} />
         </button>
       </form>
-
-      {isCalling && <CallModal user={otherUser} callType={callType} onEnd={() => setIsCalling(false)} />}
 
       {showReport && <ReportModal targetType="user" targetId={otherUserId} onClose={() => setShowReport(false)} />}
 
