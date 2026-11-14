@@ -6,6 +6,7 @@ import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, us
 import { api } from '../lib/api';
 import CommentsPanel from './CommentsPanel';
 import ReportModal from './ReportModal';
+import ConfirmModal from './ConfirmModal';
 import ShareSheet from './ShareSheet';
 import SoundPicker from './SoundPicker';
 import SaveToCollectionModal from './SaveToCollectionModal';
@@ -1275,28 +1276,14 @@ export default VideoCard;
 
 function DeleteConfirmModal({ deleting, onConfirm, onCancel }) {
   return (
-    <div className="absolute inset-0 bg-ink/90 flex items-center justify-center z-30">
-      <div className="bg-ink2 rounded-sprocket p-6 w-72 border border-smoke/20 text-center">
-        <p className="font-display text-xl font-extrabold text-bone mb-2 tracking-tight">Delete this post?</p>
-        <p className="font-body text-sm font-bold text-smoke mb-5">
-          Are you sure you want to delete this video? This action cannot be undone.
-        </p>
-        <button
-          onClick={onConfirm}
-          disabled={deleting}
-          className="w-full bg-red-500 text-ink font-body font-extrabold tracking-tight py-2 rounded-sprocket disabled:opacity-50"
-        >
-          {deleting ? 'Deleting…' : 'Delete Post'}
-        </button>
-        <button
-          onClick={onCancel}
-          disabled={deleting}
-          className="w-full mt-3 text-smoke text-sm font-body font-bold disabled:opacity-50"
-        >
-          Cancel
-        </button>
-      </div>
-    </div>
+    <ConfirmModal
+      title="Delete this video?"
+      message="This action cannot be undone. The video and all its comments will be permanently removed."
+      confirmLabel={deleting ? 'Deleting…' : 'Delete'}
+      confirmDisabled={deleting}
+      onConfirm={onConfirm}
+      onCancel={onCancel}
+    />
   );
 }
 

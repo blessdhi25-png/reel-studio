@@ -1,15 +1,15 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import { AlertTriangle, Trash2 } from 'lucide-react';
 
 // Generic replacement for window.confirm() — styled to match the app's own
 // dark theme instead of the browser's native dialog. Used for log out, deleting
 // posts / stories / collections, etc.
 //
-// Layout: a full-screen dimmed + blurred backdrop (which also swallows taps and
-// locks page scroll) with the card floating ABOVE the fixed BottomNav — 7rem plus
-// the device's home-indicator inset from the bottom edge — so the nav bar can never
-// cover the buttons. On sm+ screens the card is centred instead.
+// Layout: a full-screen dimmed + blurred backdrop (z-[100]: above the BottomNav and any floating
+// icons; it also swallows taps and locks page scroll) with the card centred. Light card on mobile,
+// dark card on desktop (lg:).
 export default function ConfirmModal({
   title,
   message,
@@ -18,6 +18,7 @@ export default function ConfirmModal({
   onConfirm,
   onCancel,
   danger = true,
+  confirmDisabled = false,
 }) {
   const cancelRef = useRef(null);
   // Callers pass inline handlers; keep the latest in a ref so the effect below runs once on mount
@@ -38,38 +39,45 @@ export default function ConfirmModal({
     };
   }, []);
 
+  const Icon = danger ? Trash2 : AlertTriangle;
   return (
-    // z-[60] sits above the BottomNav (z-50), so the backdrop dims and blocks the nav too.
-    <div className="fixed inset-0 z-[60]">
-      <div
-        className="absolute inset-0 bg-black/80 backdrop-blur-sm"
-        onClick={onCancel}
-        aria-hidden="true"
-      />
+    // z-[100] sits above the BottomNav (z-50), floating chat button and any card chrome.
+    <div
+      className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+      onClick={onCancel}
+    >
       <div
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="confirm-modal-title"
-        className="fixed inset-x-4 bottom-28 bottom-[calc(7rem+env(safe-area-inset-bottom))] sm:bottom-auto sm:top-1/2 sm:-translate-y-1/2 mx-auto max-w-sm bg-white dark:bg-neutral-900 border border-slate-200 dark:border-neutral-800 shadow-2xl rounded-2xl p-5"
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-sm bg-white text-neutral-900 rounded-2xl p-6 shadow-2xl border border-neutral-200 text-center lg:bg-neutral-900 lg:text-white lg:border-neutral-800"
       >
-        <h2 id="confirm-modal-title" className="text-base font-extrabold tracking-tight text-slate-900 dark:text-white mb-1.5">
+        <div
+          className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4 ${
+            danger ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'
+          }`}
+        >
+          <Icon className="w-6 h-6" strokeWidth={2.25} />
+        </div>
+        <h2 id="confirm-modal-title" className="font-extrabold text-lg tracking-tight mb-1.5">
           {title}
         </h2>
-        {message && <p className="text-sm font-medium text-slate-600 dark:text-neutral-400 mb-5">{message}</p>}
-        <div className="flex gap-2">
+        {message && <p className="text-xs font-medium text-neutral-500 leading-relaxed mb-6">{message}</p>}
+        <div className="grid grid-cols-2 gap-3">
           <button
             ref={cancelRef}
             onClick={onCancel}
-            className="flex-1 py-2.5 rounded-xl bg-slate-100 dark:bg-neutral-800 text-slate-800 dark:text-neutral-200 text-sm font-bold hover:bg-slate-200 dark:hover:bg-neutral-700 transition-colors"
+            disabled={confirmDisabled}
+            className="py-3 rounded-xl bg-neutral-100 hover:bg-neutral-200 text-neutral-800 font-bold text-xs transition lg:bg-neutral-800 lg:hover:bg-neutral-700 lg:text-neutral-200 disabled:opacity-50"
           >
             {cancelLabel}
           </button>
           <button
             onClick={onConfirm}
-            className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-colors ${
-              danger
-                ? 'bg-rose-500 text-white hover:bg-rose-400'
-                : 'bg-amber-500 text-black hover:bg-amber-400'
+            disabled={confirmDisabled}
+            className={`py-3 rounded-xl font-extrabold text-xs shadow-sm transition disabled:opacity-50 ${
+              danger ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-amber-500 hover:bg-amber-600 text-black'
             }`}
           >
             {confirmLabel}

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { X } from 'lucide-react';
 import { api } from '../lib/api';
 
 const REASONS = [
@@ -39,34 +40,58 @@ export default function ReportModal({ targetType, targetId, onClose }) {
     }
   }
 
+  const noun = targetType ? targetType.charAt(0).toUpperCase() + targetType.slice(1) : 'Content';
+
   return (
-    <div className="absolute inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-40 px-6">
-      <div className="bg-white dark:bg-ink2 rounded-sprocket p-6 w-full max-w-sm border border-slate-200 dark:border-smoke/20">
+    <div
+      className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4"
+      onClick={onClose}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="report-modal-title"
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-md max-h-[92dvh] overflow-y-auto bg-white text-neutral-900 rounded-t-3xl sm:rounded-2xl p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-2xl border border-neutral-200 lg:bg-neutral-900 lg:text-white lg:border-neutral-800"
+      >
+        <div className="sm:hidden w-10 h-1 rounded-full bg-neutral-300 mx-auto mb-4" aria-hidden="true" />
+        <div className="flex items-center justify-between mb-4">
+          <h2 id="report-modal-title" className="font-extrabold text-lg tracking-tight">
+            {done ? 'Report submitted' : `Report ${noun}`}
+          </h2>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="w-8 h-8 -mr-1 rounded-full flex items-center justify-center text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 lg:hover:bg-neutral-800 lg:hover:text-white transition"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
         {done ? (
           <>
-            <p className="font-display text-xl font-extrabold tracking-tight text-slate-900 dark:text-bone mb-2">Report submitted</p>
-            <p className="font-body text-sm font-semibold text-slate-500 dark:text-smoke mb-5">
+            <p className="text-sm font-medium text-neutral-500 leading-relaxed mb-6">
               Thanks — our team will review it. You can check the status from your reports later.
             </p>
             <button
               onClick={onClose}
-              className="w-full bg-reel text-ink font-body font-semibold py-2 rounded-sprocket"
+              className="w-full py-3.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-black font-extrabold text-sm shadow-md transition"
             >
               Close
             </button>
           </>
         ) : (
           <>
-            <p className="font-display text-xl font-extrabold tracking-tight text-slate-900 dark:text-bone mb-4">
-              Report {targetType}
-            </p>
-            <div className="grid grid-cols-2 gap-2 mb-4">
+            <div className="grid grid-cols-2 gap-2.5 mb-4">
               {REASONS.map((r) => (
                 <button
                   key={r.value}
                   onClick={() => setReason(r.value)}
-                  className={`py-2 px-2 font-body text-xs rounded-sprocket border text-left ${
-                    reason === r.value ? 'border-reel text-reel' : 'border-smoke/30 text-smoke'
+                  aria-pressed={reason === r.value}
+                  className={`p-3 rounded-xl text-left text-xs border transition ${
+                    reason === r.value
+                      ? 'bg-amber-500/15 text-amber-700 border-amber-500 font-bold lg:text-amber-400'
+                      : 'bg-neutral-100 text-neutral-700 border-transparent font-semibold hover:bg-neutral-200/70 lg:bg-neutral-800 lg:text-neutral-300 lg:hover:bg-neutral-700'
                   }`}
                 >
                   {r.label}
@@ -78,17 +103,17 @@ export default function ReportModal({ targetType, targetId, onClose }) {
               onChange={(e) => setDetails(e.target.value)}
               placeholder="Additional details (optional)"
               rows={3}
-              className="w-full bg-slate-100 dark:bg-ink text-slate-900 dark:text-bone font-body text-sm rounded-sprocket p-3 mb-4 outline-none border border-transparent focus:border-reel/50"
+              className="w-full rounded-xl bg-neutral-100 border border-neutral-200 p-3 text-sm font-medium mb-4 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-amber-500 lg:bg-neutral-800 lg:border-neutral-700 lg:text-white"
             />
-            {error && <p className="font-body text-xs text-red-400 mb-3">{error}</p>}
+            {error && <p className="text-xs font-semibold text-red-600 mb-3">{error}</p>}
             <button
               onClick={submit}
               disabled={!reason || submitting}
-              className="w-full bg-reel text-ink font-body font-semibold py-2 rounded-sprocket disabled:opacity-50"
+              className="w-full py-3.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-black font-extrabold text-sm shadow-md transition disabled:opacity-50"
             >
-              {submitting ? 'Submitting…' : 'Submit report'}
+              {submitting ? 'Submitting…' : 'Submit Report'}
             </button>
-            <button onClick={onClose} className="w-full mt-3 text-slate-500 dark:text-smoke text-sm font-bold font-body">
+            <button onClick={onClose} className="w-full mt-2 py-2.5 text-xs font-bold text-neutral-500 hover:text-neutral-800 lg:hover:text-white transition">
               Cancel
             </button>
           </>

@@ -21,7 +21,7 @@ router.get('/studio/overview', requireAuth, async (req, res) => {
     where: { userId: req.userId, status: { not: 'removed' } },
     orderBy: { createdAt: 'desc' },
     select: {
-      id: true, caption: true, thumbnailUrl: true, videoType: true, status: true,
+      id: true, caption: true, thumbnailUrl: true, videoUrl: true, videoType: true, status: true,
       viewCount: true, likeCount: true, commentCount: true, bookmarkCount: true,
       rankingScore: true, boostedUntil: true, createdAt: true,
     },
