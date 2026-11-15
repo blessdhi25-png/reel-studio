@@ -3,6 +3,7 @@ import { AuthProvider } from '@/context/AuthContext';
 import { ToastProvider } from '@/context/ToastContext';
 import { SocketProvider } from '@/context/SocketContext';
 import { CallProvider } from '@/context/CallContext';
+import { LiveAlertsProvider } from '@/context/LiveAlertsContext';
 import AppShell from '@/components/AppShell';
 import Providers from '@/components/Providers';
 
@@ -50,9 +51,11 @@ export default function RootLayout({ children }) {
           <AuthProvider>
             <ToastProvider>
               <SocketProvider>
-                <CallProvider>
-                  <AppShell>{children}</AppShell>
-                </CallProvider>
+                <LiveAlertsProvider>
+                  <CallProvider>
+                    <AppShell>{children}</AppShell>
+                  </CallProvider>
+                </LiveAlertsProvider>
               </SocketProvider>
             </ToastProvider>
           </AuthProvider>

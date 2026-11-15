@@ -20,6 +20,7 @@ export function getOnlineUserIds(ids) {
 const activeCalls = new Map();
 const CALL_STALE_MS = 3 * 60 * 60 * 1000;
 const MAX_SDP_CHARS = 20000;
+const LIVE_REACTION_EMOJIS = ['❤️', '🔥', '👏', '🚀', '😂', '🎉', '😮'];
 
 function getBusyCall(userId) {
   const c = activeCalls.get(userId);
@@ -119,12 +120,14 @@ export function initSocket(httpServer) {
         existingPeers.map((socketId) => ({
           socketId,
           username: io.sockets.sockets.get(socketId)?.data.username,
+          userId: io.sockets.sockets.get(socketId)?.data.userId, // lets clients tell which peer is the host
         }))
       );
 
       socket.to(room).emit('live:peer-joined', {
         socketId: socket.id,
         username: socket.data.username,
+        userId: socket.data.userId,
       });
 
       const count = io.sockets.adapter.rooms.get(room)?.size || 0;
@@ -158,14 +161,25 @@ export function initSocket(httpServer) {
     // Lightweight floating emoji burst — not stored, just relayed for the
     // animation. Distinct from live:chat-message so it doesn't clutter the
     // scrollback.
-    socket.on('live:reaction', ({ streamId, emoji }) => {
-      if (!emoji) return;
+    socket.on('live:reaction', ({ streamId, emoji } = {}) => {
+      if (typeof streamId !== 'string' || !LIVE_REACTION_EMOJIS.includes(emoji)) return;
+      // Only people actually in the room can broadcast to it.
+      if (!socket.rooms.has(`live:${streamId}`)) return;
+      // Cheap flood guard: at most ~8 reactions/second per socket.
+      const now = Date.now();
+      const recent = (socket.data.reactionTimes || []).filter((t) => now - t < 1000);
+      if (recent.length >= 8) return;
+      recent.push(now);
+      socket.data.reactionTimes = recent;
       io.to(`live:${streamId}`).emit('live:reaction', {
         emoji,
         username: socket.data.username,
-        at: Date.now(),
+        at: now,
       });
     });
+
+    socket.on('live:leave', () => leaveLiveRoom(socket));
+    socket.on('disconnect', () => leaveLiveRoom(socket));
 
     // ---- Calls ----
     function validCallId(id) {
@@ -242,8 +256,6 @@ export function initSocket(httpServer) {
       }
     });
 
-    socket.on('live:leave', () => leaveLiveRoom(socket));
-    socket.on('disconnect', () => leaveLiveRoom(socket));
 
     // "disconnecting" (not "disconnect") fires while the socket's rooms are
     // still populated, so this is the last point `user:${id}`'s room size
@@ -292,4 +304,13 @@ export function emitToRoom(room, event, payload) {
 // celebration banner in real time rather than waiting to notice the bell.
 export function emitToUser(userId, event, payload) {
   io?.to(`user:${userId}`).emit(event, payload);
+}
+
+// Host ended the stream: tell everyone in the room, then drop them from it so no late
+// signalling/chat/reactions reach (or come from) a finished stream.
+export function closeLiveRoom(streamId) {
+  if (!io) return;
+  const room = `live:${streamId}`;
+  io.to(room).emit('live:stream-ended', { id: streamId });
+  io.in(room).socketsLeave(room);
 }

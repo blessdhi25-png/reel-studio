@@ -378,6 +378,7 @@ adminGetStats: () => request('/admin/stats'),
   // Live streaming
   getLiveStreams: (category) => request(`/live${category && category !== 'All' ? `?category=${category}` : ''}`),
   getLiveStream: (id) => request(`/live/${id}`),
+  getFollowingLive: () => request('/live/following'), // live streams from creators I follow
   startLiveStream: (title, extra = {}) => request('/live/start', { method: 'POST', body: { title, ...extra } }),
   endLiveStream: (id) => request(`/live/${id}/end`, { method: 'POST' }),
   tipLiveStreamCheckout: (id, amountCents, message) =>

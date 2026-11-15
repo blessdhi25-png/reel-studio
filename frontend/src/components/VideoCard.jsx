@@ -730,6 +730,7 @@ const VideoCard = forwardRef(function VideoCard(
         <>
         <video
           ref={videoRef}
+          data-feed-media
           loop={!prefs.autoScroll}
           playsInline
           muted={!audioEnabled}

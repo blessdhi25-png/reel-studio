@@ -171,6 +171,8 @@ export function SocketProvider({ children }) {
       // for every DM (see utils/notify.js's call site in messages.js), so
       // toasting this too would double up on the same event.
       if (n.type === 'message') return;
+      // "@x is live now" gets its own tappable banner (context/LiveAlertsContext.jsx).
+      if (n.type === 'live_started') return;
       toast.info(n.content || 'New notification', { duration: 4000 });
     }
 

@@ -254,6 +254,7 @@ export default function StoryViewer({ groups, initialGroupIndex, currentUserId, 
         {story.mediaType === 'video' && (
           <video
             key={story.id}
+            data-feed-media
             ref={videoRef}
             src={story.mediaUrl}
             autoPlay

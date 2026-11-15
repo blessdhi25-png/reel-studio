@@ -397,6 +397,36 @@ export function CallProvider({ children }) {
     };
   }, [socket, setCall, teardown]);
 
+  // Feed audio suppression: while a call is ringing or live, silence and pause every feed/story video
+  // (including ones that try to autoplay as the person scrolls), then restore them afterwards.
+  const callActive = !!call && call.status !== 'ended';
+  useEffect(() => {
+    if (!callActive) return undefined;
+    const SELECTOR = 'video[data-feed-media]';
+    const saved = new Map(); // element -> { muted, wasPlaying }
+    const silence = (el) => {
+      if (!saved.has(el)) saved.set(el, { muted: el.muted, wasPlaying: !el.paused });
+      el.muted = true;
+      if (!el.paused) el.pause();
+    };
+    document.querySelectorAll(SELECTOR).forEach(silence);
+    // `play` doesn't bubble, so listen in the capture phase to catch autoplay from any card.
+    const onPlay = (e) => {
+      if (e.target?.matches?.(SELECTOR)) silence(e.target);
+    };
+    document.addEventListener('play', onPlay, true);
+    return () => {
+      document.removeEventListener('play', onPlay, true);
+      saved.forEach(({ muted, wasPlaying }, el) => {
+        if (!el.isConnected) return;
+        el.muted = muted;
+        const r = el.getBoundingClientRect();
+        const onScreen = r.bottom > 0 && r.top < window.innerHeight && r.right > 0 && r.left < window.innerWidth;
+        if (wasPlaying && onScreen) el.play().catch(() => {});
+      });
+    };
+  }, [callActive]);
+
   // Provider unmount (e.g. logout): release devices.
   useEffect(
     () => () => {

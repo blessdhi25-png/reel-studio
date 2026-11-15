@@ -6,6 +6,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Home, Compass, UserCheck, Users, Radio, Bell, MessageCircle, PlusSquare, User, MoreHorizontal, Search, List } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useSocketContext } from '../context/SocketContext';
+import { useLiveAlerts } from '../context/LiveAlertsContext';
 import { api } from '../lib/api';
 import { isNavHidden } from './BottomNav';
 import DesktopDrawer from './DesktopDrawers';
@@ -33,6 +34,7 @@ function SidebarInner() {
   const searchParams = useSearchParams();
   const { user, isAuthenticated } = useAuth();
   const { unreadCount } = useSocketContext();
+  const { liveNow } = useLiveAlerts();
   const [q, setQ] = useState('');
   const [following, setFollowing] = useState([]);
   const [drawer, setDrawer] = useState(null); // null | 'messages' | 'activity' | 'more'
@@ -76,7 +78,7 @@ function SidebarInner() {
     { label: 'Explore', href: '/search', Icon: Compass, active: pathname.startsWith('/search') },
     { label: 'Following', href: authed('/?tab=following'), Icon: UserCheck, active: onFollowingTab },
     { label: 'Friends', href: authed('/friends'), Icon: Users, active: pathname.startsWith('/friends') },
-    { label: 'LIVE', href: '/live', Icon: Radio, active: pathname.startsWith('/live') },
+    { label: 'LIVE', href: '/live', Icon: Radio, active: pathname.startsWith('/live'), badge: liveNow.length },
     { label: 'Messages', onClick: toggleDrawer('messages'), Icon: MessageCircle, active: drawer === 'messages', badge: messageUnread },
     { label: 'Activity', onClick: toggleDrawer('activity'), Icon: Bell, active: drawer === 'activity', badge: unreadCount },
     { label: 'Upload', href: authed('/upload'), Icon: PlusSquare, active: pathname === '/upload' },

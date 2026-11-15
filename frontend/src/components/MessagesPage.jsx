@@ -7,6 +7,7 @@ import { getSocket } from '../lib/socket';
 import { useSocketContext } from '../context/SocketContext';
 import { LoadingSpinner } from './LoadingScreen';
 import CallsList from './CallsList';
+import { useLiveAlerts } from '../context/LiveAlertsContext';
 
 function timeAgo(dateStr) {
   const diffMs = Date.now() - new Date(dateStr).getTime();
@@ -50,6 +51,7 @@ export default function MessagesPage() {
   const [loadingCalls, setLoadingCalls] = useState(true);
   const [missedCount, setMissedCount] = useState(0);
   const tabRef = useRef('messages');
+  const { liveNow } = useLiveAlerts();
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -213,6 +215,37 @@ export default function MessagesPage() {
         </div>
 
         <div className="flex-1 overflow-y-auto p-2">
+          {tab === 'messages' && liveNow.length > 0 && (
+            <div className="px-1.5 pt-1 pb-3 mb-1 border-b border-zinc-800/80">
+              <p className="mb-2.5 flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wider text-red-400">
+                <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" /> Live now
+              </p>
+              <div className="flex gap-4 overflow-x-auto no-scrollbar">
+                {liveNow.map((s) => (
+                  <button
+                    key={s.id}
+                    onClick={() => router.push(`/live/${s.id}`)}
+                    className="flex flex-col items-center gap-1.5 shrink-0 w-16"
+                    aria-label={`${s.host?.username} is live. Tap to join`}
+                  >
+                    <span className="relative">
+                      <span className="w-14 h-14 rounded-full overflow-hidden bg-zinc-800 flex items-center justify-center text-amber-400 font-bold ring-2 ring-red-500 ring-offset-2 ring-offset-zinc-900">
+                        {s.host?.avatarUrl ? (
+                          <img src={s.host.avatarUrl} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          s.host?.username?.[0]?.toUpperCase()
+                        )}
+                      </span>
+                      <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 bg-red-600 text-white text-[9px] font-extrabold px-1.5 rounded-full leading-4">
+                        LIVE
+                      </span>
+                    </span>
+                    <span className="w-full truncate text-center text-[11px] font-semibold text-zinc-300">@{s.host?.username}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           {tab === 'calls' && <CallsList calls={calls} loading={loadingCalls} search={search} />}
           {tab === 'messages' && loadingConvos && <LoadingSpinner label="Loading…" />}
           {tab === 'messages' && !loadingConvos && filteredConvos.length === 0 && (

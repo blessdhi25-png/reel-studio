@@ -3,6 +3,7 @@ import stripe from '../config/stripe.js';
 import prisma from '../config/db.js';
 import { requireAuth, optionalAuth } from '../middleware/auth.js';
 import { notify } from '../utils/notify.js';
+import { closeLiveRoom, emitToUser } from '../realtime/socket.js';
 
 const router = Router();
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
@@ -13,6 +14,21 @@ router.get('/live', optionalAuth, async (req, res) => {
   const { category } = req.query;
   const streams = await prisma.liveStream.findMany({
     where: { status: 'live', ...(LIVE_CATEGORIES.includes(category) ? { category } : {}) },
+    orderBy: { startedAt: 'desc' },
+    include: { host: { select: { id: true, username: true, avatarUrl: true } } },
+  });
+  res.json(streams);
+});
+
+// Live streams from creators the signed-in user follows (drives the "live now" banner / strip).
+// Declared before /live/:id so "following" isn't treated as a stream id.
+router.get('/live/following', requireAuth, async (req, res) => {
+  const follows = await prisma.follow.findMany({
+    where: { followerId: req.userId },
+    select: { followeeId: true },
+  });
+  const streams = await prisma.liveStream.findMany({
+    where: { status: 'live', hostId: { in: follows.map((f) => f.followeeId) } },
     orderBy: { startedAt: 'desc' },
     include: { host: { select: { id: true, username: true, avatarUrl: true } } },
   });
@@ -48,7 +64,7 @@ router.post('/live/start', requireAuth, async (req, res) => {
     },
   });
 
-  const host = await prisma.user.findUnique({ where: { id: req.userId }, select: { username: true } });
+  const host = await prisma.user.findUnique({ where: { id: req.userId }, select: { id: true, username: true, avatarUrl: true } });
   const followers = await prisma.follow.findMany({
     where: { followeeId: req.userId },
     select: { followerId: true },
@@ -61,6 +77,13 @@ router.post('/live/start', requireAuth, async (req, res) => {
       content: `@${host.username} just went live: "${stream.title}"`,
       targetType: 'live',
       targetId: stream.id,
+    });
+    // Real-time discovery: pops the global "is live now" banner for followers who are online.
+    emitToUser(f.followerId, 'live:started', {
+      id: stream.id,
+      title: stream.title,
+      category: stream.category,
+      host: { id: host.id, username: host.username, avatarUrl: host.avatarUrl },
     });
   }
 
@@ -76,6 +99,12 @@ router.post('/live/:id/end', requireAuth, async (req, res) => {
     where: { id: req.params.id },
     data: { status: 'ended', endedAt: new Date() },
   });
+
+  // Tear the room down for everyone watching, and clear it from followers' "live now" lists.
+  closeLiveRoom(stream.id);
+  const followers = await prisma.follow.findMany({ where: { followeeId: stream.hostId }, select: { followerId: true } });
+  followers.forEach((f) => emitToUser(f.followerId, 'live:ended', { id: stream.id }));
+
   res.json(updated);
 });
 
