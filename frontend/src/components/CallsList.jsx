@@ -9,7 +9,7 @@ import { LoadingSpinner } from './LoadingScreen';
 
 function Avatar({ user }) {
   return (
-    <span className="w-11 h-11 rounded-full overflow-hidden bg-zinc-800 flex items-center justify-center font-display text-amber-400 shrink-0">
+    <span className="w-12 h-12 rounded-full overflow-hidden bg-zinc-800 flex items-center justify-center font-display text-amber-400 shrink-0">
       {user?.avatarUrl ? (
         <img src={user.avatarUrl} alt="" className="w-full h-full object-cover" />
       ) : (
@@ -43,7 +43,7 @@ export default function CallsList({ calls, loading, search = '' }) {
     const isVideo = log.callType === 'VIDEO';
     const peerName = log.peer?.displayName || `@${log.peer?.username}`;
     return (
-      <div key={log.id} className="flex items-center gap-3 p-3 rounded-2xl hover:bg-zinc-800/60 transition-colors">
+      <div key={log.id} className="flex items-center gap-3.5 p-3 rounded-2xl hover:bg-neutral-800/50 transition">
         <button
           onClick={() => router.push(`/messages/${log.peer.id}`)}
           className="flex items-center gap-3 min-w-0 flex-1 text-left"

@@ -170,15 +170,13 @@ export default function MessagesPage() {
   return (
     <main className="px-2 md:px-6 py-4">
       <div className="max-w-2xl mx-auto h-[85vh] bg-zinc-900/80 border border-zinc-800 rounded-3xl overflow-hidden backdrop-blur-md shadow-2xl my-4 flex flex-col relative">
-        <div className="p-4 border-b border-zinc-800/80 space-y-3 shrink-0">
-          <div className="flex items-center justify-between">
-            <a href="/" className="font-mono text-[10px] text-zinc-500 uppercase tracking-widest hover:text-zinc-300">
-              ← Feed
-            </a>
+        <div className="px-4 pt-5 pb-4 border-b border-zinc-800/80 space-y-4 shrink-0">
+          <div className="flex items-center justify-between gap-3 pt-1">
+            <h1 className="font-extrabold text-2xl tracking-tight text-white leading-none">Inbox</h1>
             <button
               onClick={openCompose}
               aria-label="New message"
-              className="w-8 h-8 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-amber-400 flex items-center justify-center border border-zinc-700"
+              className="w-10 h-10 rounded-full bg-zinc-800 hover:bg-zinc-700 text-amber-400 flex items-center justify-center border border-zinc-700 transition active:scale-95"
             >
               ✎
             </button>
@@ -226,22 +224,30 @@ export default function MessagesPage() {
             <button
               key={c.user.id}
               onClick={() => selectThread(c.user.id)}
-              className="w-full text-left p-3 rounded-2xl transition-all cursor-pointer hover:bg-zinc-800/60 flex items-center gap-3"
+              className="w-full text-left flex items-center gap-3.5 p-3 rounded-2xl hover:bg-neutral-800/50 transition cursor-pointer"
             >
-              <span className="relative shrink-0">
-                <Avatar user={c.user} />
+              <span className="relative w-12 h-12 rounded-full shrink-0">
+                {c.user.avatarUrl ? (
+                  <img src={c.user.avatarUrl} alt="" className="w-12 h-12 rounded-full object-cover" />
+                ) : (
+                  <span className="w-12 h-12 rounded-full bg-zinc-800 flex items-center justify-center font-display text-amber-400">
+                    {c.user.username?.[0]?.toUpperCase()}
+                  </span>
+                )}
                 {onlineUsers?.has?.(c.user.id) && (
                   <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-400 border-2 border-zinc-900" />
                 )}
               </span>
-              <div className="min-w-0 flex-1">
-                <p className="font-body text-sm font-semibold text-white truncate">@{c.user.username}</p>
-                <p className="font-body text-xs text-zinc-500 truncate">{c.lastMessage}</p>
+              <div className="flex flex-col min-w-0 flex-1">
+                <p className="font-bold text-sm text-white truncate">@{c.user.username}</p>
+                <p className={`text-xs font-medium truncate ${c.unreadCount > 0 ? 'text-neutral-200' : 'text-neutral-400'}`}>
+                  {c.lastMessage}
+                </p>
               </div>
-              <div className="flex flex-col items-end gap-1 shrink-0">
-                <span className="font-mono text-[10px] text-zinc-500">{timeAgo(c.lastMessageAt)}</span>
+              <div className="flex flex-col items-end gap-1.5 shrink-0 pr-1">
+                <span className="text-xs font-semibold text-neutral-400">{timeAgo(c.lastMessageAt)}</span>
                 {c.unreadCount > 0 && (
-                  <span className="font-mono text-[10px] bg-amber-500 text-black rounded-full min-w-[1.1rem] h-[1.1rem] px-1 flex items-center justify-center font-bold">
+                  <span className="text-[10px] bg-amber-500 text-black rounded-full min-w-[1.1rem] h-[1.1rem] px-1 flex items-center justify-center font-extrabold">
                     {c.unreadCount}
                   </span>
                 )}
