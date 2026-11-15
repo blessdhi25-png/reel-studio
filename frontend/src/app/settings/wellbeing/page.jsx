@@ -191,7 +191,7 @@ export default function WellbeingPage() {
           checked={breakReminder}
           onChange={setBreakReminder}
         />
-        <SettingsBlock icon="⏱️" title="Remind me after" subtitle="Continuous time with ClipPulse open">
+        <SettingsBlock icon="⏱️" title="Remind me after" subtitle="Time actively watching ClipPulse">
           <Segmented
             label="Reminder interval"
             value={reminderMinutes || 30}
