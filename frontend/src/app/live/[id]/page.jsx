@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { MessageSquare, Mic, MicOff, MonitorUp, Smile, Video, VideoOff, X } from 'lucide-react';
+import { MessageSquare, Mic, MicOff, MonitorUp, PhoneOff, Smile, SwitchCamera, Video, VideoOff, X } from 'lucide-react';
 import { api } from '@/lib/api';
 import { getSocket } from '@/lib/socket';
 import { useCameraDevices } from '@/lib/useCameraDevices';
@@ -48,6 +48,7 @@ export default function LiveRoomPage({ params }) {
   const [reactionsOpen, setReactionsOpen] = useState(false); // floating emoji tray
   const [unreadChat, setUnreadChat] = useState(0); // messages that arrived while the drawer was closed
   const [sheetDragY, setSheetDragY] = useState(0);
+  const [facingMode, setFacingMode] = useState('user'); // 'user' (front, mirrored) | 'environment'
   const [previewNonce, setPreviewNonce] = useState(0); // bump to retry a blocked local preview .play()
 
   const screenTrackRef = useRef(null);
@@ -198,7 +199,7 @@ export default function LiveRoomPage({ params }) {
   function detachListeners() {
     const socket = getSocket();
     ['live:existing-peers', 'live:peer-joined', 'live:signal', 'live:peer-left', 'live:viewer-count',
-      'live:chat-message', 'live:pin-message', 'live:reaction', 'live:tip', 'live:stream-ended'].forEach((ev) => socket?.off(ev));
+      'live:chat-message', 'live:pin-message', 'live:reaction', 'live:tip', 'live:stream-ended', 'live:screen-share'].forEach((ev) => socket?.off(ev));
   }
 
   function attachListeners(socket) {
@@ -206,8 +207,8 @@ export default function LiveRoomPage({ params }) {
 
     socket.on('live:existing-peers', async (existingPeers) => {
       await cameraPromiseRef.current; // offers must include our tracks
-      for (const { socketId, username, userId } of existingPeers) {
-        setPeers((prev) => ({ ...prev, [socketId]: { username, userId } }));
+      for (const { socketId, username, userId, sharing } of existingPeers) {
+        setPeers((prev) => ({ ...prev, [socketId]: { username, userId, sharing: !!sharing } }));
         const pc = createPeerConnection(socketId, socket);
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
@@ -248,6 +249,11 @@ export default function LiveRoomPage({ params }) {
         delete next[socketId];
         return next;
       });
+    });
+
+    // Someone started/stopped sharing their screen: their tile switches between letterboxed and cropped.
+    socket.on('live:screen-share', ({ socketId, active }) => {
+      setPeers((prev) => (prev[socketId] ? { ...prev, [socketId]: { ...prev[socketId], sharing: !!active } } : prev));
     });
 
     socket.on('live:viewer-count', ({ count }) => setViewerCount(count));
@@ -467,6 +473,44 @@ export default function LiveRoomPage({ params }) {
     }
   }
 
+  // Front/back (phones) or next camera (desktops with several webcams). The old track is stopped
+  // first because most phones can't open two cameras at once.
+  async function flipCamera() {
+    const current = localStreamRef.current;
+    const oldTrack = current?.getVideoTracks()[0];
+    if (!current || !oldTrack) return;
+    const settings = oldTrack.getSettings?.() || {};
+    let constraints;
+    if (!settings.facingMode && devices.length > 1) {
+      const idx = devices.findIndex((d) => d.deviceId === settings.deviceId);
+      constraints = { deviceId: { exact: devices[(idx + 1) % devices.length].deviceId } };
+    } else {
+      constraints = { facingMode: { ideal: (settings.facingMode || facingMode) === 'user' ? 'environment' : 'user' } };
+    }
+    oldTrack.stop();
+    let fresh = null;
+    for (const video of [constraints, true]) {
+      try {
+        const got = await navigator.mediaDevices.getUserMedia({ video, audio: false });
+        fresh = got.getVideoTracks()[0];
+        if (fresh) break;
+      } catch {
+        // try the plain fallback, then give up
+      }
+    }
+    if (!fresh) {
+      setCameraIssue('busy');
+      return;
+    }
+    fresh.enabled = cameraOn;
+    // New stream object so the preview tile rebinds cleanly.
+    const next = new MediaStream([...current.getAudioTracks(), fresh]);
+    localStreamRef.current = next;
+    setLocalStream(next);
+    setFacingMode(fresh.getSettings?.().facingMode === 'environment' ? 'environment' : 'user');
+    if (!screenTrackRef.current) await swapOutgoingVideo(fresh); // a screen share keeps being what peers see
+  }
+
   async function stopScreenShare() {
     const track = screenTrackRef.current;
     if (!track) return;
@@ -475,6 +519,7 @@ export default function LiveRoomPage({ params }) {
     screenTrackRef.current = null;
     screenStreamRef.current = null;
     setScreenStream(null);
+    getSocket()?.emit('live:screen-share', { streamId, active: false });
     await swapOutgoingVideo(localStreamRef.current?.getVideoTracks()[0] || null);
   }
 
@@ -497,6 +542,7 @@ export default function LiveRoomPage({ params }) {
     screenStreamRef.current = display;
     setScreenStream(display);
     track.onended = () => stopScreenShare(); // browser's own "Stop sharing" bar
+    getSocket()?.emit('live:screen-share', { streamId, active: true });
     await swapOutgoingVideo(track);
   }
 
@@ -563,8 +609,9 @@ export default function LiveRoomPage({ params }) {
   const hasEnded = stream.status === 'ended';
 
   // ----- Stage layout -----
-  // Viewer: the HOST's video fills the screen; everyone else (incl. our own camera) floats as small tiles.
-  // Host: our preview plus every connected participant tile into a responsive grid.
+  // Priority: a screen share takes the stage (letterboxed so nothing is cropped). Otherwise the host
+  // sees a grid of everyone, and a viewer sees the HOST full-screen. Remaining participants (and a
+  // viewer's own camera) float as small tiles.
   const remoteWithMedia = peerList.filter(([, p]) => p.mediaStream);
   const hostEntry = peerList.find(([, p]) => p.userId === stream.hostId);
   const hostPeer = hostEntry && hostEntry[1].mediaStream ? hostEntry : null;
@@ -575,7 +622,8 @@ export default function LiveRoomPage({ params }) {
     stream: localPreview,
     label: isHost ? 'You' : '@you',
     muted: true,
-    mirror: !screenStream,
+    mirror: !screenStream && facingMode !== 'environment',
+    contain: !!screenStream,
     forceAvatar: localShowsAvatar,
     avatarUrl: isHost ? stream.host?.avatarUrl : null,
     initial: isHost ? stream.host?.username?.[0] : 'Y',
@@ -586,33 +634,46 @@ export default function LiveRoomPage({ params }) {
     stream: p.mediaStream,
     label: `@${p.username || '…'}`,
     muted: false,
+    contain: !!p.sharing,
     avatarUrl: p.userId === stream.hostId ? stream.host?.avatarUrl : null,
     initial: p.username?.[0],
   });
-  const hostGridTiles = [localTile, ...remoteWithMedia.map(remoteTile)];
-  const sideTiles = [
-    ...(localStream || screenStream ? [localTile] : []),
-    ...remoteWithMedia.filter(([id]) => id !== hostPeer?.[0]).map(remoteTile),
-  ];
+  const remoteTiles = remoteWithMedia.map(remoteTile);
+  const hasLocalPreview = !!(localStream || screenStream);
+  const sharingTile = (screenStream ? localTile : null) || remoteTiles.find((t) => t.contain) || null;
+
+  let stageTiles = [];
+  let stripTiles = [];
+  if (sharingTile) {
+    stageTiles = [sharingTile];
+    stripTiles = [...(hasLocalPreview ? [localTile] : []), ...remoteTiles].filter((t) => t.id !== sharingTile.id);
+  } else if (isHost) {
+    stageTiles = [localTile, ...remoteTiles];
+  } else {
+    if (hostPeer) stageTiles = [remoteTile(hostPeer)];
+    stripTiles = [...(hasLocalPreview ? [localTile] : []), ...remoteTiles.filter((t) => t.id !== hostPeer?.[0])];
+  }
+  if (stageTiles[0] && !stageTiles[0].isLocal && stageTiles[0].avatarUrl === null && stageTiles[0].id === hostPeer?.[0]) {
+    stageTiles[0] = { ...stageTiles[0], avatarUrl: stream.host?.avatarUrl };
+  }
+  const canFlip = joined && !!localStream && (devices.length > 1 || facingMode === 'environment');
 
   return (
     <main className="relative min-h-screen h-screen w-full overflow-hidden bg-zinc-950 text-white flex flex-col">
       {/* ---------- Video stage ---------- */}
       <div className="absolute inset-0 z-0 bg-zinc-950">
-        {joined && isHost ? (
-          <div className={`grid w-full h-full gap-0.5 auto-rows-fr ${gridColsClass(hostGridTiles.length)}`}>
-            {hostGridTiles.map((t, i) => (
+        {joined && stageTiles.length > 0 ? (
+          <div className={`grid w-full h-full gap-0.5 auto-rows-fr ${gridColsClass(stageTiles.length)}`}>
+            {stageTiles.map((t, i) => (
               <StreamTile
                 key={t.id}
                 {...t}
                 retryKey={previewNonce}
                 onPlayBlocked={t.isLocal ? () => setCameraIssue((c) => c || 'play') : undefined}
-                className={`w-full h-full ${hostGridTiles.length === 3 && i === 2 ? 'col-span-2' : ''}`}
+                className={`w-full h-full min-h-0 ${stageTiles.length === 3 && i === 2 ? 'col-span-2' : ''}`}
               />
             ))}
           </div>
-        ) : joined && hostPeer ? (
-          <StreamTile {...remoteTile(hostPeer)} avatarUrl={stream.host?.avatarUrl} className="w-full h-full" />
         ) : (
           <div className="w-full h-full bg-gradient-to-br from-zinc-900 to-zinc-950 flex flex-col items-center justify-center gap-3">
             {stream.host?.avatarUrl && (
@@ -623,14 +684,14 @@ export default function LiveRoomPage({ params }) {
             )}
           </div>
         )}
-        <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-black/70 pointer-events-none" />
+        {/* Scrims keep the overlays legible, but never tint a shared screen. */}
+        {!sharingTile && <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-black/70 pointer-events-none" />}
       </div>
 
       {/* ---------- Floating picture-in-picture tiles ---------- */}
-      {/* Viewer: own camera + any other participants. Host: nothing here, everyone is in the grid. */}
-      {joined && !isHost && sideTiles.length > 0 && (
+      {joined && stripTiles.length > 0 && (
         <div className="absolute top-20 right-3 z-20 flex flex-col gap-2 max-h-[55vh] overflow-y-auto no-scrollbar">
-          {sideTiles.map((t) => (
+          {stripTiles.map((t) => (
             <StreamTile
               key={t.id}
               {...t}
@@ -692,15 +753,6 @@ export default function LiveRoomPage({ params }) {
           </span>
         </div>
 
-        {isHost && !hasEnded && (
-          <button
-            onClick={handleEndStream}
-            disabled={ending}
-            className="bg-red-600/90 hover:bg-red-500 backdrop-blur-md text-white text-xs font-bold px-4 py-2 rounded-full transition-all disabled:opacity-50 shrink-0"
-          >
-            {ending ? 'Ending…' : 'End stream'}
-          </button>
-        )}
       </div>
 
       <div className="relative z-20 px-4 mt-2">
@@ -813,10 +865,33 @@ export default function LiveRoomPage({ params }) {
       )}
 
       {/* ---------- Bottom control bar ---------- */}
-      {/* The video stays clear by default: chat and reactions live behind the two toggles below.
-          Sits above the BottomNav (fixed bottom-0 z-50) plus the device's home-indicator inset. */}
-      <div className="fixed inset-x-0 bottom-[calc(6rem+env(safe-area-inset-bottom))] z-40 flex justify-center px-4 pointer-events-none">
-        <div className="pointer-events-auto flex items-center gap-2.5 rounded-full bg-black/45 backdrop-blur-md border border-white/10 px-2.5 py-2 shadow-2xl">
+      {/* Anchored to the very bottom edge (the global bottom nav is hidden on /live/*), with
+          home-indicator safe-area padding. The reaction tray, when toggled on, stacks just above the buttons. */}
+      <div
+        className="fixed inset-x-0 bottom-0 z-40 flex flex-col items-center gap-3 px-4 pt-3 pb-6 bg-gradient-to-t from-black/70 via-black/30 to-transparent pointer-events-none"
+        style={{ paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom))' }}
+      >
+        {joined && !hasEnded && reactionsOpen && !chatOpen && (
+          <div
+            className="pointer-events-auto flex items-center gap-1.5 rounded-full bg-black/55 backdrop-blur-md border border-white/10 px-2 py-1.5 shadow-2xl"
+            style={{ animation: 'tray-in 0.18s ease-out' }}
+            role="group"
+            aria-label="Send a reaction"
+          >
+            {QUICK_REACTIONS.map((emoji) => (
+              <button
+                key={emoji}
+                onClick={() => sendReaction(emoji)}
+                aria-label={`React ${emoji}`}
+                className="w-11 h-11 rounded-full hover:bg-white/10 flex items-center justify-center text-2xl transition active:scale-90"
+              >
+                {emoji}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="pointer-events-auto flex flex-wrap items-center justify-center gap-2.5">
           {joined && (
             <ToolbarButton
               label={chatOpen ? 'Close chat' : 'Open chat'}
@@ -853,6 +928,11 @@ export default function LiveRoomPage({ params }) {
               <ToolbarButton label="Toggle camera" danger={!cameraOn} onClick={toggleCamera}>
                 {cameraOn ? <Video size={20} /> : <VideoOff size={20} />}
               </ToolbarButton>
+              {canFlip && (
+                <ToolbarButton label="Flip camera" onClick={flipCamera}>
+                  <SwitchCamera size={20} />
+                </ToolbarButton>
+              )}
               {canDisplayShare && (isHost || localStream) && (
                 <ToolbarButton
                   label={screenStream ? 'Stop sharing screen' : 'Share screen'}
@@ -864,32 +944,19 @@ export default function LiveRoomPage({ params }) {
               )}
             </>
           )}
+          {isHost && !hasEnded && (
+            <button
+              onClick={handleEndStream}
+              disabled={ending}
+              className="h-11 px-4 rounded-full bg-red-600 hover:bg-red-500 text-white text-sm font-bold flex items-center gap-2 shadow-lg transition active:scale-95 disabled:opacity-50"
+              aria-label="End stream"
+            >
+              <PhoneOff size={18} /> {ending ? 'Ending…' : 'End'}
+            </button>
+          )}
         </div>
+        <style>{`@keyframes tray-in { from { transform: translateY(8px); opacity: 0 } to { transform: none; opacity: 1 } }`}</style>
       </div>
-
-      {/* ---------- Reaction tray (toggled) ---------- */}
-      {joined && !hasEnded && reactionsOpen && !chatOpen && (
-        <div className="fixed inset-x-0 bottom-[calc(6rem+env(safe-area-inset-bottom)+4.5rem)] z-40 flex justify-center px-4 pointer-events-none">
-          <div
-            className="pointer-events-auto flex items-center gap-1.5 rounded-full bg-black/45 backdrop-blur-md border border-white/10 px-2 py-1.5 shadow-2xl"
-            style={{ animation: 'tray-in 0.18s ease-out' }}
-            role="group"
-            aria-label="Send a reaction"
-          >
-            {QUICK_REACTIONS.map((emoji) => (
-              <button
-                key={emoji}
-                onClick={() => sendReaction(emoji)}
-                aria-label={`React ${emoji}`}
-                className="w-11 h-11 rounded-full hover:bg-white/10 flex items-center justify-center text-2xl transition active:scale-90"
-              >
-                {emoji}
-              </button>
-            ))}
-          </div>
-          <style>{`@keyframes tray-in { from { transform: translateY(8px); opacity: 0 } to { transform: none; opacity: 1 } }`}</style>
-        </div>
-      )}
 
       {/* ---------- Chat drawer (slides up from the bottom) ---------- */}
       {chatOpen && (
@@ -1066,7 +1133,7 @@ function gridColsClass(n) {
 
 // One participant: plays the stream (audio included, unless muted) and falls back to an avatar
 // when there is no live video track (camera off, audio-only peer, still connecting).
-function StreamTile({ stream, label, muted, mirror, forceAvatar, avatarUrl, initial, className = '', compact, retryKey, onPlayBlocked }) {
+function StreamTile({ stream, label, muted, mirror, contain, forceAvatar, avatarUrl, initial, className = '', compact, retryKey, onPlayBlocked }) {
   const videoRef = useRef(null);
   const [hasVideo, setHasVideo] = useState(false);
 
@@ -1106,13 +1173,14 @@ function StreamTile({ stream, label, muted, mirror, forceAvatar, avatarUrl, init
 
   const showAvatar = forceAvatar || !hasVideo;
   return (
-    <div className={`relative bg-zinc-900 overflow-hidden ${className}`}>
+    <div className={`relative overflow-hidden ${contain ? 'bg-black' : 'bg-zinc-900'} ${className}`}>
       <video
         ref={videoRef}
         autoPlay
         playsInline
         muted={!!muted}
-        className={`absolute inset-0 z-0 w-full h-full object-cover ${mirror ? 'scale-x-[-1]' : ''} ${showAvatar ? 'invisible' : ''}`}
+        // A shared screen is letterboxed (object-contain) so wide desktop content is never cropped.
+        className={`absolute inset-0 z-0 w-full h-full ${contain ? 'object-contain bg-black' : 'object-cover'} ${mirror ? 'scale-x-[-1]' : ''} ${showAvatar ? 'invisible' : ''}`}
       />
       {showAvatar && (
         <div className="absolute inset-0 z-0 flex items-center justify-center bg-gradient-to-br from-zinc-900 to-zinc-950">

@@ -121,6 +121,7 @@ export function initSocket(httpServer) {
           socketId,
           username: io.sockets.sockets.get(socketId)?.data.username,
           userId: io.sockets.sockets.get(socketId)?.data.userId, // lets clients tell which peer is the host
+          sharing: !!io.sockets.sockets.get(socketId)?.data.sharing,
         }))
       );
 
@@ -176,6 +177,13 @@ export function initSocket(httpServer) {
         username: socket.data.username,
         at: now,
       });
+    });
+
+    // Tells the room a participant is (no longer) sharing their screen, so tiles letterbox it.
+    socket.on('live:screen-share', ({ streamId, active } = {}) => {
+      if (typeof streamId !== 'string' || !socket.rooms.has(`live:${streamId}`)) return;
+      socket.data.sharing = !!active;
+      socket.to(`live:${streamId}`).emit('live:screen-share', { socketId: socket.id, active: !!active });
     });
 
     socket.on('live:leave', () => leaveLiveRoom(socket));
@@ -278,6 +286,7 @@ export function initSocket(httpServer) {
 }
 
 function leaveLiveRoom(socket) {
+  socket.data.sharing = false;
   const room = socket.data.currentLiveRoom;
   if (!room) return;
   socket.to(room).emit('live:peer-left', { socketId: socket.id });

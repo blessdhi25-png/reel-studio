@@ -18,7 +18,9 @@ const HIDDEN_ON = ['/welcome', '/login', '/signup', '/verify-email', '/upload'];
 // h-screen takeover with its own input dock pinned to the true bottom of
 // the viewport, which the nav bar would sit on top of / get covered by;
 // the conversation list page has room for both and keeps the nav.
-const HIDDEN_PREFIXES = ['/admin', '/moderator', '/messages/'];
+// '/live/' (a live room, host or viewer) is a full-screen immersive view with its own controls;
+// the lobby at the bare /live keeps the nav, and the desktop sidebar follows the same rule.
+const HIDDEN_PREFIXES = ['/admin', '/moderator', '/messages/', '/live/'];
 
 // Shared with DesktopNav so the two bars are always hidden on exactly the same routes.
 export function isNavHidden(pathname) {
