@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { MessageSquare, Mic, MicOff, MonitorUp, Smile, Video, VideoOff, X } from 'lucide-react';
 import { api } from '@/lib/api';
 import { getSocket } from '@/lib/socket';
 import { useCameraDevices } from '@/lib/useCameraDevices';
@@ -43,9 +44,15 @@ export default function LiveRoomPage({ params }) {
   const [screenStream, setScreenStream] = useState(null); // active screen share (also our outgoing video)
   const [canDisplayShare, setCanDisplayShare] = useState(false);
   const [streamEnded, setStreamEnded] = useState(false); // host ended the stream while we were in the room
+  const [chatOpen, setChatOpen] = useState(false); // bottom-sheet chat drawer
+  const [reactionsOpen, setReactionsOpen] = useState(false); // floating emoji tray
+  const [unreadChat, setUnreadChat] = useState(0); // messages that arrived while the drawer was closed
+  const [sheetDragY, setSheetDragY] = useState(0);
   const [previewNonce, setPreviewNonce] = useState(0); // bump to retry a blocked local preview .play()
 
   const screenTrackRef = useRef(null);
+  const chatOpenRef = useRef(false); // socket handlers read this (they close over stale state)
+  const dragStartRef = useRef(null);
   const screenStreamRef = useRef(null);
   const localStreamRef = useRef(null);
   const peerConnectionsRef = useRef({}); // socketId -> RTCPeerConnection
@@ -83,11 +90,49 @@ export default function LiveRoomPage({ params }) {
     // Auto-scroll only the chat panel, not the whole page.
     const el = chatScrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [chatMessages]);
+  }, [chatMessages, chatOpen]);
 
   useEffect(() => {
     setCanDisplayShare(typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getDisplayMedia);
   }, []);
+
+  function openChat() {
+    chatOpenRef.current = true;
+    setChatOpen(true);
+    setReactionsOpen(false);
+    setUnreadChat(0);
+    setSheetDragY(0);
+  }
+
+  function closeChat() {
+    chatOpenRef.current = false;
+    setChatOpen(false);
+    setSheetDragY(0);
+  }
+
+  useEffect(() => {
+    if (!chatOpen) return undefined;
+    const onKey = (e) => e.key === 'Escape' && closeChat();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [chatOpen]);
+
+  // Drag the handle down to dismiss; a plain tap on it also closes.
+  function onHandleDown(e) {
+    dragStartRef.current = e.clientY;
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+  }
+  function onHandleMove(e) {
+    if (dragStartRef.current == null) return;
+    setSheetDragY(Math.max(0, e.clientY - dragStartRef.current));
+  }
+  function onHandleUp(e) {
+    if (dragStartRef.current == null) return;
+    const dy = e.clientY - dragStartRef.current;
+    dragStartRef.current = null;
+    if (dy > 70 || Math.abs(dy) < 4) closeChat();
+    else setSheetDragY(0);
+  }
 
   function createPeerConnection(socketId, socket) {
     const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
@@ -206,7 +251,10 @@ export default function LiveRoomPage({ params }) {
     });
 
     socket.on('live:viewer-count', ({ count }) => setViewerCount(count));
-    socket.on('live:chat-message', (msg) => setChatMessages((prev) => [...prev.slice(-199), msg]));
+    socket.on('live:chat-message', (msg) => {
+      setChatMessages((prev) => [...prev.slice(-199), msg]);
+      if (!chatOpenRef.current) setUnreadChat((n) => n + 1);
+    });
     socket.on('live:pin-message', (msg) => setPinned(msg));
     socket.on('live:reaction', (r) => {
       const flightId = `${r.at}-${Math.random()}`;
@@ -236,6 +284,7 @@ export default function LiveRoomPage({ params }) {
       detachListeners();
     });
     socket.on('live:tip', (tip) => {
+      if (!chatOpenRef.current) setUnreadChat((n) => n + 1);
       setChatMessages((prev) => [
         ...prev.slice(-199),
         {
@@ -763,116 +812,162 @@ export default function LiveRoomPage({ params }) {
         </div>
       )}
 
-      {/* ---------- Bottom bar ---------- */}
-      {/* Pinned above the BottomNav (fixed bottom-0 z-50) so the chat card,
-          input and floating action buttons never sit beneath the tabs.
-          calc() = bottom-24 plus the device's home-indicator inset, matching
-          how far the nav itself grows. */}
-      <div className="fixed inset-x-4 bottom-[calc(6rem+env(safe-area-inset-bottom))] z-40 flex items-end justify-between gap-3">
-        <div className="w-full max-w-sm flex flex-col gap-2">
-        {joined && !hasEnded && (
-          <div className="flex items-center gap-1.5" role="group" aria-label="Send a reaction">
-            {QUICK_REACTIONS.map((emoji) => (
-              <button
-                key={emoji}
-                onClick={() => sendReaction(emoji)}
-                aria-label={`React ${emoji}`}
-                className="w-11 h-11 rounded-full bg-zinc-900/80 backdrop-blur-md border border-zinc-800 hover:bg-zinc-800 flex items-center justify-center text-xl transition active:scale-90"
-              >
-                {emoji}
-              </button>
-            ))}
-          </div>
-        )}
-        <div className="w-full bg-zinc-900/95 backdrop-blur-xl border border-zinc-800 rounded-2xl flex flex-col overflow-hidden shadow-2xl">
-          <div ref={chatScrollRef} className="max-h-52 overflow-y-auto px-3.5 pt-3 pb-2 space-y-1.5">
-            {chatMessages.length === 0 && (
-              <p className="text-xs text-zinc-600 text-center py-4">Chat will appear here…</p>
-            )}
-            {chatMessages.map((m, i) =>
-              m.system ? (
-                <p key={i} className="text-xs text-amber-400/90 italic">
-                  🎁 <span className="font-semibold">{m.username}</span> {m.content}
-                </p>
-              ) : (
-                <ChatLine
-                  key={i}
-                  message={m}
-                  isHostMsg={m.userId === stream.hostId}
-                  canPin={isHost && !hasEnded}
-                  onPin={() => pinMessage(m)}
-                />
-              )
-            )}
-          </div>
-          {!hasEnded && (
-            <form onSubmit={sendChat} className="flex items-center gap-2 p-2.5 border-t border-zinc-800">
-              <input
-                value={chatText}
-                onChange={(e) => setChatText(e.target.value)}
-                placeholder="Say something…"
-                className="flex-1 min-w-0 bg-zinc-800/80 text-white text-sm rounded-full px-4 py-2 outline-none border border-transparent focus:border-amber-500/60"
-              />
-              <button
-                type="submit"
-                className="w-9 h-9 shrink-0 rounded-full bg-amber-500 hover:bg-amber-400 text-black font-bold flex items-center justify-center transition-colors"
-                aria-label="Send"
-              >
-                ➤
-              </button>
-            </form>
+      {/* ---------- Bottom control bar ---------- */}
+      {/* The video stays clear by default: chat and reactions live behind the two toggles below.
+          Sits above the BottomNav (fixed bottom-0 z-50) plus the device's home-indicator inset. */}
+      <div className="fixed inset-x-0 bottom-[calc(6rem+env(safe-area-inset-bottom))] z-40 flex justify-center px-4 pointer-events-none">
+        <div className="pointer-events-auto flex items-center gap-2.5 rounded-full bg-black/45 backdrop-blur-md border border-white/10 px-2.5 py-2 shadow-2xl">
+          {joined && (
+            <ToolbarButton
+              label={chatOpen ? 'Close chat' : 'Open chat'}
+              active={chatOpen}
+              onClick={chatOpen ? closeChat : openChat}
+              badge={unreadChat}
+            >
+              <MessageSquare size={20} />
+            </ToolbarButton>
           )}
-        </div>
-        </div>
-
-        {/* Right action controls */}
-        <div className="flex flex-col items-center gap-3 shrink-0 pb-1">
+          {joined && !hasEnded && (
+            <ToolbarButton
+              label={reactionsOpen ? 'Hide reactions' : 'Show reactions'}
+              active={reactionsOpen}
+              onClick={() => setReactionsOpen((v) => !v)}
+            >
+              <Smile size={20} />
+            </ToolbarButton>
+          )}
           {!isHost && !hasEnded && (
             <button
               onClick={() => setShowTip(true)}
-              className="w-14 h-14 rounded-full bg-amber-500 hover:bg-amber-400 text-black flex flex-col items-center justify-center font-bold shadow-2xl transition-all hover:scale-105"
+              className="w-11 h-11 rounded-full bg-amber-500 hover:bg-amber-400 text-black flex items-center justify-center font-extrabold text-lg shadow-lg transition active:scale-95"
               aria-label="Tip / Send Gift"
             >
-              <span className="text-xl leading-none">$</span>
+              $
             </button>
           )}
           {joined && (
             <>
-              <button
-                onClick={toggleMic}
-                className={`w-11 h-11 rounded-full backdrop-blur-md flex items-center justify-center transition-all ${
-                  micOn ? 'bg-zinc-900/80 border border-zinc-800 text-white' : 'bg-red-600/90 text-white'
-                }`}
-                aria-label="Toggle microphone"
-              >
-                🎙️
-              </button>
-              <button
-                onClick={toggleCamera}
-                className={`w-11 h-11 rounded-full backdrop-blur-md flex items-center justify-center transition-all ${
-                  cameraOn ? 'bg-zinc-900/80 border border-zinc-800 text-white' : 'bg-red-600/90 text-white'
-                }`}
-                aria-label="Toggle camera"
-              >
-                🎥
-              </button>
+              <ToolbarButton label="Toggle microphone" danger={!micOn} onClick={toggleMic}>
+                {micOn ? <Mic size={20} /> : <MicOff size={20} />}
+              </ToolbarButton>
+              <ToolbarButton label="Toggle camera" danger={!cameraOn} onClick={toggleCamera}>
+                {cameraOn ? <Video size={20} /> : <VideoOff size={20} />}
+              </ToolbarButton>
               {canDisplayShare && (isHost || localStream) && (
-                <button
+                <ToolbarButton
+                  label={screenStream ? 'Stop sharing screen' : 'Share screen'}
+                  active={!!screenStream}
                   onClick={screenStream ? stopScreenShare : startScreenShare}
-                  className={`w-11 h-11 rounded-full backdrop-blur-md flex items-center justify-center transition-all ${
-                    screenStream ? 'bg-amber-500 text-black' : 'bg-zinc-900/80 border border-zinc-800 text-white'
-                  }`}
-                  aria-label={screenStream ? 'Stop sharing screen' : 'Share screen'}
-                  aria-pressed={!!screenStream}
-                  title={screenStream ? 'Stop sharing screen' : 'Share screen'}
                 >
-                  🖥️
-                </button>
+                  <MonitorUp size={20} />
+                </ToolbarButton>
               )}
             </>
           )}
         </div>
       </div>
+
+      {/* ---------- Reaction tray (toggled) ---------- */}
+      {joined && !hasEnded && reactionsOpen && !chatOpen && (
+        <div className="fixed inset-x-0 bottom-[calc(6rem+env(safe-area-inset-bottom)+4.5rem)] z-40 flex justify-center px-4 pointer-events-none">
+          <div
+            className="pointer-events-auto flex items-center gap-1.5 rounded-full bg-black/45 backdrop-blur-md border border-white/10 px-2 py-1.5 shadow-2xl"
+            style={{ animation: 'tray-in 0.18s ease-out' }}
+            role="group"
+            aria-label="Send a reaction"
+          >
+            {QUICK_REACTIONS.map((emoji) => (
+              <button
+                key={emoji}
+                onClick={() => sendReaction(emoji)}
+                aria-label={`React ${emoji}`}
+                className="w-11 h-11 rounded-full hover:bg-white/10 flex items-center justify-center text-2xl transition active:scale-90"
+              >
+                {emoji}
+              </button>
+            ))}
+          </div>
+          <style>{`@keyframes tray-in { from { transform: translateY(8px); opacity: 0 } to { transform: none; opacity: 1 } }`}</style>
+        </div>
+      )}
+
+      {/* ---------- Chat drawer (slides up from the bottom) ---------- */}
+      {chatOpen && (
+        <div
+          className="fixed inset-x-0 bottom-0 z-[60] flex justify-center"
+          role="dialog"
+          aria-label="Live chat"
+          style={{ transform: `translateY(${sheetDragY}px)`, transition: dragStartRef.current == null ? 'transform 0.2s ease-out' : 'none' }}
+        >
+          <div
+            className="w-full max-w-xl bg-black/80 backdrop-blur-md rounded-t-3xl p-4 max-h-[50vh] min-h-[16rem] flex flex-col border-t border-x border-white/10 shadow-2xl"
+            style={{ animation: 'sheet-up 0.22s ease-out', paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
+          >
+            {/* drag handle */}
+            <div
+              className="-mt-2 mb-1 pt-2 pb-2 flex justify-center cursor-grab touch-none"
+              onPointerDown={onHandleDown}
+              onPointerMove={onHandleMove}
+              onPointerUp={onHandleUp}
+              onPointerCancel={onHandleUp}
+              aria-label="Drag down to close chat"
+            >
+              <span className="w-10 h-1.5 rounded-full bg-white/30" />
+            </div>
+            <div className="flex items-center justify-between mb-2">
+              <p className="font-extrabold text-sm text-white">Live chat</p>
+              <button
+                onClick={closeChat}
+                aria-label="Close chat"
+                className="w-8 h-8 rounded-full text-zinc-300 hover:text-white hover:bg-white/10 flex items-center justify-center"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div ref={chatScrollRef} className="flex-1 min-h-0 overflow-y-auto space-y-1.5 pr-1">
+              {chatMessages.length === 0 && (
+                <p className="text-xs text-zinc-500 text-center py-6">No messages yet — say hi 👋</p>
+              )}
+              {chatMessages.map((m, i) =>
+                m.system ? (
+                  <p key={i} className="text-xs text-amber-400/90 italic">
+                    🎁 <span className="font-semibold">{m.username}</span> {m.content}
+                  </p>
+                ) : (
+                  <ChatLine
+                    key={i}
+                    message={m}
+                    isHostMsg={m.userId === stream.hostId}
+                    canPin={isHost && !hasEnded}
+                    onPin={() => pinMessage(m)}
+                  />
+                )
+              )}
+            </div>
+
+            {!hasEnded && (
+              <form onSubmit={sendChat} className="shrink-0 flex items-center gap-2 pt-3 mt-2 border-t border-white/10">
+                <input
+                  value={chatText}
+                  onChange={(e) => setChatText(e.target.value)}
+                  placeholder="Say something…"
+                  className="flex-1 min-w-0 bg-white/10 text-white placeholder:text-zinc-400 text-sm rounded-full px-4 py-2.5 outline-none border border-transparent focus:border-amber-500/60"
+                />
+                <button
+                  type="submit"
+                  disabled={!chatText.trim()}
+                  className="w-10 h-10 shrink-0 rounded-full bg-amber-500 hover:bg-amber-400 text-black font-bold flex items-center justify-center transition-colors disabled:opacity-40"
+                  aria-label="Send"
+                >
+                  ➤
+                </button>
+              </form>
+            )}
+          </div>
+          <style>{`@keyframes sheet-up { from { transform: translateY(100%) } to { transform: none } }`}</style>
+        </div>
+      )}
 
       {streamEnded && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center px-6 bg-black/75 backdrop-blur-md" role="alertdialog" aria-modal="true" aria-labelledby="stream-ended-title">
@@ -904,6 +999,31 @@ export default function LiveRoomPage({ params }) {
         />
       )}
     </main>
+  );
+}
+
+function ToolbarButton({ label, onClick, active, danger, badge, children }) {
+  return (
+    <button
+      onClick={onClick}
+      aria-label={label}
+      aria-pressed={active === undefined ? undefined : !!active}
+      title={label}
+      className={`relative w-11 h-11 rounded-full flex items-center justify-center transition active:scale-95 ${
+        danger
+          ? 'bg-red-600/90 text-white'
+          : active
+          ? 'bg-amber-500 text-black'
+          : 'bg-white/10 hover:bg-white/20 text-white'
+      }`}
+    >
+      {children}
+      {badge > 0 && (
+        <span className="absolute -top-1 -right-1 min-w-[1.1rem] h-[1.1rem] px-1 rounded-full bg-red-600 text-white text-[10px] font-extrabold flex items-center justify-center border border-black/40">
+          {badge > 9 ? '9+' : badge}
+        </span>
+      )}
+    </button>
   );
 }
 
