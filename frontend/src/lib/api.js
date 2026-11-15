@@ -311,6 +311,10 @@ export const api = {
   getFollowers: (id) => request(`/users/${id}/followers`),
   getEarnings: () => request('/users/me/earnings'),
   getConversations: () => request('/conversations'),
+  // Call history: { calls: [{ id, direction, peer, callType, status, durationSeconds, createdAt }], missedCount }
+  getCalls: (peerId) => request(`/calls${peerId ? `?peerId=${encodeURIComponent(peerId)}` : ''}`),
+  logCall: (body) => request('/calls', { method: 'POST', body }),
+  markCallsSeen: () => request('/calls/seen', { method: 'POST' }),
   getThread: (otherUserId) => request(`/conversations/${otherUserId}`),
   // With a file, sends multipart (field `attachment`, 25MB cap); otherwise plain JSON as before.
   sendMessage: (otherUserId, content, file) => {

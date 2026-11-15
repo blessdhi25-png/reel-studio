@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { api } from '../lib/api';
 import { useSocketContext } from './SocketContext';
 import { CallPeer, describeMediaError, getLocalMedia, isWebRtcSupported, stopStream } from '../lib/webrtc';
 import { startRingtone } from '../lib/ringtone';
@@ -10,8 +11,12 @@ import CallModal from '../components/CallModal';
 // (backend/src/realtime/socket.js: call:offer / answer / ice / decline / end); media is
 // peer-to-peer WebRTC (lib/webrtc.js). Mounted globally so an incoming call rings on any page.
 //
+// Call history: when an OUTGOING call finishes, the caller's client POSTs a CallLog row
+// (COMPLETED + duration | MISSED | NO_ANSWER | DECLINED). Only the caller logs, so each call is
+// recorded once; the server fans the row out to both users over socket event `call:logged`.
+//
 // call.status: 'calling' (outgoing, ringing) | 'incoming' | 'connecting' | 'connected' | 'ended'
-const RING_TIMEOUT_MS = 45000;
+const RING_TIMEOUT_MS = 30000;
 const DISCONNECT_GRACE_MS = 10000;
 const ENDED_LINGER_MS = 2200;
 
@@ -42,6 +47,9 @@ export function CallProvider({ children }) {
   const ringTimerRef = useRef(null);
   const graceTimerRef = useRef(null);
   const lingerTimerRef = useRef(null);
+  const connectedAtRef = useRef(null);
+  const offerSentRef = useRef(false);
+  const loggedRef = useRef(new Set()); // callIds already persisted
 
   const setCall = useCallback((next) => {
     const value = typeof next === 'function' ? next(callRef.current) : next;
@@ -54,9 +62,34 @@ export function CallProvider({ children }) {
     clearTimeout(graceTimerRef.current);
   };
 
+  // Persist the finished call (caller side only; each call id is logged at most once).
+  const persistCall = (c, status) => {
+    if (!c || c.direction !== 'outgoing' || !c.callId || loggedRef.current.has(c.callId)) return;
+    loggedRef.current.add(c.callId);
+    const durationSeconds =
+      status === 'COMPLETED' && connectedAtRef.current
+        ? Math.max(0, Math.round((Date.now() - connectedAtRef.current) / 1000))
+        : 0;
+    api
+      .logCall({
+        callId: c.callId,
+        receiverId: c.peer.id,
+        callType: c.callType === 'video' ? 'VIDEO' : 'VOICE',
+        status,
+        durationSeconds,
+      })
+      .catch(() => {}); // history is best-effort; never block ending the call
+  };
+  // How a call that wasn't declined/timed out ended: talked => COMPLETED, otherwise the caller gave up.
+  const hangupStatus = () => (connectedAtRef.current ? 'COMPLETED' : 'MISSED');
+
   // Release everything. With a reason the modal lingers briefly on an "ended" card, then closes.
+  // `logStatus` (optional) persists the call to history before state is cleared.
   const teardown = useCallback(
-    (reason) => {
+    (reason, logStatus) => {
+      if (logStatus) persistCall(callRef.current, logStatus);
+      connectedAtRef.current = null;
+      offerSentRef.current = false;
       clearTimers();
       clearTimeout(lingerTimerRef.current);
       stopRingRef.current?.();
@@ -118,7 +151,8 @@ export function CallProvider({ children }) {
           if (!c || c.status === 'ended') return;
           if (state === 'connected') {
             clearTimeout(graceTimerRef.current);
-            setConnectedAt((prev) => prev || Date.now());
+            if (!connectedAtRef.current) connectedAtRef.current = Date.now();
+            setConnectedAt((prev) => prev || connectedAtRef.current);
             setCall({ ...c, status: 'connected' });
           } else if (state === 'disconnected') {
             clearTimeout(graceTimerRef.current);
@@ -126,12 +160,12 @@ export function CallProvider({ children }) {
               const cur = callRef.current;
               if (cur && cur.status !== 'ended') {
                 socket?.emit('call:end', { toUserId: cur.peer.id, callId: cur.callId });
-                teardown('Connection lost');
+                teardown('Connection lost', hangupStatus());
               }
             }, DISCONNECT_GRACE_MS);
           } else if (state === 'failed') {
             socket?.emit('call:end', { toUserId: c.peer.id, callId: c.callId });
-            teardown('Connection failed');
+            teardown('Connection failed', hangupStatus());
           }
         },
       }),
@@ -178,12 +212,13 @@ export function CallProvider({ children }) {
         const offer = await peer.createOffer();
         if (callRef.current?.callId !== callId) return;
         socket.emit('call:offer', { toUserId: peerUser.id, callId, callType, sdp: offer });
+        offerSentRef.current = true;
         flushOutIce();
         ringTimerRef.current = setTimeout(() => {
           const c = callRef.current;
           if (c?.callId === callId && c.status === 'calling') {
             socket.emit('call:end', { toUserId: peerUser.id, callId });
-            teardown('No answer');
+            teardown('No answer', 'NO_ANSWER');
           }
         }, RING_TIMEOUT_MS);
       } catch {
@@ -249,7 +284,8 @@ export function CallProvider({ children }) {
     }
     if (c.status === 'incoming') return declineCall();
     socket?.emit('call:end', { toUserId: c.peer.id, callId: c.callId });
-    teardown();
+    // Cancelling before the offer even went out (e.g. during the permission prompt) never rang anyone.
+    teardown(undefined, c.status === 'calling' && !offerSentRef.current ? undefined : hangupStatus());
   }, [socket, teardown, declineCall]);
 
   // ---------- Controls ----------
@@ -313,17 +349,20 @@ export function CallProvider({ children }) {
     };
 
     function onDecline({ callId }) {
-      ifCurrent(callId, () => teardown('Call declined'));
+      ifCurrent(callId, () => teardown('Call declined', 'DECLINED'));
     }
     function onEnd({ callId }) {
-      ifCurrent(callId, (c) => teardown(c.status === 'incoming' ? 'Missed call' : 'Call ended'));
+      ifCurrent(callId, (c) => teardown(c.status === 'incoming' ? 'Missed call' : 'Call ended', hangupStatus()));
     }
     function onBusy({ callId }) {
-      ifCurrent(callId, () => teardown('User is busy on another call'));
+      ifCurrent(callId, () => teardown('User is busy on another call', 'NO_ANSWER'));
     }
     function onUnavailable({ callId, reason }) {
       ifCurrent(callId, () =>
-        teardown(reason === 'offline' ? 'User is offline right now' : "You can't call this person")
+        teardown(
+          reason === 'offline' ? 'User is offline right now' : "You can't call this person",
+          reason === 'offline' ? 'NO_ANSWER' : undefined // offline callees still get a missed-call entry
+        )
       );
     }
     function onHandled({ callId }) {
@@ -333,7 +372,7 @@ export function CallProvider({ children }) {
       });
     }
     function onDisconnect() {
-      if (callRef.current && callRef.current.status !== 'ended') teardown('Connection lost');
+      if (callRef.current && callRef.current.status !== 'ended') teardown('Connection lost', hangupStatus());
     }
 
     socket.on('call:offer', onOffer);

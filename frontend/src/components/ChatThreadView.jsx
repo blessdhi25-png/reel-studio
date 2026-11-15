@@ -9,6 +9,8 @@ import { getSocket } from '../lib/socket';
 import { useSocketContext } from '../context/SocketContext';
 import ReportModal from './ReportModal';
 import { useCall } from '../context/CallContext';
+import { describeCall, formatCallTime } from '../lib/callLogs';
+import CallLogIcon from './CallLogIcon';
 import { LoadingSpinner } from './LoadingScreen';
 
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
@@ -74,6 +76,7 @@ export default function ChatThreadView({ otherUserId }) {
   const bottomRef = useRef(null);
   const fileInputRef = useRef(null);
   const { startCall: beginCall, inCall } = useCall();
+  const [callLogs, setCallLogs] = useState([]);
   const [attachedFile, setAttachedFile] = useState(null); // { file, previewUrl, kind }
 
   function flashToast(msg) {
@@ -97,6 +100,8 @@ export default function ChatThreadView({ otherUserId }) {
     setError(null);
     setMenuOpen(false);
     api.getUser(otherUserId).then(setOtherUser).catch(() => {});
+    setCallLogs([]);
+    api.getCalls(otherUserId).then((r) => setCallLogs(r.calls || [])).catch(() => {});
     api
       .getThread(otherUserId)
       .then(setMessages)
@@ -124,17 +129,25 @@ export default function ChatThreadView({ otherUserId }) {
       }
     }
 
+    // A finished call with this person lands in the timeline as a system pill.
+    function onCallLogged(log) {
+      if (log.peer?.id !== otherUserId) return;
+      setCallLogs((prev) => (prev.some((c) => c.id === log.id) ? prev : [...prev, log]));
+    }
+
     socket.on('message:new', onNewMessage);
     socket.on('message:read', onRead);
+    socket.on('call:logged', onCallLogged);
     return () => {
       socket.off('message:new', onNewMessage);
       socket.off('message:read', onRead);
+      socket.off('call:logged', onCallLogged);
     };
   }, [otherUserId, me?.id]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, callLogs]);
 
   // Object URLs hold the file in memory until revoked.
   useEffect(() => {
@@ -167,6 +180,15 @@ export default function ChatThreadView({ otherUserId }) {
     setError(null);
     setAttachedFile({ file, previewUrl: URL.createObjectURL(file), kind: fileKind(file) });
   }
+
+  // Messages and call events interleaved chronologically.
+  const timeline = useMemo(() => {
+    const items = [
+      ...messages.map((m) => ({ type: 'message', at: new Date(m.createdAt).getTime(), key: `m-${m.id}`, m })),
+      ...callLogs.map((c) => ({ type: 'call', at: new Date(c.createdAt).getTime(), key: `c-${c.id}`, c })),
+    ];
+    return items.sort((a, b) => a.at - b.at);
+  }, [messages, callLogs]);
 
   const isOnline = useMemo(() => onlineUsers?.has?.(otherUserId), [onlineUsers, otherUserId]);
 
@@ -288,8 +310,30 @@ export default function ChatThreadView({ otherUserId }) {
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {loadingThread && <LoadingSpinner label="Loading…" />}
-        {!loadingThread && messages.length === 0 && <p className="font-body text-zinc-500 text-sm">Say hello 👋</p>}
-        {messages.map((m) => {
+        {!loadingThread && messages.length === 0 && callLogs.length === 0 && <p className="font-body text-zinc-500 text-sm">Say hello 👋</p>}
+        {timeline.map((item) => {
+          if (item.type === 'call') {
+            const log = item.c;
+            const info = describeCall(log);
+            const isVideo = log.callType === 'VIDEO';
+            return (
+              <div key={item.key} className="flex justify-center">
+                <button
+                  type="button"
+                  onClick={() => startCall(isVideo ? 'video' : 'voice')}
+                  disabled={inCall}
+                  aria-label={`${info.label}. Tap to call back`}
+                  className="inline-flex items-center gap-2 bg-zinc-900 border border-zinc-800 hover:border-zinc-600 rounded-full px-3.5 py-1.5 text-xs font-semibold text-zinc-300 transition disabled:opacity-60"
+                >
+                  <CallLogIcon kind={info.kind} tone={info.tone} isVideo={isVideo} />
+                  <span className={info.tone === 'red' ? 'text-red-400' : info.tone === 'emerald' ? 'text-emerald-400' : ''}>{info.label}</span>
+                  <span className="text-zinc-500 font-medium">· {formatCallTime(log.createdAt)}</span>
+                  <span className="text-amber-400 font-bold">Call back</span>
+                </button>
+              </div>
+            );
+          }
+          const m = item.m;
           const mine = m.senderId === me?.id;
           return (
             <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>

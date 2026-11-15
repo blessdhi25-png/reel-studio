@@ -175,6 +175,10 @@ model User {
   receivedTx      Transaction[] @relation("receiver")
   sentMessages     Message[] @relation("sentMessages")
   receivedMessages Message[] @relation("receivedMessages")
+  sentCalls        CallLog[] @relation("SentCalls")
+  receivedCalls    CallLog[] @relation("ReceivedCalls")
+  // Missed calls newer than this count as "unread" on the Calls tab.
+  callsSeenAt      DateTime?
   reportsFiled    Report[] @relation("reporter")
   adminActions    AdminAction[] @relation("actionAdmin")
   notifications          Notification[] @relation("notificationRecipient")
@@ -523,6 +527,28 @@ model Message {
 
   @@index([senderId, receiverId, createdAt])
   @@index([receiverId, senderId, createdAt])
+}
+
+// One row per finished call, written by the caller's client when the call ends
+// (see context/CallContext.jsx). status is from the caller's point of view of how it ended:
+// COMPLETED | MISSED (caller hung up before pickup) | NO_ANSWER (rang out / unreachable) | DECLINED.
+// For the receiver, MISSED and NO_ANSWER both read as "missed call".
+model CallLog {
+  id              String   @id @default(cuid())
+  // Client-generated call id; unique so a retried/double POST can't create duplicate rows.
+  callId          String?  @unique
+  callerId        String
+  receiverId      String
+  callType        String   @default("VOICE") // "VOICE" | "VIDEO"
+  status          String   // "COMPLETED" | "MISSED" | "DECLINED" | "NO_ANSWER"
+  durationSeconds Int      @default(0)
+  createdAt       DateTime @default(now())
+
+  caller   User @relation("SentCalls", fields: [callerId], references: [id], onDelete: Cascade)
+  receiver User @relation("ReceivedCalls", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@index([callerId, createdAt])
+  @@index([receiverId, createdAt])
 }
 
 model Report {

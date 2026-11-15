@@ -65,6 +65,7 @@ import discoveryRoutes from './routes/discovery.js';
 import paymentsRoutes from './routes/payments.js';
 import webhookRoutes from './routes/webhook.js';
 import messagesRoutes from './routes/messages.js';
+import callsRoutes from './routes/calls.js';
 import reportsRoutes from './routes/reports.js';
 import adminRoutes from './routes/admin.js';
 import notificationsRoutes from './routes/notifications.js';
@@ -190,6 +191,7 @@ app.use('/api/v1', monetizationRoutes); // /users/me/earnings
 app.use('/api/v1', paymentsRoutes); // /stripe/connect, /stripe/status, /stripe/dashboard-link, /videos/:id/tip/checkout
 app.use('/api/v1', discoveryRoutes); // /search, /trending
 app.use('/api/v1', messagesRoutes); // /conversations, /conversations/:otherUserId
+app.use('/api/v1', callsRoutes); // /calls — persistent voice/video call history
 app.use('/api/v1', reportsRoutes); // /reports, /reports/mine
 app.use('/api/v1/admin', adminRoutes); // moderation dashboard
 app.use('/api/v1', notificationsRoutes); // /notifications, /notifications/:id/read

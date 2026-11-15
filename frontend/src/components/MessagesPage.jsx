@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '../lib/api';
 import { getSocket } from '../lib/socket';
 import { useSocketContext } from '../context/SocketContext';
 import { LoadingSpinner } from './LoadingScreen';
+import CallsList from './CallsList';
 
 function timeAgo(dateStr) {
   const diffMs = Date.now() - new Date(dateStr).getTime();
@@ -44,6 +45,11 @@ export default function MessagesPage() {
   const [search, setSearch] = useState('');
   const [composeOpen, setComposeOpen] = useState(false);
   const [composeCandidates, setComposeCandidates] = useState(null);
+  const [tab, setTab] = useState('messages'); // 'messages' | 'calls'
+  const [calls, setCalls] = useState([]);
+  const [loadingCalls, setLoadingCalls] = useState(true);
+  const [missedCount, setMissedCount] = useState(0);
+  const tabRef = useRef('messages');
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -89,6 +95,41 @@ export default function MessagesPage() {
     socket.on('message:new', onNewMessage);
     return () => socket.off('message:new', onNewMessage);
   }, [me]);
+
+  // Call history + unread missed-call badge.
+  useEffect(() => {
+    if (!me) return;
+    api
+      .getCalls()
+      .then(({ calls: rows, missedCount: n }) => {
+        setCalls(rows);
+        setMissedCount(n);
+      })
+      .catch(() => {})
+      .finally(() => setLoadingCalls(false));
+
+    const socket = getSocket();
+    if (!socket) return undefined;
+    function onCallLogged(log) {
+      setCalls((prev) => (prev.some((c) => c.id === log.id) ? prev : [log, ...prev]));
+      const missedForMe = log.direction === 'incoming' && (log.status === 'MISSED' || log.status === 'NO_ANSWER');
+      if (!missedForMe) return;
+      if (tabRef.current === 'calls') api.markCallsSeen().catch(() => {}); // already looking at it
+      else setMissedCount((n) => n + 1);
+    }
+    socket.on('call:logged', onCallLogged);
+    return () => socket.off('call:logged', onCallLogged);
+  }, [me]);
+
+  function switchTab(next) {
+    setTab(next);
+    tabRef.current = next;
+    setSearch('');
+    if (next === 'calls' && missedCount > 0) {
+      setMissedCount(0);
+      api.markCallsSeen().catch(() => {});
+    }
+  }
 
   // Presence for every visible conversation partner — subscribePresence is
   // ref-counted (see context/SocketContext.jsx), so re-subscribing on every
@@ -142,23 +183,46 @@ export default function MessagesPage() {
               ✎
             </button>
           </div>
-          <p className="font-display text-xl text-white tracking-wide">Messages</p>
+          <div role="tablist" className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-zinc-800/80 border border-zinc-700/60">
+            {[
+              { id: 'messages', label: 'Messages' },
+              { id: 'calls', label: 'Calls' },
+            ].map((t) => (
+              <button
+                key={t.id}
+                role="tab"
+                aria-selected={tab === t.id}
+                onClick={() => switchTab(t.id)}
+                className={`relative py-2 rounded-lg font-bold text-sm transition ${
+                  tab === t.id ? 'bg-amber-500 text-black shadow-sm' : 'text-zinc-400 hover:text-white'
+                }`}
+              >
+                {t.label}
+                {t.id === 'calls' && missedCount > 0 && (
+                  <span className="ml-1.5 inline-flex items-center justify-center min-w-[1.1rem] h-[1.1rem] px-1 rounded-full bg-red-600 text-white text-[10px] font-extrabold align-middle">
+                    {missedCount > 99 ? '99+' : missedCount}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search conversations…"
+            placeholder={tab === 'calls' ? 'Search calls…' : 'Search conversations…'}
             className="w-full bg-zinc-800/80 border border-zinc-700 text-white rounded-xl text-xs px-3 py-2 outline-none focus:border-amber-500/50"
           />
         </div>
 
         <div className="flex-1 overflow-y-auto p-2">
-          {loadingConvos && <LoadingSpinner label="Loading…" />}
-          {!loadingConvos && filteredConvos.length === 0 && (
+          {tab === 'calls' && <CallsList calls={calls} loading={loadingCalls} search={search} />}
+          {tab === 'messages' && loadingConvos && <LoadingSpinner label="Loading…" />}
+          {tab === 'messages' && !loadingConvos && filteredConvos.length === 0 && (
             <p className="font-body text-zinc-500 text-xs p-3">
               {search ? 'No matches.' : "No conversations yet — tap ✎ to start one."}
             </p>
           )}
-          {filteredConvos.map((c) => (
+          {tab === 'messages' && filteredConvos.map((c) => (
             <button
               key={c.user.id}
               onClick={() => selectThread(c.user.id)}
