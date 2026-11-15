@@ -3,7 +3,7 @@
 import BackButton from '@/components/BackButton';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Phone, Video, MoreVertical, Paperclip, Smile, Send, X, Film, FileText } from 'lucide-react';
+import { Phone, Video, MoreVertical, Paperclip, Smile, Send, X, Film, FileText, ChevronDown, CornerUpRight, Ban } from 'lucide-react';
 import { api } from '../lib/api';
 import { getSocket } from '../lib/socket';
 import { useSocketContext } from '../context/SocketContext';
@@ -12,6 +12,9 @@ import { useCall } from '../context/CallContext';
 import { describeCall, formatCallTime } from '../lib/callLogs';
 import CallLogIcon from './CallLogIcon';
 import { LoadingSpinner } from './LoadingScreen';
+import SwipeableRow from './SwipeableRow';
+import MessageActionSheet, { DeleteMessageDialog } from './MessageActionSheet';
+import ForwardPicker from './ForwardPicker';
 
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 const ACCEPT = 'image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip';
@@ -75,6 +78,13 @@ export default function ChatThreadView({ otherUserId }) {
   const [toast, setToast] = useState(null);
   const bottomRef = useRef(null);
   const fileInputRef = useRef(null);
+  const inputRef = useRef(null);
+  const [replyTo, setReplyTo] = useState(null); // { id, senderId, name, snippet }
+  const [actionMsg, setActionMsg] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+  const [forwardTarget, setForwardTarget] = useState(null);
+  const [flashId, setFlashId] = useState(null);
   const { startCall: beginCall, inCall } = useCall();
   const [callLogs, setCallLogs] = useState([]);
   const [attachedFile, setAttachedFile] = useState(null); // { file, previewUrl, kind }
@@ -99,6 +109,8 @@ export default function ChatThreadView({ otherUserId }) {
     setLoadingThread(true);
     setError(null);
     setMenuOpen(false);
+    setReplyTo(null);
+    setActionMsg(null);
     api.getUser(otherUserId).then(setOtherUser).catch(() => {});
     setCallLogs([]);
     api.getCalls(otherUserId).then((r) => setCallLogs(r.calls || [])).catch(() => {});
@@ -135,11 +147,31 @@ export default function ChatThreadView({ otherUserId }) {
       setCallLogs((prev) => (prev.some((c) => c.id === log.id) ? prev : [...prev, log]));
     }
 
+    // "Delete for everyone" blanks the bubble in place; "delete for me" removes it from this side only.
+    function onDeleted({ id, forEveryone }) {
+      if (!forEveryone) {
+        setMessages((prev) => prev.filter((m) => m.id !== id));
+      } else {
+        setMessages((prev) =>
+          prev.map((m) => {
+            if (m.id === id) {
+              return { ...m, deleted: true, content: '', attachmentUrl: null, attachmentType: null, attachmentName: null, replyTo: null };
+            }
+            if (m.replyTo?.id === id) return { ...m, replyTo: { ...m.replyTo, deleted: true, content: '', attachmentType: null, attachmentName: null } };
+            return m;
+          }),
+        );
+      }
+      setReplyTo((r) => (r?.id === id ? null : r));
+    }
+
     socket.on('message:new', onNewMessage);
+    socket.on('message:deleted', onDeleted);
     socket.on('message:read', onRead);
     socket.on('call:logged', onCallLogged);
     return () => {
       socket.off('message:new', onNewMessage);
+      socket.off('message:deleted', onDeleted);
       socket.off('message:read', onRead);
       socket.off('call:logged', onCallLogged);
     };
@@ -192,6 +224,78 @@ export default function ChatThreadView({ otherUserId }) {
 
   const isOnline = useMemo(() => onlineUsers?.has?.(otherUserId), [onlineUsers, otherUserId]);
 
+  function snippetOf(m) {
+    if (m.deleted) return 'This message was deleted';
+    if (m.content) return m.content;
+    if (m.attachmentUrl) return `📎 ${m.attachmentName || 'Attachment'}`;
+    return '';
+  }
+
+  function startReply(m) {
+    if (m.deleted || otherUser?.blockedByMe) return;
+    setReplyTo({
+      id: m.id,
+      senderId: m.senderId,
+      name: m.senderId === me?.id ? 'You' : `@${otherUser?.username || 'user'}`,
+      snippet: snippetOf(m).slice(0, 140),
+    });
+    setActionMsg(null);
+    setTimeout(() => inputRef.current?.focus(), 0);
+  }
+
+  async function copyMessage(m) {
+    setActionMsg(null);
+    try {
+      await navigator.clipboard.writeText(m.content);
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = m.content;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); } catch {}
+      document.body.removeChild(ta);
+    }
+    flashToast('Copied');
+  }
+
+  async function confirmDelete(scope) {
+    const target = deleteTarget;
+    if (!target) return;
+    setDeleting(true);
+    try {
+      await api.deleteMessage(target.id, scope);
+      // The socket event also does this; applying it here keeps the UI instant (and idempotent).
+      if (scope === 'everyone') {
+        setMessages((prev) =>
+          prev.map((m) => {
+            if (m.id === target.id) return { ...m, deleted: true, content: '', attachmentUrl: null, attachmentType: null, attachmentName: null, replyTo: null };
+            if (m.replyTo?.id === target.id) return { ...m, replyTo: { ...m.replyTo, deleted: true, content: '', attachmentType: null, attachmentName: null } };
+            return m;
+          }),
+        );
+      } else {
+        setMessages((prev) => prev.filter((m) => m.id !== target.id));
+      }
+      setReplyTo((r) => (r?.id === target.id ? null : r));
+      setDeleteTarget(null);
+    } catch (err) {
+      flashToast(err.message || 'Could not delete');
+      setDeleteTarget(null);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  function jumpTo(id) {
+    const el = document.getElementById(`msg-${id}`);
+    if (!el) return flashToast('Original message is not available');
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setFlashId(id);
+    setTimeout(() => setFlashId(null), 1200);
+  }
+
   async function handleSend(e) {
     e.preventDefault();
     // Attaching a clip doesn't change how it's actually sent — the Message
@@ -207,9 +311,10 @@ export default function ChatThreadView({ otherUserId }) {
     setSending(true);
     setError(null);
     try {
-      const message = await api.sendMessage(otherUserId, content, attachedFile?.file);
+      const message = await api.sendMessage(otherUserId, content, attachedFile?.file, { replyToId: replyTo?.id });
       setMessages((prev) => [...prev, message]);
       setText('');
+      setReplyTo(null);
       setAttachedVideo(null);
       setAttachedFile(null);
     } catch (err) {
@@ -335,25 +440,76 @@ export default function ChatThreadView({ otherUserId }) {
           }
           const m = item.m;
           const mine = m.senderId === me?.id;
+          const deleted = !!m.deleted;
+          const q = m.replyTo;
           return (
-            <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-              <div className="max-w-[75%]">
-                <div
-                  className={
-                    mine
-                      ? 'bg-amber-500 text-black rounded-2xl rounded-tr-none px-4 py-2 font-medium max-w-[75%]'
-                      : 'bg-zinc-800 text-white rounded-2xl rounded-tl-none px-4 py-2 max-w-[75%]'
-                  }
-                >
-                  {m.attachmentUrl && <Attachment message={m} mine={mine} />}
-                  {m.content}
+            <SwipeableRow
+              key={m.id}
+              swipeDisabled={deleted || otherUser?.blockedByMe}
+              onReply={() => startReply(m)}
+              onActions={() => setActionMsg(m)}
+            >
+              <div id={`msg-${m.id}`} className={`group flex ${mine ? 'justify-end' : 'justify-start'} rounded-2xl transition-colors duration-500 ${flashId === m.id ? 'bg-amber-500/20' : ''}`}>
+                <div className="max-w-[75%] relative">
+                  <div
+                    className={
+                      deleted
+                        ? 'bg-transparent border border-zinc-700 text-zinc-500 italic rounded-2xl px-4 py-2 text-sm flex items-center gap-1.5'
+                        : mine
+                          ? 'bg-amber-500 text-black rounded-2xl rounded-tr-none px-4 py-2 font-medium'
+                          : 'bg-zinc-800 text-white rounded-2xl rounded-tl-none px-4 py-2'
+                    }
+                  >
+                    {deleted ? (
+                      <>
+                        <Ban size={13} className="shrink-0" /> This message was deleted
+                      </>
+                    ) : (
+                      <>
+                        {m.forwarded && (
+                          <span className={`flex items-center gap-1 text-[11px] italic mb-1 ${mine ? 'text-black/60' : 'text-zinc-400'}`}>
+                            <CornerUpRight size={11} /> Forwarded
+                          </span>
+                        )}
+                        {q && (
+                          <button
+                            type="button"
+                            onClick={() => jumpTo(q.id)}
+                            className={`block w-full text-left rounded-lg border-l-4 px-2.5 py-1.5 mb-1.5 text-xs ${
+                              mine ? 'bg-black/10 border-black/50 text-black/80' : 'bg-black/25 border-amber-500 text-zinc-300'
+                            }`}
+                          >
+                            <span className={`block font-bold truncate ${mine ? 'text-black' : 'text-amber-400'}`}>
+                              {q.senderId === me?.id ? 'You' : `@${q.senderUsername || otherUser?.username || 'user'}`}
+                            </span>
+                            <span className={`block line-clamp-2 break-words ${q.deleted ? 'italic opacity-70' : ''}`}>
+                              {q.deleted
+                                ? 'This message was deleted'
+                                : q.content || (q.attachmentName ? `📎 ${q.attachmentName}` : q.attachmentType ? '📎 Attachment' : '')}
+                            </span>
+                          </button>
+                        )}
+                        {m.attachmentUrl && <Attachment message={m} mine={mine} />}
+                        <span className="break-words whitespace-pre-wrap">{m.content}</span>
+                      </>
+                    )}
+                  </div>
+                  {/* Desktop affordance: hover chevron opens the same action sheet as long-press */}
+                  <button
+                    type="button"
+                    onClick={() => setActionMsg(m)}
+                    aria-label="Message actions"
+                    className={`hidden sm:flex absolute top-1 ${mine ? 'left-[-28px]' : 'right-[-28px]'} w-6 h-6 rounded-full bg-zinc-800 text-zinc-300 hover:text-white items-center justify-center opacity-0 group-hover:opacity-100 transition`}
+                  >
+                    <ChevronDown size={14} />
+                  </button>
+                  <p className={`text-[10px] text-zinc-400 mt-1 flex items-center gap-1 ${mine ? 'justify-end' : 'justify-start'}`}>
+                    {formatClock(m.createdAt)}
+                    {mine && !deleted && <span className={m.read ? 'text-amber-400' : ''}>{m.read ? '✓✓' : '✓'}</span>}
+                  </p>
                 </div>
-                <p className={`text-[10px] text-zinc-400 mt-1 flex items-center gap-1 ${mine ? 'justify-end' : 'justify-start'}`}>
-                  {formatClock(m.createdAt)}
-                  {mine && <span className={m.read ? 'text-amber-400' : ''}>{m.read ? '✓✓' : '✓'}</span>}
-                </p>
               </div>
-            </div>
+            </SwipeableRow>
           );
         })}
         <div ref={bottomRef} />
@@ -453,6 +609,27 @@ export default function ChatThreadView({ otherUserId }) {
         </div>
       )}
 
+      {/* Quoted-reply preview above the input */}
+      {replyTo && (
+        <div className="px-3 pt-2 bg-zinc-950 border-t border-zinc-800 shrink-0">
+          <div className="flex items-stretch gap-2 bg-zinc-900 rounded-xl overflow-hidden">
+            <span className="w-1 bg-amber-500 shrink-0" />
+            <div className="flex-1 min-w-0 py-2">
+              <p className="text-xs font-bold text-amber-400 truncate">Replying to {replyTo.name}</p>
+              <p className="text-xs text-zinc-400 truncate">{replyTo.snippet}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setReplyTo(null)}
+              aria-label="Cancel reply"
+              className="w-9 shrink-0 text-zinc-400 hover:text-white flex items-center justify-center"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Bottom input dock */}
       <form onSubmit={handleSend} className="p-3 bg-zinc-950 border-t border-zinc-800 flex items-center gap-2 shrink-0">
         <input ref={fileInputRef} type="file" accept={ACCEPT} onChange={handleFilePicked} className="hidden" />
@@ -482,6 +659,7 @@ export default function ChatThreadView({ otherUserId }) {
           <Smile size={20} />
         </button>
         <input
+          ref={inputRef}
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder="Message…"
@@ -497,6 +675,37 @@ export default function ChatThreadView({ otherUserId }) {
           <Send size={18} />
         </button>
       </form>
+
+      {actionMsg && (
+        <MessageActionSheet
+          message={actionMsg}
+          onClose={() => setActionMsg(null)}
+          onReply={() => startReply(actionMsg)}
+          onCopy={() => copyMessage(actionMsg)}
+          onForward={() => { setForwardTarget(actionMsg); setActionMsg(null); }}
+          onDelete={() => { setDeleteTarget(actionMsg); setActionMsg(null); }}
+        />
+      )}
+      {deleteTarget && (
+        <DeleteMessageDialog
+          busy={deleting}
+          canDeleteForEveryone={deleteTarget.senderId === me?.id && !deleteTarget.deleted}
+          onDeleteForMe={() => confirmDelete('me')}
+          onDeleteForEveryone={() => confirmDelete('everyone')}
+          onClose={() => setDeleteTarget(null)}
+        />
+      )}
+      {forwardTarget && (
+        <ForwardPicker
+          message={forwardTarget}
+          onClose={() => setForwardTarget(null)}
+          onForwarded={(user, sent) => {
+            setForwardTarget(null);
+            if (user.id === otherUserId && sent) setMessages((prev) => [...prev, sent]);
+            flashToast(`Forwarded to @${user.username}`);
+          }}
+        />
+      )}
 
       {showReport && <ReportModal targetType="user" targetId={otherUserId} onClose={() => setShowReport(false)} />}
 

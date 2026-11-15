@@ -3,7 +3,16 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { useSocketContext } from './SocketContext';
-import { CallPeer, describeMediaError, getLocalMedia, isWebRtcSupported, stopStream } from '../lib/webrtc';
+import {
+  CallPeer,
+  CAMERA_ISSUE_MESSAGES,
+  classifyCameraIssue,
+  describeMediaError,
+  getCameraTrack,
+  getLocalMedia,
+  isWebRtcSupported,
+  stopStream,
+} from '../lib/webrtc';
 import { startRingtone } from '../lib/ringtone';
 import CallModal from '../components/CallModal';
 
@@ -36,6 +45,7 @@ export function CallProvider({ children }) {
   const [videoOff, setVideoOff] = useState(false);
   const [speakerOn, setSpeakerOn] = useState(true);
   const [connectedAt, setConnectedAt] = useState(null);
+  const [cameraIssue, setCameraIssue] = useState(null); // null | 'denied' | 'busy' | 'missing' (video calls)
 
   const callRef = useRef(null); // always-current mirror so socket handlers never read stale state
   const peerRef = useRef(null);
@@ -104,6 +114,7 @@ export function CallProvider({ children }) {
       setLocalStream(null);
       setRemoteStream(null);
       setConnectedAt(null);
+      setCameraIssue(null);
       setMuted(false);
       setVideoOff(false);
       setSpeakerOn(true);
@@ -141,9 +152,10 @@ export function CallProvider({ children }) {
   }, [sendIce]);
 
   const buildPeer = useCallback(
-    (stream) =>
+    (stream, callType) =>
       new CallPeer({
         localStream: stream,
+        callType,
         onRemoteStream: (s) => setRemoteStream(s),
         onIceCandidate: sendIce,
         onConnectionState: (state) => {
@@ -194,7 +206,9 @@ export function CallProvider({ children }) {
 
       let stream;
       try {
-        stream = await getLocalMedia(callType);
+        const media = await getLocalMedia(callType);
+        stream = media.stream;
+        if (callRef.current?.callId === callId) setCameraIssue(media.cameraIssue);
       } catch (err) {
         if (callRef.current?.callId === callId) teardown(describeMediaError(err, callType === 'video'));
         return;
@@ -207,7 +221,7 @@ export function CallProvider({ children }) {
       setLocalStream(stream);
 
       try {
-        const peer = buildPeer(stream);
+        const peer = buildPeer(stream, callType);
         peerRef.current = peer;
         const offer = await peer.createOffer();
         if (callRef.current?.callId !== callId) return;
@@ -238,9 +252,13 @@ export function CallProvider({ children }) {
     setCall({ ...c, status: 'connecting' });
     outIceRef.current = { ready: false, queue: [] };
 
+    // Camera + mic are requested here, straight from the Accept click (a user gesture, which desktop
+    // browsers want before showing the permission prompt).
     let stream;
     try {
-      stream = await getLocalMedia(c.callType);
+      const media = await getLocalMedia(c.callType);
+      stream = media.stream;
+      if (callRef.current?.callId === c.callId) setCameraIssue(media.cameraIssue);
     } catch (err) {
       socket.emit('call:decline', { toUserId: c.peer.id, callId: c.callId });
       if (callRef.current?.callId === c.callId) teardown(describeMediaError(err, c.callType === 'video'));
@@ -254,7 +272,7 @@ export function CallProvider({ children }) {
     setLocalStream(stream);
 
     try {
-      const peer = buildPeer(stream);
+      const peer = buildPeer(stream, c.callType);
       peerRef.current = peer;
       const answer = await peer.acceptOffer(incomingOfferRef.current);
       socket.emit('call:answer', { toUserId: c.peer.id, callId: c.callId, sdp: answer });
@@ -304,6 +322,29 @@ export function CallProvider({ children }) {
   }, [videoOff]);
 
   const toggleSpeaker = useCallback(() => setSpeakerOn((v) => !v), []);
+
+  // "Tap to retry": ask for the camera again and drop it into the live call.
+  const retryCamera = useCallback(async () => {
+    const stream = localStreamRef.current;
+    const peer = peerRef.current;
+    if (!stream || !peer) return;
+    try {
+      const track = await getCameraTrack();
+      const attached = await peer.attachVideoTrack(track);
+      if (!attached) {
+        track.stop();
+        setCameraIssue('missing');
+        return;
+      }
+      const next = new MediaStream([...stream.getAudioTracks(), track]);
+      localStreamRef.current = next;
+      setLocalStream(next);
+      setVideoOff(false);
+      setCameraIssue(null);
+    } catch (err) {
+      setCameraIssue(classifyCameraIssue(err));
+    }
+  }, []);
 
   // ---------- Incoming signalling ----------
   useEffect(() => {
@@ -449,6 +490,9 @@ export function CallProvider({ children }) {
       videoOff,
       speakerOn,
       connectedAt,
+      cameraIssue,
+      cameraIssueMessage: cameraIssue ? CAMERA_ISSUE_MESSAGES[cameraIssue] : null,
+      retryCamera,
       startCall,
       acceptCall,
       declineCall,
@@ -457,7 +501,7 @@ export function CallProvider({ children }) {
       toggleCamera,
       toggleSpeaker,
     }),
-    [call, localStream, remoteStream, muted, videoOff, speakerOn, connectedAt, startCall, acceptCall, declineCall, endCall, toggleMute, toggleCamera, toggleSpeaker]
+    [call, localStream, remoteStream, muted, videoOff, speakerOn, connectedAt, cameraIssue, retryCamera, startCall, acceptCall, declineCall, endCall, toggleMute, toggleCamera, toggleSpeaker]
   );
 
   return (

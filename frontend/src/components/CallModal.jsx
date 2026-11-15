@@ -32,7 +32,7 @@ function PeerAvatar({ peer, ringing }) {
 
 export default function CallModal() {
   const {
-    call, localStream, remoteStream, muted, videoOff, speakerOn, connectedAt,
+    call, localStream, remoteStream, muted, videoOff, speakerOn, connectedAt, cameraIssue, cameraIssueMessage, retryCamera,
     acceptCall, declineCall, endCall, toggleMute, toggleCamera, toggleSpeaker,
   } = useCall();
 
@@ -40,6 +40,7 @@ export default function CallModal() {
   const remoteVideoRef = useRef(null);
   const remoteAudioRef = useRef(null);
   const [seconds, setSeconds] = useState(0);
+  const [playBlocked, setPlayBlocked] = useState(false); // browser refused to autoplay remote audio/video
 
   const isVideo = call.callType === 'video';
   const status = call.status;
@@ -59,10 +60,18 @@ export default function CallModal() {
   useEffect(() => {
     const el = isVideo ? remoteVideoRef.current : remoteAudioRef.current;
     if (el && remoteStream) {
-      el.srcObject = remoteStream;
-      el.play?.().catch(() => {});
+      // Attach immediately on receipt (same as videoRef.current.srcObject = event.streams[0]).
+      if (el.srcObject !== remoteStream) el.srcObject = remoteStream;
+      el.play?.().then(() => setPlayBlocked(false)).catch((err) => {
+        if (err?.name === 'NotAllowedError') setPlayBlocked(true);
+      });
     }
   }, [remoteStream, isVideo, status]);
+
+  function resumeRemote() {
+    const el = isVideo ? remoteVideoRef.current : remoteAudioRef.current;
+    el?.play?.().then(() => setPlayBlocked(false)).catch(() => {});
+  }
 
   useEffect(() => {
     const el = isVideo ? remoteVideoRef.current : remoteAudioRef.current;
@@ -158,6 +167,23 @@ export default function CallModal() {
               </p>
             </div>
           </div>
+        )}
+        {/* Camera couldn't be opened: the call carries on with audio, and this retries the camera */}
+        {isVideo && cameraIssue && cameraIssueMessage && (
+          <button
+            onClick={retryCamera}
+            className="absolute top-4 left-4 right-40 sm:right-48 z-30 text-left bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs sm:text-sm rounded-2xl px-4 py-3 shadow-2xl transition"
+          >
+            {cameraIssueMessage}
+          </button>
+        )}
+        {playBlocked && (
+          <button
+            onClick={resumeRemote}
+            className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 bg-white text-black font-bold text-sm rounded-full px-5 py-2.5 shadow-2xl"
+          >
+            Tap to start audio/video
+          </button>
         )}
         {/* Slim status pill over live video */}
         {remoteVideoVisible && (

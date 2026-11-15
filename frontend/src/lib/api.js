@@ -317,13 +317,18 @@ export const api = {
   markCallsSeen: () => request('/calls/seen', { method: 'POST' }),
   getThread: (otherUserId) => request(`/conversations/${otherUserId}`),
   // With a file, sends multipart (field `attachment`, 25MB cap); otherwise plain JSON as before.
-  sendMessage: (otherUserId, content, file) => {
-    if (!file) return request(`/conversations/${otherUserId}`, { method: 'POST', body: { content } });
+  // extras: { replyToId } to quote a message, { forwardMessageId } to forward one.
+  sendMessage: (otherUserId, content, file, extras = {}) => {
+    const clean = Object.fromEntries(Object.entries(extras).filter(([, v]) => v));
+    if (!file) return request(`/conversations/${otherUserId}`, { method: 'POST', body: { content, ...clean } });
     const form = new FormData();
     form.append('content', content || '');
     form.append('attachment', file);
+    Object.entries(clean).forEach(([k, v]) => form.append(k, v));
     return request(`/conversations/${otherUserId}`, { method: 'POST', body: form, isForm: true, timeoutMs: 120000 });
   },
+  // scope: 'me' (hide for me) | 'everyone' (sender only)
+  deleteMessage: (id, scope = 'me') => request(`/messages/${id}?scope=${scope}`, { method: 'DELETE' }),
   fileReport: (targetType, targetId, reason, details) =>
     request('/reports', { method: 'POST', body: { targetType, targetId, reason, details } }),
 

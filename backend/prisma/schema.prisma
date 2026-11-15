@@ -522,9 +522,19 @@ model Message {
   attachmentType String? // 'image' | 'video' | 'file'
   attachmentName String?
   attachmentSize Int?
+  // Threaded reply: the message this one quotes (kept if the parent is later deleted-for-everyone).
+  replyToId  String?
+  replyTo    Message?  @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies    Message[] @relation("MessageReplies")
+  forwarded  Boolean  @default(false)
+  // Deletion: "for me" hides it from one side; "for everyone" blanks it for both (sender only).
+  deletedBySender   Boolean @default(false)
+  deletedByReceiver Boolean @default(false)
+  deletedForAll     Boolean @default(false)
   read       Boolean  @default(false)
   createdAt  DateTime @default(now())
 
+  @@index([replyToId])
   @@index([senderId, receiverId, createdAt])
   @@index([receiverId, senderId, createdAt])
 }
