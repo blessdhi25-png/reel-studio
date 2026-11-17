@@ -44,7 +44,10 @@ async function runModel({ buffer, mime, modelEndpoint }) {
   const started = Date.now();
   let res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body), signal: AbortSignal.timeout(90_000) });
   let p = await res.json().catch(() => ({}));
-  if (!res.ok) throw fail(502, p.detail || 'Replicate rejected the request.');
+  if (!res.ok) {
+    console.error('[ai-worker] replicate rejected:', res.status, p.detail);
+    throw fail(502, 'The model request was rejected.');
+  }
   while (!['succeeded', 'failed', 'canceled'].includes(p.status)) {
     if (Date.now() - started > TIMEOUT_MS) throw fail(504, 'Generation timed out.');
     await sleep(POLL_MS);

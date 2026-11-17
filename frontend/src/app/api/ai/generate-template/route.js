@@ -27,12 +27,15 @@ export async function POST(request) {
   }
   const image = incoming.get('image');
   const templateId = incoming.get('templateId');
-  if (!(image instanceof File) || !templateId) {
-    return json({ error: 'Both "image" and "templateId" are required.' }, 400);
+  // Duck-typed on purpose: `File` isn't a global on Node 18 runtimes, so `image instanceof File`
+  // threw a ReferenceError (a 500) before the request ever reached the backend.
+  const isFileLike = image && typeof image === 'object' && typeof image.arrayBuffer === 'function';
+  if (!isFileLike || !templateId) {
+    return json({ error: 'Choose a photo and a template to continue.' }, 400);
   }
 
   const outgoing = new FormData();
-  outgoing.append('image', image, image.name || 'selfie');
+  outgoing.append('image', new Blob([await image.arrayBuffer()], { type: image.type || 'image/jpeg' }), image.name || 'selfie');
   outgoing.append('templateId', String(templateId));
 
   try {
@@ -43,10 +46,13 @@ export async function POST(request) {
       signal: AbortSignal.timeout(285_000),
       cache: 'no-store',
     });
-    const data = await res.json().catch(() => ({ error: 'Unexpected response from the AI service.' }));
+    // A non-JSON body (e.g. an HTML 502 page from a sleeping host) must not reach the UI as-is.
+    const data = await res.json().catch(() => null);
+    if (!data) return json({ error: 'Something went wrong. Please try again.' }, res.ok ? 502 : res.status);
     return json(data, res.status);
   } catch (err) {
+    console.error('[api/ai/generate-template]', err);
     const timedOut = err?.name === 'TimeoutError' || err?.name === 'AbortError';
-    return json({ error: timedOut ? 'Generation timed out. Any credit charged is refunded automatically.' : "Couldn't reach the AI service." }, timedOut ? 504 : 502);
+    return json({ error: timedOut ? 'This is taking too long. Any credit used is refunded automatically.' : 'Connection lost. Please try again.' }, timedOut ? 504 : 502);
   }
 }

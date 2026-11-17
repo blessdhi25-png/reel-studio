@@ -19,7 +19,18 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 
 const router = Router();
 
-const AI_WORKER_URL = process.env.AI_WORKER_URL;
+// The worker's route is POST /generate; accept a bare host in the env var too.
+const AI_WORKER_URL = (() => {
+  const raw = (process.env.AI_WORKER_URL || '').trim();
+  if (!raw) return '';
+  try {
+    const u = new URL(raw);
+    if (u.pathname === '/' || u.pathname === '') u.pathname = '/generate';
+    return u.toString();
+  } catch {
+    return raw;
+  }
+})();
 const AI_WORKER_TOKEN = process.env.AI_WORKER_TOKEN;
 const REPLICATE_TOKEN = process.env.REPLICATE_API_TOKEN;
 const REPLICATE_IMAGE_KEY = process.env.REPLICATE_IMAGE_INPUT_KEY || 'image';
@@ -53,7 +64,10 @@ async function runWorker({ file, template }) {
     signal: AbortSignal.timeout(GENERATION_TIMEOUT_MS),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok || !data.videoUrl) throw httpError(502, data.error || 'The AI worker failed to generate a video.');
+  if (!res.ok || !data.videoUrl) {
+    console.error('[ai-templates] worker failed:', res.status, data.error);
+    throw httpError(502, 'We couldn’t generate your video. Please try again.');
+  }
   return data.videoUrl;
 }
 
@@ -68,18 +82,24 @@ async function runReplicate({ file, template }) {
   const started = Date.now();
   let res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body), signal: AbortSignal.timeout(90_000) });
   let prediction = await res.json().catch(() => ({}));
-  if (!res.ok) throw httpError(502, prediction.detail || 'The GPU provider rejected the request.');
+  if (!res.ok) {
+    console.error('[ai-templates] provider rejected request:', res.status, prediction.detail);
+    throw httpError(502, 'We couldn’t generate your video. Please try again.');
+  }
 
   while (!['succeeded', 'failed', 'canceled'].includes(prediction.status)) {
     if (Date.now() - started > GENERATION_TIMEOUT_MS) throw httpError(504, 'Generation timed out. You have not been charged.');
     await sleep(2500);
     res = await fetch(prediction.urls.get, { headers: { Authorization: `Bearer ${REPLICATE_TOKEN}` }, signal: AbortSignal.timeout(30_000) });
     prediction = await res.json().catch(() => ({}));
-    if (!res.ok) throw httpError(502, 'Lost contact with the GPU provider.');
+    if (!res.ok) throw httpError(502, 'Connection lost. Please try again.');
   }
-  if (prediction.status !== 'succeeded') throw httpError(502, prediction.error || 'Generation failed. You have not been charged.');
+  if (prediction.status !== 'succeeded') {
+    console.error('[ai-templates] generation failed:', prediction.error);
+    throw httpError(502, 'We couldn’t generate your video. You have not been charged.');
+  }
   const out = Array.isArray(prediction.output) ? prediction.output[0] : prediction.output;
-  if (typeof out !== 'string') throw httpError(502, 'The model returned no video.');
+  if (typeof out !== 'string') throw httpError(502, 'We couldn’t generate your video. You have not been charged.');
   return out;
 }
 
@@ -138,7 +158,12 @@ router.post(
     const template = await prisma.aiTemplate.findFirst({ where: { id: String(templateId), isActive: true } });
     if (!template) throw httpError(404, 'That template is no longer available.');
     if (!providerConfigured()) {
-      throw httpError(503, 'AI video generation is not configured on this server (set REPLICATE_API_TOKEN or AI_WORKER_URL).');
+      console.error('[ai-templates] no provider configured (set REPLICATE_API_TOKEN or AI_WORKER_URL)');
+      throw httpError(503, 'AI video generation is temporarily unavailable. Please try again later.');
+    }
+    if (!template.modelEndpoint) {
+      console.error('[ai-templates] template has no modelEndpoint:', template.id);
+      throw httpError(503, 'This template is temporarily unavailable. Please try another.');
     }
 
     // Charge first, atomically: the WHERE clause makes "enough credits" and
@@ -160,7 +185,12 @@ router.post(
       await prisma.user.update({ where: { id: req.userId }, data: { aiCredits: { increment: template.creditsCost } } }).catch((e) =>
         console.error('[ai-templates] REFUND FAILED for user', req.userId, e)
       );
-      throw err;
+      // Timeouts/aborts from fetch() carry no status; anything unexpected becomes a clean 502
+      // (the detail is logged, never sent to the client).
+      if (err?.status) throw err;
+      console.error('[ai-templates] unexpected failure:', err);
+      const timedOut = err?.name === 'TimeoutError' || err?.name === 'AbortError';
+      throw httpError(timedOut ? 504 : 502, timedOut ? 'This is taking too long. You have not been charged.' : 'Connection lost. Please try again.');
     }
   })
 );

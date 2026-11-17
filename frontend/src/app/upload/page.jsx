@@ -14,6 +14,7 @@ import UploadStudio, { MediaTypeToggle } from '@/components/UploadStudio';
 import DesktopUploadLanding from '@/components/DesktopUploadLanding';
 import TextOverlayEditor from '@/components/TextOverlayEditor';
 import { stitchClips } from '@/lib/stitchClips';
+import { friendlyError } from '@/lib/friendlyError';
 import { templateSetup } from '@/lib/templates';
 import { DEFAULT_FILTER_ID, FILTERS } from '@/lib/cameraFilters';
 
@@ -685,7 +686,7 @@ function UploadPageInner() {
         setStatus(null);
       } else {
         setStatus('error');
-        setErrorMsg(err.message || 'Upload failed. Please try again.');
+        setErrorMsg(friendlyError(err, 'Upload failed. Please try again.'));
       }
     }
   }
@@ -1597,266 +1598,189 @@ function PublishDrawer({
 }) {
   return (
     <div className="absolute inset-0 z-10 flex flex-col bg-black animate-sheet-up">
-      <div className="flex items-center gap-3 px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-3 border-b border-zinc-800 shrink-0">
+      <div className="flex items-center gap-3 px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-3 border-b border-zinc-900 shrink-0">
         <button onClick={onBack} className="text-zinc-400 hover:text-white text-sm font-semibold px-1">
           ← Back
         </button>
-        <h1 className="text-base font-bold text-white">Post details</h1>
+        <h1 className="text-base font-bold text-white">New post</h1>
       </div>
 
       <form onSubmit={onSubmit} className="flex-1 overflow-y-auto">
-        <div className="max-w-2xl mx-auto p-5 md:p-8 grid grid-cols-1 md:grid-cols-12 gap-6">
-          <div className="md:col-span-4">
-            <div className="relative aspect-[9/16] rounded-2xl overflow-hidden bg-zinc-900 border border-zinc-800 max-h-[280px] mx-auto">
-              <VideoPreview src={previewUrl} />
-            </div>
-          </div>
-
-          <div className="md:col-span-8 space-y-6">
-            <div className="bg-zinc-900/70 border border-zinc-800 rounded-3xl p-6 shadow-2xl space-y-6">
-              {/* Format selector */}
-              <div>
-                <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">
-                  Format
-                </label>
-                <div className="flex gap-2 p-1 bg-zinc-800/60 border border-zinc-800 rounded-2xl w-fit">
+        <div className="max-w-2xl mx-auto px-4 sm:px-6 py-6 space-y-4 pb-[max(2rem,env(safe-area-inset-bottom))]">
+          {/* 1 · Media */}
+          <FormCard title="Media">
+            <div className="flex items-start gap-4">
+              <div className="relative w-28 sm:w-32 shrink-0 aspect-[9/16] rounded-xl overflow-hidden bg-black border border-zinc-800">
+                <VideoPreview src={previewUrl} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <FieldLabel>Format</FieldLabel>
+                <div className="flex flex-col gap-2">
                   {[
-                    { id: 'short', label: 'Short Clip (<60s)' },
-                    { id: 'long', label: 'Full Feature (>60s)' },
-                  ].map((opt) => (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      onClick={() => setVideoType(opt.id)}
-                      className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${
-                        videoType === opt.id
-                          ? 'bg-amber-500 text-black font-bold shadow-md'
-                          : 'text-zinc-400 hover:text-white'
-                      }`}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Caption */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider">
-                    Caption
-                  </label>
-                  <span className={`text-[11px] font-mono ${captionRemaining <= 0 ? 'text-amber-400' : 'text-zinc-500'}`}>
-                    {caption.length} / {CAPTION_MAX} characters
-                  </span>
-                </div>
-                <textarea
-                  ref={captionRef}
-                  value={caption}
-                  onChange={(e) => setCaption(e.target.value.slice(0, CAPTION_MAX))}
-                  placeholder="Write a caption that pops…"
-                  rows={4}
-                  maxLength={CAPTION_MAX}
-                  className="w-full bg-zinc-800/80 border border-zinc-700 text-white rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500/50 transition-all resize-none placeholder:text-zinc-500"
-                />
-                <div className="flex items-center gap-2 mt-3 flex-wrap relative">
-                  <button
-                    type="button"
-                    onClick={insertHashtag}
-                    className="flex items-center gap-1.5 text-xs font-semibold text-zinc-300 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 px-3 py-1.5 rounded-full transition-all"
-                  >
-                    <HashIcon /> Hashtag
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowEmoji((v) => !v)}
-                    className="flex items-center gap-1.5 text-xs font-semibold text-zinc-300 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 px-3 py-1.5 rounded-full transition-all"
-                  >
-                    <SmileIcon /> Emoji
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsAiOpen(true)}
-                    className="px-3.5 py-1.5 rounded-full bg-gradient-to-r from-purple-600 to-pink-500 text-white text-xs font-semibold shadow-md flex items-center gap-1 hover:opacity-90 transition"
-                  >
-                    ✨ Assist with AI
-                  </button>
-
-                  {showEmoji && (
-                    <div className="absolute top-full left-0 mt-2 z-20 flex flex-wrap gap-1 bg-zinc-800 border border-zinc-700 rounded-2xl p-2 shadow-xl w-48">
-                      {EMOJI_QUICKSET.map((emoji) => (
-                        <button
-                          key={emoji}
-                          type="button"
-                          onClick={() => insertEmoji(emoji)}
-                          className="text-lg hover:bg-zinc-700 rounded-lg w-9 h-9 flex items-center justify-center transition-all"
-                        >
-                          {emoji}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <AICoPilotDrawer
-                open={isAiOpen}
-                onClose={() => setIsAiOpen(false)}
-                onInsert={handleAiInsert}
-                initialTopic={caption}
-              />
-
-              {/* Community target (set by /upload?community=<id>) */}
-              {communityTarget && (
-                <div className="flex items-center justify-between gap-3 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-2.5">
-                  <p className="text-sm text-white truncate">
-                    Posting to <span className="font-bold text-amber-400">{communityTarget.name}</span>
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => setCommunityTarget(null)}
-                    className="text-xs font-semibold text-zinc-300 hover:text-white shrink-0"
-                  >
-                    Post normally
-                  </button>
-                </div>
-              )}
-
-              {/* Topic circles */}
-              <div>
-                <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">
-                  Topic Circles <span className="text-zinc-600 normal-case font-normal">(optional)</span>
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  {ALLOWED_CIRCLES.map((c) => {
-                    const active = circle === c;
+                    { id: 'short', label: 'Short clip', hint: 'Under 60 seconds' },
+                    { id: 'long', label: 'Full feature', hint: 'Over 60 seconds' },
+                  ].map((opt) => {
+                    const active = videoType === opt.id;
                     return (
                       <button
-                        key={c}
+                        key={opt.id}
                         type="button"
-                        onClick={() => setCircle((prev) => (prev === c ? null : c))}
-                        className={`text-xs px-3 py-1.5 rounded-full cursor-pointer transition-all border ${
-                          active
-                            ? 'bg-amber-500/20 text-amber-400 border-amber-500 font-semibold'
-                            : 'bg-zinc-800 hover:bg-zinc-700 border-zinc-700 text-zinc-300'
+                        onClick={() => setVideoType(opt.id)}
+                        aria-pressed={active}
+                        className={`text-left rounded-xl border px-3.5 py-2.5 transition ${
+                          active ? 'border-amber-500 bg-amber-500/10' : 'border-zinc-800 hover:border-zinc-700'
                         }`}
                       >
-                        {c}
+                        <span className={`block text-sm font-semibold ${active ? 'text-amber-400' : 'text-white'}`}>{opt.label}</span>
+                        <span className="block text-xs text-zinc-500">{opt.hint}</span>
                       </button>
                     );
                   })}
                 </div>
-                <p className="text-[11px] text-zinc-500 mt-2">
-                  Pin this post to a community so viewers can filter the feed down to it.
-                </p>
-              </div>
-
-              {/* Sound picker */}
-              <div>
-                <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">
-                  Sound <span className="text-zinc-600 normal-case font-normal">(optional)</span>
-                </label>
-
-                {selectedTrack ? (
-                  <div className="flex items-center justify-between gap-3 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-2.5">
-                    <p className="text-sm text-white truncate">
-                      🎵 {selectedTrack.title} <span className="text-zinc-400">· {selectedTrack.artistName}</span>
-                    </p>
-                    <div className="flex items-center gap-3 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => setIsSoundPickerOpen(true)}
-                        className="text-xs font-semibold text-amber-400 hover:text-amber-300"
-                      >
-                        Change
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedTrack(null)}
-                        className="text-zinc-400 hover:text-white"
-                        aria-label="Remove sound"
-                      >
-                        <XIcon />
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setIsSoundPickerOpen(true)}
-                    className="w-full flex items-center gap-2 bg-zinc-800/80 border border-zinc-700 text-zinc-300 hover:border-amber-500/50 hover:text-white rounded-xl px-4 py-2.5 text-sm transition-all"
-                  >
-                    <MusicNoteIcon className="w-4 h-4 text-amber-400 shrink-0" />
-                    Add Sound / Pick Music
-                  </button>
-                )}
-                <p className="text-[11px] text-zinc-500 mt-2">
-                  Only tracks distributed by registered artists show up here.{' '}
-                  <a href="/artist/register" className="text-amber-400 hover:text-amber-300">
-                    Distribute your own →
-                  </a>
-                </p>
               </div>
             </div>
+          </FormCard>
 
-            {/* Publishing privileges */}
-            <PublishingPrivileges
-              visibility={visibility}
-              setVisibility={setVisibility}
-              allowComments={allowComments}
-              setAllowComments={setAllowComments}
-              allowDuets={allowDuets}
-              setAllowDuets={setAllowDuets}
-              allowDownloads={allowDownloads}
-              setAllowDownloads={setAllowDownloads}
+          {/* 2 · Details */}
+          <FormCard title="Details">
+            {communityTarget && (
+              <div className="flex items-center justify-between gap-3 border border-amber-500/30 rounded-xl px-4 py-2.5 mb-4">
+                <p className="text-sm text-white truncate">
+                  Posting to <span className="font-bold text-amber-400">{communityTarget.name}</span>
+                </p>
+                <button type="button" onClick={() => setCommunityTarget(null)} className="text-xs font-semibold text-zinc-300 hover:text-white shrink-0">
+                  Post normally
+                </button>
+              </div>
+            )}
+            <div className="flex items-center justify-between mb-2">
+              <FieldLabel className="mb-0">Description</FieldLabel>
+              <span className={`text-[11px] font-mono ${captionRemaining <= 0 ? 'text-amber-400' : 'text-zinc-500'}`}>
+                {caption.length}/{CAPTION_MAX}
+              </span>
+            </div>
+            <textarea
+              ref={captionRef}
+              value={caption}
+              onChange={(e) => setCaption(e.target.value.slice(0, CAPTION_MAX))}
+              placeholder="Write a caption that pops…"
+              rows={4}
+              maxLength={CAPTION_MAX}
+              className="w-full bg-black border border-zinc-800 text-white rounded-xl px-4 py-3 text-sm outline-none focus:border-amber-500/60 transition resize-none placeholder:text-zinc-600"
             />
-          </div>
-        </div>
+            <div className="flex items-center gap-2 mt-3 flex-wrap relative">
+              <button type="button" onClick={insertHashtag} className="flex items-center gap-1.5 text-xs font-semibold text-zinc-300 border border-zinc-800 hover:border-zinc-600 px-3 py-1.5 rounded-full transition">
+                <HashIcon /> Hashtag
+              </button>
+              <button type="button" onClick={() => setShowEmoji((v) => !v)} className="flex items-center gap-1.5 text-xs font-semibold text-zinc-300 border border-zinc-800 hover:border-zinc-600 px-3 py-1.5 rounded-full transition">
+                <SmileIcon /> Emoji
+              </button>
+              <button type="button" onClick={() => setIsAiOpen(true)} className="px-3.5 py-1.5 rounded-full bg-gradient-to-r from-purple-600 to-pink-500 text-white text-xs font-semibold flex items-center gap-1 hover:opacity-90 transition">
+                ✨ Assist with AI
+              </button>
+              {showEmoji && (
+                <div className="absolute top-full left-0 mt-2 z-20 flex flex-wrap gap-1 bg-zinc-900 border border-zinc-800 rounded-2xl p-2 shadow-xl w-48">
+                  {EMOJI_QUICKSET.map((emoji) => (
+                    <button key={emoji} type="button" onClick={() => insertEmoji(emoji)} className="text-lg hover:bg-zinc-800 rounded-lg w-9 h-9 flex items-center justify-center transition">
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <AICoPilotDrawer open={isAiOpen} onClose={() => setIsAiOpen(false)} onInsert={handleAiInsert} initialTopic={caption} />
+          </FormCard>
 
-        {/* Sticky footer — matches the previous page-level footer 1:1, just
-            scoped to the drawer instead of the whole page now. */}
-        <div
-          className="sticky bottom-0 border-t border-zinc-800 bg-black/90 backdrop-blur-md"
-          style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
-        >
-          <div className="max-w-2xl mx-auto px-5 md:px-8">
+          {/* 3 · Category + sound */}
+          <FormCard title="Category">
+            <div className="flex flex-wrap gap-2">
+              {ALLOWED_CIRCLES.map((c) => {
+                const active = circle === c;
+                return (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setCircle((prev) => (prev === c ? null : c))}
+                    aria-pressed={active}
+                    className={`text-xs px-3 py-1.5 rounded-full transition border ${
+                      active ? 'text-amber-400 border-amber-500 bg-amber-500/10 font-semibold' : 'border-zinc-800 hover:border-zinc-600 text-zinc-300'
+                    }`}
+                  >
+                    {c}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="mt-5 pt-5 border-t border-zinc-800">
+              <FieldLabel>Sound</FieldLabel>
+              {selectedTrack ? (
+                <div className="flex items-center justify-between gap-3 border border-amber-500/30 rounded-xl px-4 py-2.5">
+                  <p className="text-sm text-white truncate">
+                    🎵 {selectedTrack.title} <span className="text-zinc-500">· {selectedTrack.artistName}</span>
+                  </p>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <button type="button" onClick={() => setIsSoundPickerOpen(true)} className="text-xs font-semibold text-amber-400 hover:text-amber-300">
+                      Change
+                    </button>
+                    <button type="button" onClick={() => setSelectedTrack(null)} className="text-zinc-400 hover:text-white" aria-label="Remove sound">
+                      <XIcon />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setIsSoundPickerOpen(true)}
+                  className="w-full flex items-center gap-2 border border-zinc-800 text-zinc-300 hover:border-amber-500/50 hover:text-white rounded-xl px-4 py-2.5 text-sm transition"
+                >
+                  <MusicNoteIcon className="w-4 h-4 text-amber-400 shrink-0" />
+                  Add sound
+                </button>
+              )}
+            </div>
+          </FormCard>
+
+          {/* 4 · Visibility */}
+          <PublishingPrivileges
+            visibility={visibility}
+            setVisibility={setVisibility}
+            allowComments={allowComments}
+            setAllowComments={setAllowComments}
+            allowDuets={allowDuets}
+            setAllowDuets={setAllowDuets}
+            allowDownloads={allowDownloads}
+            setAllowDownloads={setAllowDownloads}
+          />
+
+          {/* Status + actions: in normal flow at the end of the form — nothing floats over the content. */}
+          <div className="pt-2">
             {status === 'uploading' && (
-              <div className="pt-3">
-                <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-amber-500 transition-all duration-200"
-                    style={{ width: `${uploadProgress}%` }}
-                  />
+              <div className="mb-4">
+                <div className="h-1.5 w-full bg-zinc-900 rounded-full overflow-hidden">
+                  <div className="h-full bg-amber-500 transition-all duration-200" style={{ width: `${uploadProgress}%` }} />
                 </div>
                 <p className="text-[11px] text-zinc-500 mt-1.5">Uploading… {uploadProgress}%</p>
               </div>
             )}
+            {status === 'done' && <p className="text-sm text-emerald-400 mb-4">Uploaded — it'll appear in the feed once processing finishes.</p>}
+            {status === 'error' && <p className="text-sm text-red-400 mb-4" role="alert">{errorMsg || 'Something went wrong. Please try again.'}</p>}
 
-            {status === 'done' && (
-              <p className="text-xs text-emerald-400 pt-3">
-                Uploaded — it'll appear in the feed once processing finishes.
-              </p>
-            )}
-            {status === 'error' && (
-              <p className="text-xs text-red-400 pt-3">{errorMsg || 'Something went wrong. Try again.'}</p>
-            )}
-
-            <div className="py-4 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
               <button
                 type="button"
                 onClick={handleCancel}
-                disabled={status === 'uploading'}
-                className="hover:bg-zinc-800 text-zinc-400 font-medium px-5 py-2.5 rounded-xl transition-all text-sm disabled:opacity-40"
+                className="px-5 py-3 rounded-xl border border-zinc-800 text-zinc-300 hover:text-white hover:border-zinc-600 text-sm font-semibold transition"
               >
-                {status === 'uploading' ? 'Discard' : 'Discard / Cancel'}
+                {status === 'uploading' ? 'Cancel upload' : 'Discard'}
               </button>
               <button
                 type="submit"
                 disabled={status === 'uploading' || status === 'done'}
-                className="bg-amber-500 hover:bg-amber-400 text-black font-bold px-8 py-3 rounded-xl shadow-lg transition-all text-base flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex-1 bg-amber-500 hover:bg-amber-400 text-black font-bold px-6 py-3 rounded-xl transition text-sm flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {status === 'uploading' && <SpinnerIcon />}
-                {status === 'uploading' ? 'Publishing…' : 'Post / Publish Video'}
+                {status === 'uploading' ? 'Publishing…' : 'Publish'}
               </button>
             </div>
           </div>
@@ -1864,6 +1788,19 @@ function PublishDrawer({
       </form>
     </div>
   );
+}
+
+function FormCard({ title, children }) {
+  return (
+    <section className="bg-zinc-950 border border-zinc-800 rounded-2xl p-5">
+      <h2 className="text-sm font-bold text-white mb-4">{title}</h2>
+      {children}
+    </section>
+  );
+}
+
+function FieldLabel({ children, className = 'mb-2' }) {
+  return <label className={`block text-xs font-semibold text-zinc-500 uppercase tracking-wider ${className}`}>{children}</label>;
 }
 
 function VideoPreview({ src }) {
@@ -1953,64 +1890,27 @@ function PublishingPrivileges({
   allowDownloads,
   setAllowDownloads,
 }) {
-  const [open, setOpen] = useState(true);
-
   return (
-    <div className="bg-zinc-900/70 border border-zinc-800 rounded-3xl shadow-2xl overflow-hidden">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center justify-between px-6 py-5"
+    <FormCard title="Visibility">
+      <FieldLabel>Who can view this video</FieldLabel>
+      <select
+        value={visibility}
+        onChange={(e) => setVisibility(e.target.value)}
+        className="w-full bg-black border border-zinc-800 text-white rounded-xl px-4 py-3 text-sm outline-none focus:border-amber-500/60 transition"
       >
-        <div className="text-left">
-          <h2 className="text-sm font-bold text-white">Publishing Privileges</h2>
-          <p className="text-xs text-zinc-500 mt-0.5">Control who can see and interact with this post.</p>
-        </div>
-        <span className={`text-zinc-500 transition-transform ${open ? 'rotate-180' : ''}`}>▾</span>
-      </button>
+        {VISIBILITY_OPTIONS.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
 
-      {open && (
-        <div className="px-6 pb-6 space-y-5 border-t border-zinc-800 pt-5">
-          <div>
-            <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">
-              Who can view this video
-            </label>
-            <select
-              value={visibility}
-              onChange={(e) => setVisibility(e.target.value)}
-              className="w-full bg-zinc-800/80 border border-zinc-700 text-white rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500/50 transition-all"
-            >
-              {VISIBILITY_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="divide-y divide-zinc-800">
-            <ToggleRow
-              title="Allow Comments"
-              description="Let viewers comment on this post."
-              checked={allowComments}
-              onChange={() => setAllowComments((v) => !v)}
-            />
-            <ToggleRow
-              title="Allow Duets / Stitches"
-              description="Let others remix this video into their own."
-              checked={allowDuets}
-              onChange={() => setAllowDuets((v) => !v)}
-            />
-            <ToggleRow
-              title="Allow Downloads"
-              description="Let viewers save this video to their device."
-              checked={allowDownloads}
-              onChange={() => setAllowDownloads((v) => !v)}
-            />
-          </div>
-        </div>
-      )}
-    </div>
+      <div className="mt-4 divide-y divide-zinc-800">
+        <ToggleRow title="Allow comments" description="Let viewers comment on this post." checked={allowComments} onChange={() => setAllowComments((v) => !v)} />
+        <ToggleRow title="Allow duets / stitches" description="Let others remix this video into their own." checked={allowDuets} onChange={() => setAllowDuets((v) => !v)} />
+        <ToggleRow title="Allow downloads" description="Let viewers save this video to their device." checked={allowDownloads} onChange={() => setAllowDownloads((v) => !v)} />
+      </div>
+    </FormCard>
   );
 }
 
@@ -2131,19 +2031,21 @@ function uploadWithProgress(formData, onProgress, xhrRef, communityId) {
           resolve({});
         }
       } else {
-        let message = 'Upload failed. Please try again.';
+        let message = '';
         try {
-          message = JSON.parse(xhr.responseText).error || message;
+          message = JSON.parse(xhr.responseText).error || '';
         } catch {
-          /* ignore parse errors, use default message */
+          /* non-JSON body (proxy error page etc.) — friendlyError falls back to a generic line */
         }
-        reject(new Error(message));
+        const err = new Error(message);
+        err.status = xhr.status;
+        reject(err);
       }
     };
 
     xhr.onerror = () => {
       xhrRef.current = null;
-      reject(new Error('Network error during upload.'));
+      reject(new Error('Network error during upload.')); // friendlyError -> "Connection lost…"
     };
 
     xhr.onabort = () => {

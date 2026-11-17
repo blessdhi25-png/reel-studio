@@ -1000,9 +1000,9 @@ const VideoCard = forwardRef(function VideoCard(
             Pure white icons + heavy drop shadows (rather than the app's
             softer `bone` token) so these stay legible over any video
             content, TikTok-style. */}
-        <div className="absolute bottom-20 right-6 flex flex-col items-center gap-5 lg:bottom-24 lg:right-auto lg:left-full lg:ml-5">
+        <div className="absolute bottom-20 right-3 flex flex-col items-center gap-4 [@media(max-height:700px)]:gap-3 lg:bottom-24 lg:right-auto lg:left-full lg:ml-5 lg:gap-5">
           {!isOwnVideo && (
-            <a href={`/profile/${video.user?.id}`} className="relative block w-11 h-11 mb-1">
+            <a href={`/profile/${video.user?.id}`} className="relative block w-11 h-11 mt-3 mb-2 [@media(max-height:700px)]:mt-2">
               <span className="block w-11 h-11 rounded-full overflow-hidden border-2 border-white shadow-[0_2px_6px_rgba(0,0,0,0.6)] bg-ink2">
                 {video.user?.avatarUrl ? (
                   <img src={video.user.avatarUrl} alt="" className="w-full h-full object-cover" />

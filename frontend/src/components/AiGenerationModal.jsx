@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Check, Download, ImagePlus, Loader2, X } from 'lucide-react';
 import { api } from '@/lib/api';
 import { AiBadge } from '@/components/AiTemplatePicker';
+import { friendlyError } from '@/lib/friendlyError';
 
 const MAX_BYTES = 8 * 1024 * 1024;
 const ACCEPT = 'image/jpeg,image/png,image/webp';
@@ -92,18 +93,16 @@ export default function AiGenerationModal({ template, onClose, onUseInStudio }) 
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const msg =
-          res.status === 402 ? 'You’re out of AI credits.' :
-          res.status === 401 ? 'Your session expired — log in again.' :
-          data.error || 'Generation failed. Your credit was not used.';
-        throw new Error(msg);
+        const err = new Error(friendlyError({ status: res.status, message: data.error }, 'Something went wrong. Please try again.'));
+        err.friendly = true;
+        throw err;
       }
       setResult(data);
       setCredits(data.creditsRemaining);
       setPhase('done');
     } catch (err) {
       if (err.name === 'AbortError') return;
-      setError(err.message || 'Generation failed.');
+      setError(err.friendly ? err.message : friendlyError(err)); // network failures -> "Connection lost…"
       setPhase('error');
       api.getAiCredits().then((d) => setCredits(d.credits)).catch(() => {}); // reflect any refund
     }
