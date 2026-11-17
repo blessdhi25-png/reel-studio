@@ -129,6 +129,18 @@ async function request(path, { method = 'GET', body, isForm = false, timeoutMs =
     const err = new Error(body.error || 'Request failed');
     Object.assign(err, body);
     err.status = res.status;
+    // A suspended/banned session is locked out of the whole app, not just this call — tell
+    // AuthContext so it can swap in the lockdown screen. Sign-in attempts are excluded: a failed
+    // login for some other, suspended account must not lock the session that's currently active.
+    if (
+      res.status === 403 &&
+      (body.code === 'ACCOUNT_SUSPENDED' || body.code === 'ACCOUNT_BANNED') &&
+      token &&
+      !/^\/auth\/(login|google|register)/.test(path) &&
+      typeof window !== 'undefined'
+    ) {
+      window.dispatchEvent(new CustomEvent('clippulse:account-suspended', { detail: { code: body.code, reason: body.reason } }));
+    }
     throw err;
   }
   return res.json();

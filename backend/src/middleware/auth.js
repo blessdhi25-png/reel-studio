@@ -20,12 +20,14 @@ export async function requireAuth(req, res, next) {
     if (user.accountStatus === 'banned') {
       return res.status(403).json({
         error: 'This account has been banned.',
+        code: 'ACCOUNT_BANNED',
         reason: user.statusReason || undefined,
       });
     }
     if (user.accountStatus === 'suspended') {
       return res.status(403).json({
         error: 'This account is suspended.',
+        code: 'ACCOUNT_SUSPENDED',
         reason: user.statusReason || undefined,
       });
     }

@@ -10,6 +10,7 @@ import ChatHub from '@/components/ChatHub';
 import ScreenTimeTracker from '@/components/ScreenTimeTracker';
 import ThemeSurface from '@/components/ThemeSurface';
 import SwipeNavigator from '@/components/SwipeNavigator';
+import SuspendedAccountNotice from '@/components/SuspendedAccountNotice';
 
 // AuthContext's `ready` flag (see context/AuthContext.jsx) already
 // distinguishes "haven't checked localStorage yet" from "checked, no one's
@@ -23,7 +24,7 @@ import SwipeNavigator from '@/components/SwipeNavigator';
 // rather than showing a branded splash forever. A broken loading screen
 // should never be able to make the whole app unusable.
 export default function AppShell({ children }) {
-  const { ready } = useAuth();
+  const { ready, suspension, statusChecked, logout } = useAuth();
   const pathname = usePathname();
   const [timedOut, setTimedOut] = useState(false);
 
@@ -32,7 +33,15 @@ export default function AppShell({ children }) {
     return () => clearTimeout(t);
   }, []);
 
-  if (!ready && !timedOut) {
+  // Suspension guard: checked before anything else so no route, feed, nav or drawer ever renders
+  // for a locked account. Nothing below this point is mounted while it's showing.
+  if (suspension) {
+    return <SuspendedAccountNotice code={suspension.code} reason={suspension.reason} onLogout={logout} />;
+  }
+
+  // Hold the splash until the first status check settles too (the 4s timeout still wins if the
+  // server is slow to wake, so a cold backend can't keep the app hidden forever).
+  if ((!ready || !statusChecked) && !timedOut) {
     return <LoadingScreen />;
   }
 

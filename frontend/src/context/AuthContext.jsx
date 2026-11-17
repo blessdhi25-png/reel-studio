@@ -5,7 +5,7 @@ import { lockActiveSession, unlockAccount } from '../lib/biometrics';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { deleteCookie, setCookie } from '../lib/cookies';
 import { getAccounts, lockAccount, removeAccount, saveAccount, updateAccountUser } from '../lib/accounts';
-import { API_BASE } from '../lib/api';
+import { API_BASE, api } from '../lib/api';
 
 const AuthContext = createContext(null);
 
@@ -56,6 +56,13 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
   const [ready, setReady] = useState(false);
+  // Set when the server says this account is suspended/banned: { code, reason }. While it's
+  // set the whole app is replaced by <SuspendedAccountNotice/> (see AppShell) and `token` is
+  // withheld from consumers so sockets, calls and polling all stop.
+  const [suspension, setSuspension] = useState(null);
+  // false until the first account-status check has settled, so AppShell can hold its loading
+  // screen instead of flashing the feed at a suspended user.
+  const [statusChecked, setStatusChecked] = useState(false);
   // Other sessions saved on this device for the account switcher.
   const [accounts, setAccounts] = useState([]);
 
@@ -69,6 +76,36 @@ export function AuthProvider({ children }) {
     setAccounts(storedToken && storedUser?.id ? saveAccount(storedToken, storedUser) : getAccounts());
     setReady(true);
 
+    // Account status guard. A stored user that already carries a locked status is enough to lock
+    // at once; otherwise ask the server (/auth/me 403s with a code for locked accounts).
+    const lockedFromStore = storedUser?.accountStatus === 'suspended' || storedUser?.accountStatus === 'banned';
+    if (lockedFromStore) {
+      setSuspension({
+        code: storedUser.accountStatus === 'banned' ? 'ACCOUNT_BANNED' : 'ACCOUNT_SUSPENDED',
+        reason: storedUser.statusReason || undefined,
+      });
+    }
+    if (storedToken && !lockedFromStore) {
+      api
+        .getMe()
+        .catch(() => {}) // a 403 with a code is picked up by the event listener below
+        .finally(() => setStatusChecked(true));
+    } else {
+      setStatusChecked(true);
+    }
+
+    function onSuspended(e) {
+      setSuspension({ code: e.detail?.code || 'ACCOUNT_SUSPENDED', reason: e.detail?.reason });
+      setStatusChecked(true);
+    }
+    window.addEventListener('clippulse:account-suspended', onSuspended);
+
+    // Suspended while the app is open? Re-check when the tab comes back into view.
+    function onVisible() {
+      if (document.visibilityState === 'visible' && readStoredToken()) api.getMe().catch(() => {});
+    }
+    document.addEventListener('visibilitychange', onVisible);
+
     // Keeps multiple tabs in sync — logging out in one tab, or the token
     // being cleared by another part of the app, reflects here without a
     // manual refresh. Note: the 'storage' event only ever fires in *other*
@@ -80,7 +117,11 @@ export function AuthProvider({ children }) {
       if (e.key === TOKEN_KEY) setToken(readStoredToken());
     }
     window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('clippulse:account-suspended', onSuspended);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, []);
 
   const login = useCallback((newToken, newUser) => {
@@ -99,6 +140,7 @@ export function AuthProvider({ children }) {
     } else {
       deleteCookie('role');
     }
+    setSuspension(null); // a fresh sign-in is a different (or reinstated) session
     setToken(newToken);
     setUser(newUser);
     setAccounts(saveAccount(newToken, newUser));
@@ -133,6 +175,7 @@ export function AuthProvider({ children }) {
     deleteCookie('role');
     setToken(null);
     setUser(null);
+    setSuspension(null);
   }, []);
 
   // Switch to another saved account. The saved token is checked against the
@@ -178,8 +221,22 @@ export function AuthProvider({ children }) {
   const forgetAccount = useCallback((id) => setAccounts(removeAccount(id)), []);
 
   const value = useMemo(
-    () => ({ user, token, isAuthenticated: !!token, ready, login, logout, updateUser, accounts, switchAccount, forgetAccount }),
-    [user, token, ready, login, logout, updateUser, accounts, switchAccount, forgetAccount]
+    () => ({
+      user,
+      // Withheld while locked out so the socket/call/live providers see "signed out" and shut down.
+      token: suspension ? null : token,
+      isAuthenticated: !!token && !suspension,
+      ready,
+      suspension,
+      statusChecked,
+      login,
+      logout,
+      updateUser,
+      accounts,
+      switchAccount,
+      forgetAccount,
+    }),
+    [user, token, ready, suspension, statusChecked, login, logout, updateUser, accounts, switchAccount, forgetAccount]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -600,6 +600,8 @@ router.get('/me', requireAuth, asyncHandler(async (req, res) => {
     select: { id: true, username: true, displayName: true, avatarUrl: true, role: true },
   });
   if (!user) return res.status(404).json({ error: 'User not found' });
+  // requireAuth already 403s (code ACCOUNT_SUSPENDED / ACCOUNT_BANNED) for locked accounts, so a
+  // 200 here means the account is active — the frontend's suspension guard relies on that.
   res.json(user);
 }));
 
