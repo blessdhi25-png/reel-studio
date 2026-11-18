@@ -113,8 +113,17 @@ export function getBiometricStatus() {
  * { verified: true, bypassed: true } when the account has no lock, or
  * { verified: false, error, cancelled }.
  */
-export async function verifyBiometric(_userId, scope = 'profile') {
+// The upfront gate (components/BiometricGate.jsx) verifies when someone *enters* a sensitive screen.
+// The save button on that screen needs a step-up token too (the server demands one), so the token
+// the gate just minted is reused for a short window instead of prompting twice in a row. The server
+// token itself lives 2 minutes; we stop reusing it well before that.
+const REUSE_MS = 90 * 1000;
+const recent = new Map(); // scope -> { token, at }
+
+export async function verifyBiometric(_userId, scope = 'profile', { reuse = true } = {}) {
   try {
+    const hit = reuse ? recent.get(scope) : null;
+    if (hit && Date.now() - hit.at < REUSE_MS) return { verified: true, stepUpToken: hit.token, reused: true };
     const res = await api.webauthnAuthOptions(scope);
     if (!res.required) return { verified: true, bypassed: true };
     if (!(await isBiometricSupported())) {
@@ -122,10 +131,16 @@ export async function verifyBiometric(_userId, scope = 'profile') {
     }
     const assertion = await getAssertion(res.options);
     const out = await api.webauthnAuthVerify(scope, assertion);
+    recent.set(scope, { token: out.stepUpToken, at: Date.now() });
     return { verified: true, stepUpToken: out.stepUpToken };
   } catch (err) {
     return { verified: false, ...describe(err) };
   }
+}
+
+/** Forget any reusable step-up tokens (called on logout / account switch). */
+export function clearBiometricCache() {
+  recent.clear();
 }
 
 /** Enrols this device's fingerprint with the server; the lock is on once it succeeds. Throws a readable Error. */

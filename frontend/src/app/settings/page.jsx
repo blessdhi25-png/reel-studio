@@ -1,6 +1,9 @@
 'use client';
 
-import { Fingerprint } from 'lucide-react';
+import {
+  Ban, Clock, Droplets, FileText, Fingerprint, HardDrive, KeyRound, LifeBuoy, Lock, MessageSquare,
+  Moon, Shield, ShieldCheck, Timer, User, Users, Wifi,
+} from 'lucide-react';
 import { disableBiometric, getBiometricStatus, isBiometricSupported, registerBiometricCredential } from '@/lib/biometrics';
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -19,9 +22,13 @@ import {
   SettingsGroup,
   SettingsPage,
   SettingsRow,
+  SettingsUserCard,
   ToggleRow,
   VerifiedBadge,
 } from '@/components/settings/SettingsUI';
+
+// Row icons: one consistent set (lucide) instead of emoji.
+const ic = (Icon) => <Icon size={18} strokeWidth={2.25} />;
 
 // Values match the backend enum on User.messagePrivacy / commentPrivacy.
 const AUDIENCE_OPTIONS = [
@@ -159,8 +166,9 @@ export default function SettingsDashboardPage() {
     // AuthContext.logout() clears localStorage, the auth cookies and live state
     // in one go (a bare localStorage.removeItem leaves the middleware cookie behind).
     logout();
-    toast.success('Logged out');
-    router.replace('/login');
+    // Hard navigation that *replaces* the history entry: drops every in-memory React/Next cache and
+    // means Back can't land on a signed-in screen (middleware + AppShell would bounce it anyway).
+    window.location.replace('/login');
   }
 
   if (!ready || !isAuthenticated || !user) return null;
@@ -171,31 +179,43 @@ export default function SettingsDashboardPage() {
   const privacyLocked = !privacy || saving;
 
   return (
-    <SettingsPage title="Settings and Privacy" backHref={user.id ? `/profile/${user.id}` : '/'} backLabel="Profile">
+    <SettingsPage title="Settings and privacy" backHref={user.id ? `/profile/${user.id}` : '/'} backLabel="Profile">
+      <SettingsUserCard user={user} email={email} verified={verified} href={user.id ? `/profile/${user.id}` : undefined} />
+
       {/* ─── 1. Account & Security ─── */}
       <SettingsGroup title="Account & Security">
         <SettingsRow
           href="/settings/account"
-          icon="👤"
+          icon={ic(User)}
           title="Account Details"
           subtitle={[email, phone].filter(Boolean).join(' · ') || 'Email, phone & verification'}
           right={verified != null && <VerifiedBadge verified={verified} />}
         />
         <SettingsRow
           href="/settings/security"
-          icon="🔐"
+          icon={ic(KeyRound)}
           title="Security & Permissions"
           subtitle={`2-Step Verification ${twoStep ? 'on' : 'off'} · Active devices`}
         />
         {isStaff && (
           <SettingsRow
             href="/admin"
-            icon="🛡️"
+            icon={ic(ShieldCheck)}
             title="Admin Console"
             subtitle="Moderation, users & reports"
             tone="amber"
           />
         )}
+      </SettingsGroup>
+
+      {/* ─── Content & activity ─── */}
+      <SettingsGroup title="Content & activity">
+        <SettingsRow
+          href="/settings/activity"
+          icon={ic(Clock)}
+          title="Activity centre"
+          subtitle="Watch, comment, search & account history"
+        />
       </SettingsGroup>
 
       {/* ─── 2. Privacy & Interactions ─── */}
@@ -204,14 +224,14 @@ export default function SettingsDashboardPage() {
         footer={privacyError ? "Couldn't load your privacy settings. Reload the page to try again." : undefined}
       >
         <ToggleRow
-          icon="🔒"
+          icon={ic(Lock)}
           title="Private Profile"
           subtitle="Only followers can see your videos"
           checked={!!privacy?.isPrivate}
           disabled={privacyLocked}
           onChange={(next) => savePrivacy({ isPrivate: next })}
         />
-        <SettingsBlock icon="💬" title="Comments & Direct Messages" subtitle="Choose who can interact with you">
+        <SettingsBlock icon={ic(MessageSquare)} title="Comments & Direct Messages" subtitle="Choose who can interact with you">
           <div className="space-y-3">
             <div>
               <p className="font-sans font-bold text-[11px] uppercase tracking-wide text-slate-500 dark:text-neutral-500 mb-1.5">
@@ -240,13 +260,13 @@ export default function SettingsDashboardPage() {
           </div>
         </SettingsBlock>
         <ToggleRow
-          icon="💧"
+          icon={ic(Droplets)}
           title="Video Downloads & Watermarking"
           subtitle={watermark ? 'Exported clips include the ClipPulse watermark' : 'Exported clips are saved without a watermark'}
           checked={watermark}
           onChange={setWatermark}
         />
-        <SettingsRow href="/settings/privacy" icon="🚫" title="Blocked Accounts" subtitle="Manage who you've blocked" />
+        <SettingsRow href="/settings/privacy" icon={ic(Ban)} title="Blocked Accounts" subtitle="Manage who you've blocked" />
       </SettingsGroup>
 
       {/* ─── 3. App Preferences & Performance ─── */}
@@ -254,7 +274,7 @@ export default function SettingsDashboardPage() {
         title="App Preferences & Performance"
         footer="Data Saver caps streaming quality on mobile data for adaptive (HLS) videos. These preferences are saved on this device."
       >
-        <SettingsBlock icon="🌓" title="Appearance" subtitle="Light is the default">
+        <SettingsBlock icon={ic(Moon)} title="Appearance" subtitle="Light is the default">
           <Segmented
             label="App theme"
             options={[
@@ -267,7 +287,7 @@ export default function SettingsDashboardPage() {
           />
         </SettingsBlock>
         <ToggleRow
-          icon="📶"
+          icon={ic(Wifi)}
           title="Data Saver Mode"
           subtitle="Lower video resolution on mobile networks"
           checked={dataSaver}
@@ -284,7 +304,7 @@ export default function SettingsDashboardPage() {
           />
         )}
         <SettingsRow
-          icon="🗂️"
+          icon={ic(HardDrive)}
           title="Storage & Cache"
           subtitle={cacheBytes == null ? 'Calculating…' : `${formatBytes(cacheBytes)} of cached media`}
           chevron={false}
@@ -305,17 +325,18 @@ export default function SettingsDashboardPage() {
       <SettingsGroup title="Pulse Wellbeing">
         <SettingsRow
           href="/settings/wellbeing"
-          icon="⏱️"
+          icon={ic(Timer)}
           title="Screen Time & Activity"
           subtitle={avgSeconds == null ? 'Usage this week' : `Daily average ${formatDuration(avgSeconds)}`}
         />
       </SettingsGroup>
 
-      {/* ─── 5. Platform Information ─── */}
-      <SettingsGroup title="Platform Information">
-        <SettingsRow href="/legal/terms" icon="📄" title="Terms of Service" />
-        <SettingsRow href="/legal/privacy" icon="🛡️" title="Privacy Policy" />
-        <SettingsRow href="/legal/guidelines" icon="🤝" title="Community Guidelines" />
+      {/* ─── 5. Support & about ─── */}
+      <SettingsGroup title="Support & about">
+        <SettingsRow href="/settings/help" icon={ic(LifeBuoy)} title="Help Centre" subtitle="FAQs for account, LIVE, monetisation & safety" />
+        <SettingsRow href="/legal/terms" icon={ic(FileText)} title="Terms of Service" />
+        <SettingsRow href="/legal/privacy" icon={ic(Shield)} title="Privacy Policy" />
+        <SettingsRow href="/legal/guidelines" icon={ic(Users)} title="Community Guidelines" />
       </SettingsGroup>
 
       <button

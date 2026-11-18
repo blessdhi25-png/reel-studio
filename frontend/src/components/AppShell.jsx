@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
+import { isProtectedPath } from '@/lib/protectedRoutes';
 import { useAuth } from '@/context/AuthContext';
 import LoadingScreen from '@/components/LoadingScreen';
 import BottomNav from '@/components/BottomNav';
@@ -24,8 +25,15 @@ import SuspendedAccountNotice from '@/components/SuspendedAccountNotice';
 // rather than showing a branded splash forever. A broken loading screen
 // should never be able to make the whole app unusable.
 export default function AppShell({ children }) {
-  const { ready, suspension, statusChecked, logout } = useAuth();
+  const { ready, isAuthenticated, suspension, statusChecked, logout } = useAuth();
   const pathname = usePathname();
+  const router = useRouter();
+  // Signed-in-only screen with nobody signed in (after logout, token expiry, or another tab logging out):
+  // never render it — bounce to /login. Replacing the history entry keeps Back from re-opening it.
+  const needsLogin = ready && !isAuthenticated && !suspension && isProtectedPath(pathname);
+  useEffect(() => {
+    if (needsLogin) router.replace('/login');
+  }, [needsLogin, router]);
   const [timedOut, setTimedOut] = useState(false);
 
   useEffect(() => {
@@ -35,6 +43,8 @@ export default function AppShell({ children }) {
 
   // Suspension guard: checked before anything else so no route, feed, nav or drawer ever renders
   // for a locked account. Nothing below this point is mounted while it's showing.
+  if (needsLogin) return <LoadingScreen />;
+
   if (suspension) {
     return <SuspendedAccountNotice code={suspension.code} reason={suspension.reason} onLogout={logout} />;
   }

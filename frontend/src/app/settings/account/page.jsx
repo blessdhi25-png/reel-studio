@@ -9,6 +9,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
 import { MAX_ACCOUNTS } from '@/lib/accounts';
 import { verifyBiometric } from '@/lib/biometrics';
+import BiometricGate from '@/components/BiometricGate';
 import { SettingsGroup, SettingsPage, SettingsRow, VerifiedBadge } from '@/components/settings/SettingsUI';
 
 const BIO_MAX = 150;
@@ -135,7 +136,7 @@ function AccountSwitcher() {
   );
 }
 
-export default function AccountDetailsPage() {
+function AccountDetailsPageInner() {
   const router = useRouter();
   const toast = useToast();
   const { user, ready, isAuthenticated, updateUser } = useAuth();
@@ -326,4 +327,13 @@ function toForm(d) {
     whatsapp: d.whatsapp || '',
     links: (d.externalLinks || []).map((l) => ({ label: l.label, url: l.url })),
   };
+}
+
+// Fingerprint prompt up front: nothing above renders until it passes (accounts without the lock pass straight through).
+export default function AccountDetailsPage() {
+  return (
+    <BiometricGate scope="profile" title="Verify to open account details" backHref="/settings">
+      <AccountDetailsPageInner />
+    </BiometricGate>
+  );
 }

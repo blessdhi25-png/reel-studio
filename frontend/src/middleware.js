@@ -1,58 +1,54 @@
 import { NextResponse } from 'next/server';
+import { PROTECTED_PREFIXES } from './lib/protectedRoutes';
 
-// Route guard for the /admin/* section. This is a UX-layer gate, not the
-// real security boundary — it exists so a signed-out visitor or an
-// ordinary user never even sees the admin shell start to load. The actual,
-// unbypassable enforcement lives on the backend: every /api/v1/admin/*
-// route re-verifies the JWT and re-reads the user's *current* role from
-// the database on every request (see backend/src/middleware/auth.js's
-// requireAuth + requireRole/authorizeRoles, applied in
-// backend/src/routes/admin.js). Someone could hand-edit these cookies in
-// devtools and still load this shell — every API call it makes would
-// immediately 403 from the backend regardless, because the backend never
-// trusts anything the client claims about its own role.
+// Route guard for signed-in-only screens (see lib/protectedRoutes.js) and the /admin/* + /moderator/* sections.
+// This is a UX-layer gate, not the real security boundary — the backend re-verifies the JWT (and re-reads
+// the role from the database) on every API call, so editing cookies in devtools only ever shows an empty shell.
 //
-// Why cookies instead of localStorage: middleware runs on the edge, before
-// any page JS executes — it has no access to localStorage at all, only to
-// the request's cookies and headers. AuthContext.login()/logout() mirror
-// the token + role into cookies specifically so this file has something to
-// read (see frontend/src/lib/cookies.js for the full explanation).
+// Why cookies instead of localStorage: middleware runs on the edge, before any page JS executes — it can
+// only see the request's cookies and headers. AuthContext.login()/logout() mirror the token + role into
+// cookies specifically so this file has something to read (see frontend/src/lib/cookies.js).
+//
+// Back-button protection: every response from these routes is `Cache-Control: no-store`, so the browser
+// can't serve a signed-in page from its HTTP cache or back/forward cache after logout. Going "back" makes a
+// fresh request with the (now deleted) cookie, and this middleware sends it to /login.
 export const config = {
-  matcher: ['/admin/:path*', '/moderator/:path*'],
+  matcher: PROTECTED_PREFIXES.map((p) => `${p}/:path*`),
 };
 
 const ADMIN_ROLES = ['admin']; // admin portal is admin-only
 const MODERATOR_ROLES = ['moderator', 'admin']; // moderator portal also lets admins in
 
+function noStore(res) {
+  res.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+  res.headers.set('Pragma', 'no-cache');
+  res.headers.set('Expires', '0');
+  return res;
+}
+
 export function middleware(request) {
   const cookieToken = request.cookies.get('token')?.value;
 
-  // Fallback for a bearer token arriving via a request header instead of a
-  // cookie (e.g. a non-browser client, or a future server-side caller of
-  // this same middleware chain). In practice, ordinary browser navigation
-  // to an /admin/* page never carries a custom Authorization header —
-  // that's only ever set by this app's own fetch() calls to the *backend*
-  // API host in lib/api.js, not by the browser loading a Next.js page — so
-  // the cookie is what actually matters here day to day.
+  // Fallback for a bearer token arriving via a request header (non-browser callers).
   const authHeader = request.headers.get('authorization');
   const headerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
 
   const token = cookieToken || headerToken;
   const role = request.cookies.get('role')?.value;
+  const { pathname } = request.nextUrl;
 
   if (!token) {
     const loginUrl = new URL('/login', request.url);
-    // Harmless if the login page doesn't currently read this — it's just
-    // there so a "redirect back to where they were headed" flow can be
-    // added to the login page later without touching this file again.
-    loginUrl.searchParams.set('from', request.nextUrl.pathname);
-    return NextResponse.redirect(loginUrl);
+    loginUrl.searchParams.set('from', pathname);
+    return noStore(NextResponse.redirect(loginUrl));
   }
 
-  const allowed = request.nextUrl.pathname.startsWith('/moderator') ? MODERATOR_ROLES : ADMIN_ROLES;
-  if (!allowed.includes(role)) {
-    return NextResponse.redirect(new URL('/', request.url));
+  const isAdmin = pathname === '/admin' || pathname.startsWith('/admin/');
+  const isModerator = pathname === '/moderator' || pathname.startsWith('/moderator/');
+  if (isAdmin || isModerator) {
+    const allowed = isModerator ? MODERATOR_ROLES : ADMIN_ROLES;
+    if (!allowed.includes(role)) return noStore(NextResponse.redirect(new URL('/', request.url)));
   }
 
-  return NextResponse.next();
+  return noStore(NextResponse.next());
 }

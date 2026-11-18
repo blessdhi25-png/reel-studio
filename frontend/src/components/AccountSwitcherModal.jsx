@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Check, Trash2, UserPlus, X } from 'lucide-react';
 import SlideDrawer from '@/components/SlideDrawer';
+import BiometricGate from '@/components/BiometricGate';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
 import { MAX_ACCOUNTS } from '@/lib/accounts';
@@ -45,6 +46,9 @@ export default function AccountSwitcherModal({ open, onClose }) {
           <X className="w-4 h-4" strokeWidth={3} />
         </button>
       </div>
+      {/* Fingerprint first: the account list isn't mounted until this passes. SlideDrawer unmounts its
+          children when closed, so every open asks again. */}
+      <BiometricGate scope="switch" title="Verify to switch accounts" variant="inline" onDenied={onClose}>
       <ul className="flex-1 overflow-y-auto px-3 py-3">
         {accounts.map((a) => {
           const active = a.id === user?.id;
@@ -99,6 +103,7 @@ export default function AccountSwitcherModal({ open, onClose }) {
             : 'Accounts stay signed in on this device only.'}
         </p>
       </div>
+      </BiometricGate>
     </SlideDrawer>
   );
 }

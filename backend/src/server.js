@@ -79,6 +79,7 @@ import aiTemplatesRoutes from './routes/aiTemplates.js';
 import communitiesRoutes from './routes/communities.js';
 import collectionsRoutes from './routes/collections.js';
 import analyticsRoutes from './routes/analytics.js';
+import activityRoutes from './routes/activity.js';
 import webauthnRoutes from './routes/webauthn.js';
 import postsRoutes from './routes/posts.js';
 import moderationRoutes from './routes/moderation.js';
@@ -208,6 +209,7 @@ app.use('/api/v1/moderation', moderationRoutes); // staff (moderator + admin) re
 app.use('/api/v1', webauthnRoutes); // /webauthn/* — biometric lock (server-verified WebAuthn)
 app.use('/api/v1/posts', postsRoutes); // /posts/repost — repost records
 app.use('/api/v1/user', userProfileRoutes); // /user/profile — private account details (email, phone, bio, links)
+app.use('/api/v1/activity', activityRoutes); // /activity/logins|comments|watch — Settings → Activity centre
 app.use('/api/v1/analytics', analyticsRoutes); // /analytics/overview — creator's own totalViews/totalLikes/averageWatchTimeSeconds
 
 // Any request that reached here matched no route above. Returning JSON

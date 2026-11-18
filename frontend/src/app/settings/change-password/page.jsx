@@ -1,14 +1,16 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import BiometricGate from '@/components/BiometricGate';
 import { useRouter } from 'next/navigation';
 import { AlertCircle } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
 import { SettingsPage } from '@/components/settings/SettingsUI';
+import { verifyBiometric } from '@/lib/biometrics';
 
-export default function ChangePasswordPage() {
+function ChangePasswordPageInner() {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -16,7 +18,7 @@ export default function ChangePasswordPage() {
   const [loading, setLoading] = useState(false);
   const toast = useToast();
   const router = useRouter();
-  const { ready, isAuthenticated } = useAuth();
+  const { ready, isAuthenticated, user } = useAuth();
 
   useEffect(() => {
     if (ready && !isAuthenticated) router.replace('/login');
@@ -40,7 +42,13 @@ export default function ChangePasswordPage() {
       // (which already has the cold-start-aware AUTH_TIMEOUT_MS this
       // endpoint needs just as much as login/register do). That mismatch
       // meant this form was hitting a URL that doesn't exist.
-      await api.changePassword(currentPassword, newPassword);
+      // The page gate already verified; this reuses that assertion (or prompts again if it has gone stale).
+      const bio = await verifyBiometric(user?.id, 'password');
+      if (!bio.verified) {
+        setFormError('Fingerprint verification required to change your password.');
+        return;
+      }
+      await api.changePassword(currentPassword, newPassword, bio.stepUpToken);
       toast.success('Password updated');
       setCurrentPassword('');
       setNewPassword('');
@@ -118,5 +126,14 @@ export default function ChangePasswordPage() {
         </button>
       </form>
     </SettingsPage>
+  );
+}
+
+// Fingerprint prompt up front: nothing above renders until it passes (accounts without the lock pass straight through).
+export default function ChangePasswordPage() {
+  return (
+    <BiometricGate scope="password" title="Verify to change your password" backHref="/settings/security">
+      <ChangePasswordPageInner />
+    </BiometricGate>
   );
 }

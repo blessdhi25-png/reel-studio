@@ -187,7 +187,33 @@ export function initSocket(httpServer) {
     });
 
     socket.on('live:leave', () => leaveLiveRoom(socket));
-    socket.on('disconnect', () => leaveLiveRoom(socket));
+    // Connection-health relay: a participant's client reports 'lost' / 'unstable' / 'ok' (ICE failed,
+    // browser offline…) and everyone else in the room is told, so tiles/banners can say who dropped.
+    socket.on('live:connection-status', ({ streamId, state } = {}) => {
+      if (typeof streamId !== 'string' || !socket.rooms.has(`live:${streamId}`)) return;
+      if (!['ok', 'unstable', 'lost'].includes(state)) return;
+      socket.to(`live:${streamId}`).emit('live:connection-status', {
+        socketId: socket.id,
+        userId: socket.data.userId,
+        username: socket.data.username,
+        state,
+      });
+    });
+
+    socket.on('disconnect', (reason) => {
+      // A deliberate leave/close is not an outage; anything else (ping timeout when mobile data is
+      // switched off, transport error…) is. Tell the room *before* the peer-left so the alert can name them.
+      const room = socket.data.currentLiveRoom;
+      if (room && reason !== 'client namespace disconnect' && reason !== 'server namespace disconnect') {
+        socket.to(room).emit('live:connection-status', {
+          socketId: socket.id,
+          userId: socket.data.userId,
+          username: socket.data.username,
+          state: 'lost',
+        });
+      }
+      leaveLiveRoom(socket);
+    });
 
     // ---- Calls ----
     function validCallId(id) {

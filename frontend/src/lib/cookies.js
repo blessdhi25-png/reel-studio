@@ -39,6 +39,15 @@ export function setCookie(name, value, maxAgeSeconds) {
   document.cookie = parts.join('; ');
 }
 
+/** Expire every cookie this origin can see (non-HttpOnly ones only — the rest aren't reachable from JS). */
+export function clearAllCookies() {
+  if (typeof document === 'undefined') return;
+  document.cookie.split(';').forEach((c) => {
+    const name = c.split('=')[0].trim();
+    if (name) deleteCookie(name);
+  });
+}
+
 export function deleteCookie(name) {
   if (typeof document === 'undefined') return;
   document.cookie = `${name}=; path=/; max-age=0; SameSite=Lax`;

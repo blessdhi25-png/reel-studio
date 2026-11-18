@@ -1,13 +1,14 @@
 'use client';
 
 import { verifyBiometric } from '@/lib/biometrics';
+import BiometricGate from '@/components/BiometricGate';
 import BackButton from '@/components/BackButton';
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Camera, ImagePlus } from 'lucide-react';
 import { api, getStoredUser } from '@/lib/api';
 
-export default function EditProfilePage() {
+function EditProfilePageInner() {
   const router = useRouter();
   const avatarInputRef = useRef(null);
   const bannerInputRef = useRef(null);
@@ -215,5 +216,14 @@ export default function EditProfilePage() {
         </button>
       </form>
     </div>
+  );
+}
+
+// Fingerprint prompt up front: nothing above renders until it passes (accounts without the lock pass straight through).
+export default function EditProfilePage() {
+  return (
+    <BiometricGate scope="profile" title="Verify to edit your profile" backHref="/">
+      <EditProfilePageInner />
+    </BiometricGate>
   );
 }

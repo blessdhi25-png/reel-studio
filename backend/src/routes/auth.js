@@ -6,6 +6,8 @@ import { OAuth2Client } from 'google-auth-library';
 import prisma from '../config/db.js';
 import { sendMail, describeMailError } from '../config/mailer.js';
 import { requireAuth } from '../middleware/auth.js';
+import { requireBiometric } from '../middleware/biometric.js';
+import { recordLogin } from '../utils/loginEvents.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { authLimiter } from '../middleware/rateLimiter.js';
 import { validate } from '../middleware/validate.js';
@@ -408,6 +410,7 @@ router.post('/login', authLimiter, validate(loginSchema), asyncHandler(async (re
     }
 
     const token = signToken(user);
+    recordLogin(req, user.id, 'password');
     res.json({
       token,
       // JWT_EXPIRES_IN mirrors whatever signToken() actually used, so the
@@ -581,6 +584,7 @@ router.post('/google', asyncHandler(async (req, res) => {
     }
 
     const token = signToken(user);
+    recordLogin(req, user.id, 'google');
     res.json({
       token,
       expiresIn: process.env.JWT_EXPIRES_IN || '7d',
@@ -705,7 +709,7 @@ router.post('/reset-password', authLimiter, validate(resetPasswordSchema), async
 // distinct from the logged-out forgot/reset pair above. Requires the
 // current password rather than just a valid session, so a hijacked/
 // left-open session alone isn't enough to lock the real owner out.
-router.post('/change-password', requireAuth, authLimiter, validate(changePasswordSchema), asyncHandler(async (req, res) => {
+router.post('/change-password', requireAuth, requireBiometric('password'), authLimiter, validate(changePasswordSchema), asyncHandler(async (req, res) => {
   try {
     const { currentPassword, newPassword, confirmPassword } = req.body;
 

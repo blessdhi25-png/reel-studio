@@ -1,9 +1,10 @@
 'use client';
 
 import { clearVideoCache } from '../lib/offlineCache';
-import { lockActiveSession, unlockAccount } from '../lib/biometrics';
+import { clearBiometricCache, lockActiveSession, unlockAccount } from '../lib/biometrics';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { deleteCookie, setCookie } from '../lib/cookies';
+import { clearAllCookies, deleteCookie, setCookie } from '../lib/cookies';
+import { isProtectedPath } from '../lib/protectedRoutes';
 import { getAccounts, lockAccount, removeAccount, saveAccount, updateAccountUser } from '../lib/accounts';
 import { API_BASE, api } from '../lib/api';
 
@@ -76,6 +77,14 @@ export function AuthProvider({ children }) {
     setAccounts(storedToken && storedUser?.id ? saveAccount(storedToken, storedUser) : getAccounts());
     setReady(true);
 
+    // The route middleware can only see cookies. Sessions that started before the cookie existed (or
+    // whose cookie expired/was cleared) get it re-mirrored from localStorage, so signed-in people
+    // aren't bounced to /login by the new protected-route guard.
+    if (storedToken) {
+      setCookie(TOKEN_KEY, storedToken, COOKIE_MAX_AGE_SECONDS);
+      if (storedUser?.role) setCookie('role', storedUser.role, COOKIE_MAX_AGE_SECONDS);
+    }
+
     // Account status guard. A stored user that already carries a locked status is enough to lock
     // at once; otherwise ask the server (/auth/me 403s with a code for locked accounts).
     const lockedFromStore = storedUser?.accountStatus === 'suspended' || storedUser?.accountStatus === 'banned';
@@ -106,6 +115,16 @@ export function AuthProvider({ children }) {
     }
     document.addEventListener('visibilitychange', onVisible);
 
+    // Back-button protection. A page restored from the browser's back/forward cache (`persisted`) runs
+    // no code and makes no request, so after a logout it would still show the signed-in screen. When
+    // one comes back with no session behind it, hard-redirect to /login instead.
+    function onPageShow(e) {
+      if (e.persisted && !readStoredToken() && isProtectedPath(window.location.pathname)) {
+        window.location.replace('/login');
+      }
+    }
+    window.addEventListener('pageshow', onPageShow);
+
     // Keeps multiple tabs in sync — logging out in one tab, or the token
     // being cleared by another part of the app, reflects here without a
     // manual refresh. Note: the 'storage' event only ever fires in *other*
@@ -121,6 +140,7 @@ export function AuthProvider({ children }) {
       window.removeEventListener('storage', onStorage);
       window.removeEventListener('clippulse:account-suspended', onSuspended);
       document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('pageshow', onPageShow);
     };
   }, []);
 
@@ -171,8 +191,13 @@ export function AuthProvider({ children }) {
     clearVideoCache(); // cached clips may include private posts
     window.localStorage.removeItem(TOKEN_KEY);
     window.localStorage.removeItem(USER_KEY);
+    // Everything else that belonged to this session: sessionStorage (drafts, step-up state, cached
+    // pages' data), every cookie we can reach, and any reusable fingerprint step-up token.
+    try { window.sessionStorage.clear(); } catch {}
     deleteCookie(TOKEN_KEY);
     deleteCookie('role');
+    clearAllCookies();
+    clearBiometricCache();
     setToken(null);
     setUser(null);
     setSuspension(null);

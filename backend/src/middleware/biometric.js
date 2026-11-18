@@ -11,7 +11,7 @@ export function bioSecret(label) {
   return crypto.createHmac('sha256', process.env.JWT_SECRET).update(`clippulse-bio:${label}`).digest('hex');
 }
 
-export const STEP_UP_SCOPES = ['profile', 'disable', 'register'];
+export const STEP_UP_SCOPES = ['profile', 'disable', 'register', 'password', 'switch'];
 export const STEP_UP_TTL = '2m';
 
 export function signStepUp(userId, scope) {

@@ -50,6 +50,9 @@ export default function LiveRoomPage({ params }) {
   const [sheetDragY, setSheetDragY] = useState(0);
   const [facingMode, setFacingMode] = useState('user'); // 'user' (front, mirrored) | 'environment'
   const [previewNonce, setPreviewNonce] = useState(0); // bump to retry a blocked local preview .play()
+  const [netLost, setNetLost] = useState(false); // OUR connection is down -> full-width banner
+  const [recovered, setRecovered] = useState(false); // brief "back online" confirmation
+  const [peerAlerts, setPeerAlerts] = useState({}); // socketId -> { username, state: 'unstable'|'lost', remote?, local? }
 
   const screenTrackRef = useRef(null);
   const chatOpenRef = useRef(false); // socket handlers read this (they close over stale state)
@@ -57,12 +60,23 @@ export default function LiveRoomPage({ params }) {
   const screenStreamRef = useRef(null);
   const localStreamRef = useRef(null);
   const peerConnectionsRef = useRef({}); // socketId -> RTCPeerConnection
+  const linkRef = useRef({}); // socketId -> 'ok' | 'disconnected' | 'failed' (from ICE/connection state)
+  const initiatorRef = useRef({}); // socketId -> true when WE sent the offer (only that side restarts ICE)
+  const netLostRef = useRef(false);
+  const socketDownRef = useRef(false);
+  const peersRef = useRef({});
+  const phaseRef = useRef('IDLE');
+  const startSessionRef = useRef(null);
   const chatScrollRef = useRef(null);
   const attemptRef = useRef(0); // bumps on every (re)connect and on unmount; stale async results check it
   const timeoutRef = useRef(null);
   const statusRef = useRef({ cam: 'pending', join: 'pending' });
   const cameraPromiseRef = useRef(Promise.resolve());
   const joined = phase !== 'IDLE';
+  // Latest-value mirrors for the socket/WebRTC callbacks, which close over stale render state.
+  phaseRef.current = phase;
+  peersRef.current = peers;
+  startSessionRef.current = startSession;
   const { devices, selectedDeviceId, setSelectedDeviceId, builtInDeviceId, buildConstraints } =
     useCameraDevices();
 
@@ -96,6 +110,40 @@ export default function LiveRoomPage({ params }) {
   useEffect(() => {
     setCanDisplayShare(typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getDisplayMedia);
   }, []);
+
+  // Network monitoring: the signalling socket dropping, or the browser going offline (data switched
+  // off), flips the "Network connection lost. Reconnecting…" banner. When the socket comes back it
+  // has a new id and has lost its room membership, so we re-join through the normal start path.
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return undefined;
+    const onDown = () => {
+      socketDownRef.current = true;
+      reevaluateNetwork();
+    };
+    const onUp = () => {
+      if (!socketDownRef.current) return;
+      socketDownRef.current = false;
+      reevaluateNetwork();
+      if (phaseRef.current === 'LIVE') startSessionRef.current?.();
+    };
+    const onOffline = () => reevaluateNetwork();
+    const onOnline = () => {
+      reevaluateNetwork();
+      Object.keys(linkRef.current).forEach((id) => linkRef.current[id] !== 'ok' && restartIce(id));
+    };
+    socket.on('disconnect', onDown);
+    socket.on('connect', onUp);
+    window.addEventListener('offline', onOffline);
+    window.addEventListener('online', onOnline);
+    return () => {
+      socket.off('disconnect', onDown);
+      socket.off('connect', onUp);
+      window.removeEventListener('offline', onOffline);
+      window.removeEventListener('online', onOnline);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stream?.id]);
 
   function openChat() {
     chatOpenRef.current = true;
@@ -135,8 +183,73 @@ export default function LiveRoomPage({ params }) {
     else setSheetDragY(0);
   }
 
+  // Decide whether the problem is us or a specific peer, and tell everyone else if it's us.
+  //  - We are "lost" when the browser is offline, the signalling socket is down, or EVERY one of
+  //    several peer links is bad at once (one bad link out of many is that peer's problem).
+  //  - Otherwise any bad link is attributed to that peer ("@name connection is unstable or lost").
+  function reevaluateNetwork() {
+    const links = Object.entries(linkRef.current);
+    const bad = links.filter(([, s]) => s !== 'ok');
+    const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+    const lost = offline || socketDownRef.current || (links.length >= 2 && bad.length === links.length);
+    if (lost !== netLostRef.current) {
+      netLostRef.current = lost;
+      setNetLost(lost);
+      if (!lost) {
+        setRecovered(true);
+        setTimeout(() => setRecovered(false), 2500);
+      }
+      const socket = getSocket();
+      // While the socket is down the server reports the drop itself (on disconnect); this covers
+      // the "socket fine, media path dead" case and the recovery ping.
+      if (socket?.connected) socket.emit('live:connection-status', { streamId, state: lost ? 'lost' : 'ok' });
+    }
+    setPeerAlerts((prev) => {
+      const next = {};
+      Object.entries(prev).forEach(([id, v]) => v.remote && (next[id] = { ...v, local: false }));
+      if (!lost) {
+        bad.forEach(([id, s]) => {
+          next[id] = {
+            ...(next[id] || {}),
+            username: peersRef.current[id]?.username || next[id]?.username,
+            state: s === 'failed' ? 'lost' : 'unstable',
+            local: true,
+          };
+        });
+      }
+      return next;
+    });
+  }
+
+  // ICE restart (offerer side only, to avoid glare): re-gathers candidates on the new network path.
+  async function restartIce(socketId) {
+    const pc = peerConnectionsRef.current[socketId];
+    const socket = getSocket();
+    if (!pc || !socket?.connected || !initiatorRef.current[socketId] || pc.signalingState !== 'stable') return;
+    try {
+      const offer = await pc.createOffer({ iceRestart: true });
+      await pc.setLocalDescription(offer);
+      socket.emit('live:signal', { to: socketId, signal: offer });
+    } catch {
+      /* the next state change will try again */
+    }
+  }
+
   function createPeerConnection(socketId, socket) {
     const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    linkRef.current[socketId] = 'ok';
+
+    const onLinkChange = () => {
+      const ice = pc.iceConnectionState;
+      const conn = pc.connectionState;
+      const failed = ice === 'failed' || conn === 'failed';
+      const bad = failed || ice === 'disconnected' || conn === 'disconnected';
+      linkRef.current[socketId] = failed ? 'failed' : bad ? 'disconnected' : 'ok';
+      reevaluateNetwork();
+      if (failed) restartIce(socketId);
+    };
+    pc.oniceconnectionstatechange = onLinkChange;
+    pc.onconnectionstatechange = onLinkChange;
 
     // Outgoing media: our mic, plus either the screen share (if active) or the camera.
     const local = localStreamRef.current;
@@ -198,7 +311,7 @@ export default function LiveRoomPage({ params }) {
 
   function detachListeners() {
     const socket = getSocket();
-    ['live:existing-peers', 'live:peer-joined', 'live:signal', 'live:peer-left', 'live:viewer-count',
+    ['live:existing-peers', 'live:peer-joined', 'live:signal', 'live:peer-left', 'live:viewer-count', 'live:connection-status',
       'live:chat-message', 'live:pin-message', 'live:reaction', 'live:tip', 'live:stream-ended', 'live:screen-share'].forEach((ev) => socket?.off(ev));
   }
 
@@ -210,6 +323,7 @@ export default function LiveRoomPage({ params }) {
       for (const { socketId, username, userId, sharing } of existingPeers) {
         setPeers((prev) => ({ ...prev, [socketId]: { username, userId, sharing: !!sharing } }));
         const pc = createPeerConnection(socketId, socket);
+        initiatorRef.current[socketId] = true;
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
         socket.emit('live:signal', { to: socketId, signal: offer });
@@ -241,9 +355,36 @@ export default function LiveRoomPage({ params }) {
       }
     });
 
+    // Another participant's connection health (they report it, or the server saw their socket die).
+    socket.on('live:connection-status', ({ socketId, username, state }) => {
+      setPeerAlerts((prev) => {
+        const next = { ...prev };
+        if (state === 'ok') {
+          if (next[socketId]?.local) next[socketId] = { ...next[socketId], remote: false };
+          else delete next[socketId];
+        } else {
+          next[socketId] = { ...(next[socketId] || {}), username: username || peersRef.current[socketId]?.username, state, remote: true };
+        }
+        return next;
+      });
+    });
+
     socket.on('live:peer-left', ({ socketId }) => {
       peerConnectionsRef.current[socketId]?.close();
       delete peerConnectionsRef.current[socketId];
+      delete linkRef.current[socketId];
+      delete initiatorRef.current[socketId];
+      reevaluateNetwork();
+      // Keep a "lost" notice visible for a few seconds after they vanish, so people see who dropped.
+      setPeerAlerts((prev) => {
+        if (!prev[socketId]) return prev;
+        if (prev[socketId].state !== 'lost') {
+          const { [socketId]: _gone, ...rest } = prev;
+          return rest;
+        }
+        setTimeout(() => setPeerAlerts((p) => { const { [socketId]: _x, ...r } = p; return r; }), 8000);
+        return prev;
+      });
       setPeers((prev) => {
         const next = { ...prev };
         delete next[socketId];
@@ -338,6 +479,9 @@ export default function LiveRoomPage({ params }) {
     // Reconnect: drop stale peers/listeners, and leave so the re-join is clean.
     Object.values(peerConnectionsRef.current).forEach((pc) => pc.close());
     peerConnectionsRef.current = {};
+    linkRef.current = {};
+    initiatorRef.current = {};
+    setPeerAlerts({});
     setPeers({});
     socket.emit('live:leave');
 
@@ -660,9 +804,51 @@ export default function LiveRoomPage({ params }) {
 
   return (
     <main className="relative min-h-screen h-screen w-full overflow-hidden bg-zinc-950 text-white flex flex-col">
+      {/* ---------- Network status banners ---------- */}
+      {netLost && (
+        <div
+          role="alert"
+          className="fixed top-0 inset-x-0 z-[60] flex items-center justify-center gap-2 bg-red-600 text-white text-sm font-bold px-4 pb-2.5 pt-[max(0.625rem,env(safe-area-inset-top))] shadow-lg"
+        >
+          <span className="w-3.5 h-3.5 rounded-full border-2 border-white/40 border-t-white animate-spin" aria-hidden="true" />
+          Network connection lost. Reconnecting…
+        </div>
+      )}
+      {!netLost && recovered && (
+        <div role="status" className="fixed top-0 inset-x-0 z-[60] flex items-center justify-center bg-emerald-600 text-white text-sm font-bold px-4 pb-2.5 pt-[max(0.625rem,env(safe-area-inset-top))] shadow-lg">
+          Back online
+        </div>
+      )}
+      {!netLost && Object.keys(peerAlerts).length > 0 && (
+        <div className="fixed top-[max(3.25rem,calc(env(safe-area-inset-top)+2.5rem))] inset-x-0 z-[55] flex flex-col items-center gap-1.5 px-4 pointer-events-none" role="status" aria-live="polite">
+          {Object.entries(peerAlerts).map(([id, a]) => (
+            <div key={id} className="max-w-full rounded-full bg-amber-500 text-black text-xs font-bold px-3.5 py-1.5 shadow-lg truncate">
+              @{a.username || 'A participant'} connection is unstable or lost
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* ---------- Video stage ---------- */}
       <div className="absolute inset-0 z-0 bg-zinc-950">
-        {joined && stageTiles.length > 0 ? (
+        {joined && stageTiles.length > GRID_SCROLL_AT ? (
+          // Many participants (5–30): a scrolling responsive grid. Fixed-aspect cells that are never
+          // cropped (object-contain), and the wrapper scrolls instead of shrinking tiles to slivers.
+          <div className="absolute inset-x-0 top-[7.5rem] bottom-28 px-2 flex">
+            <div className="grid w-full grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2 overflow-y-auto max-h-[75vh] content-start auto-rows-min no-scrollbar">
+              {stageTiles.map((t) => (
+                <StreamTile
+                  key={t.id}
+                  {...t}
+                  contain
+                  retryKey={previewNonce}
+                  onPlayBlocked={t.isLocal ? () => setCameraIssue((c) => c || 'play') : undefined}
+                  className="w-full aspect-[4/3] rounded-xl overflow-hidden border border-zinc-800 bg-black"
+                />
+              ))}
+            </div>
+          </div>
+        ) : joined && stageTiles.length > 0 ? (
           <div className={`grid w-full h-full gap-0.5 auto-rows-fr ${gridColsClass(stageTiles.length)}`}>
             {stageTiles.map((t, i) => (
               <StreamTile
@@ -1123,6 +1309,9 @@ function ChatLine({ message, isHostMsg, canPin, onPin }) {
     </p>
   );
 }
+
+// Up to this many tiles keep the immersive edge-to-edge layout; beyond it we switch to the scrolling grid.
+const GRID_SCROLL_AT = 4;
 
 function gridColsClass(n) {
   if (n <= 1) return 'grid-cols-1';

@@ -193,8 +193,13 @@ export const api = {
     request('/auth/forgot-password', { method: 'POST', body: { email }, timeoutMs: AUTH_TIMEOUT_MS }),
   resetPassword: (token, newPassword) =>
     request('/auth/reset-password', { method: 'POST', body: { token, newPassword }, timeoutMs: AUTH_TIMEOUT_MS }),
-  changePassword: (currentPassword, newPassword) =>
-    request('/auth/change-password', { method: 'POST', body: { currentPassword, newPassword }, timeoutMs: AUTH_TIMEOUT_MS }),
+  changePassword: (currentPassword, newPassword, biometricToken) =>
+    request('/auth/change-password', {
+      method: 'POST',
+      body: { currentPassword, newPassword },
+      timeoutMs: AUTH_TIMEOUT_MS,
+      headers: biometricToken ? { 'X-Biometric-Token': biometricToken } : undefined,
+    }),
   getFeed: (type, cursor, weights, circle, following) => {
     const params = new URLSearchParams();
     if (type) params.set('type', type);
@@ -263,6 +268,10 @@ export const api = {
   getUser: (id) => request(`/users/${id}`),
   updateProfile: (data, biometricToken) =>
     request('/users/me', { method: 'PATCH', body: data, headers: biometricToken ? { 'X-Biometric-Token': biometricToken } : undefined }),
+  // Settings → Activity centre (backend/src/routes/activity.js)
+  getLoginHistory: () => request('/activity/logins'),
+  getCommentHistory: () => request('/activity/comments'),
+  getWatchHistory: () => request('/activity/watch'),
   // Private account details (email, phone, bio, WhatsApp, external links) — backend/src/routes/userProfile.js
   getAccountProfile: () => request('/user/profile'),
   updateAccountProfile: (data, biometricToken) =>

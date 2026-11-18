@@ -1,5 +1,20 @@
+const NO_STORE = [
+  { key: 'Cache-Control', value: 'no-store, no-cache, must-revalidate, max-age=0' },
+  { key: 'Pragma', value: 'no-cache' },
+  { key: 'Expires', value: '0' },
+];
+// Keep in sync with src/lib/protectedRoutes.js (CommonJS config can't import the ES module).
+const PROTECTED = ['/settings', '/messages', '/upload', '/studio', '/notifications', '/earnings', '/analytics', '/promote', '/collections', '/friends', '/profile/edit', '/admin', '/moderator'];
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Signed-in screens must never be served from the HTTP/back-forward cache after logout.
+  async headers() {
+    return PROTECTED.flatMap((p) => [
+      { source: p, headers: NO_STORE },
+      { source: `${p}/:path*`, headers: NO_STORE },
+    ]);
+  },
   // Common legal URLs (and old links, e.g. from app-store listings or emails) map to the real pages.
   async redirects() {
     return [

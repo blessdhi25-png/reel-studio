@@ -8,15 +8,51 @@ import { ChevronRight } from 'lucide-react';
 // settings screen uses these so spacing, typography (font-sans font-bold),
 // chevrons and the bottom-nav clearance (pb-36) stay identical.
 
-export function SettingsPage({ title, backHref = '/settings', backLabel = 'Settings', children }) {
+// Sticky top bar (back · centred title) like the rest of the settings tree, then the page body.
+export function SettingsPage({ title, backHref = '/settings', backLabel = 'Settings', children, headerRight }) {
   return (
-    <div className="min-h-screen bg-white dark:bg-[#0a090e] text-slate-900 dark:text-white font-sans pb-36">
-      <div className="max-w-md mx-auto px-4 pt-4">
-        <BackButton href={backHref} label={`Back to ${backLabel}`} />
-        <h1 className="font-sans font-bold text-2xl tracking-tight mt-3 mb-6">{title}</h1>
-        {children}
-      </div>
+    <div className="min-h-screen bg-slate-50 dark:bg-[#0a090e] text-slate-900 dark:text-white font-sans pb-36">
+      <header className="sticky top-0 z-30 bg-slate-50/90 dark:bg-[#0a090e]/90 backdrop-blur-md border-b border-slate-200/70 dark:border-neutral-800/70">
+        <div className="max-w-md mx-auto h-14 px-2 grid grid-cols-[3rem_1fr_3rem] items-center">
+          <BackButton href={backHref} label={`Back to ${backLabel}`} className="!bg-transparent hover:!bg-slate-200/70 dark:hover:!bg-neutral-800" />
+          <h1 className="font-sans font-bold text-base text-center truncate">{title}</h1>
+          <div className="flex justify-end">{headerRight}</div>
+        </div>
+      </header>
+      <div className="max-w-md mx-auto px-4 pt-5">{children}</div>
     </div>
+  );
+}
+
+// Profile summary shown at the top of Settings and Privacy.
+export function SettingsUserCard({ user, email, verified, href }) {
+  const name = user?.displayName || user?.username || 'Your account';
+  const content = (
+    <>
+      <span className="w-14 h-14 rounded-full overflow-hidden bg-slate-200 dark:bg-neutral-800 ring-2 ring-amber-500/60 flex items-center justify-center shrink-0 font-sans font-bold text-xl text-slate-900 dark:text-white">
+        {user?.avatarUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={user.avatarUrl} alt="" className="w-full h-full object-cover" />
+        ) : (
+          (name[0] || '?').toUpperCase()
+        )}
+      </span>
+      <span className="flex-1 min-w-0">
+        <span className="block font-sans font-bold text-base text-slate-900 dark:text-white truncate">{name}</span>
+        <span className="block font-sans font-medium text-sm text-slate-500 dark:text-neutral-400 truncate">@{user?.username}</span>
+        {email && <span className="block font-sans text-xs text-slate-500 dark:text-neutral-500 truncate mt-0.5">{email}</span>}
+      </span>
+      {verified != null && <VerifiedBadge verified={verified} />}
+      {href && <ChevronRight size={18} className="text-slate-400 dark:text-neutral-600 shrink-0" aria-hidden="true" />}
+    </>
+  );
+  const cls = 'w-full flex items-center gap-3.5 p-4 mb-6 rounded-2xl bg-white dark:bg-neutral-900/90 border border-slate-200 dark:border-neutral-800 shadow-sm';
+  return href ? (
+    <Link href={href} className={`${cls} hover:bg-slate-50 dark:hover:bg-neutral-800/60 transition-colors`}>
+      {content}
+    </Link>
+  ) : (
+    <div className={cls}>{content}</div>
   );
 }
 
@@ -28,7 +64,7 @@ export function SettingsGroup({ title, children, footer }) {
           {title}
         </h2>
       )}
-      <div className="bg-slate-50 dark:bg-neutral-900/90 rounded-2xl border border-slate-200 dark:border-neutral-800 overflow-hidden mb-5 divide-y divide-slate-200 dark:divide-neutral-800">
+      <div className="bg-white dark:bg-neutral-900/90 rounded-2xl border border-slate-200 dark:border-neutral-800 shadow-sm overflow-hidden mb-5 divide-y divide-slate-100 dark:divide-neutral-800">
         {children}
       </div>
       {footer && <p className="font-sans font-medium text-xs text-slate-500 dark:text-neutral-500 px-1 -mt-3 mb-5">{footer}</p>}
@@ -45,7 +81,7 @@ function RowBody({ icon, title, subtitle, right, chevron, tone }) {
       {icon && (
         <span
           aria-hidden="true"
-          className="w-9 h-9 shrink-0 rounded-xl bg-slate-100 dark:bg-neutral-800 flex items-center justify-center text-lg"
+          className="w-9 h-9 shrink-0 rounded-xl bg-slate-100 dark:bg-neutral-800 flex items-center justify-center text-lg text-slate-700 dark:text-neutral-200"
         >
           {icon}
         </span>
