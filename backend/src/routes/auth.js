@@ -8,6 +8,7 @@ import { sendMail, describeMailError } from '../config/mailer.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requireBiometric } from '../middleware/biometric.js';
 import { recordLogin } from '../utils/loginEvents.js';
+import { recordSecurityEvent } from '../utils/securityEvents.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { authLimiter } from '../middleware/rateLimiter.js';
 import { validate } from '../middleware/validate.js';
@@ -749,6 +750,7 @@ router.post('/change-password', requireAuth, requireBiometric('password'), authL
       data: { passwordHash, resetPasswordToken: null, resetPasswordExpires: null },
     });
 
+    recordSecurityEvent(user.id, 'password_changed');
     res.json({ message: 'Password updated.' });
   } catch (err) {
     console.error('[auth/change-password error]:', err.stack || err);

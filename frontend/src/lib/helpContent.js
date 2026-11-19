@@ -16,6 +16,41 @@ export const HELP_CATEGORIES = [
         link: { label: 'Account details', href: '/settings/account' },
       },
       {
+        q: 'My posts aren’t getting views',
+        a: 'New videos can take a little while to be picked up, and reach depends on how people react in the first hours. A few things usually help:',
+        steps: [
+          'Make sure the video is public: open it from your profile and check it isn’t private or still processing.',
+          'Check that your profile isn’t set to Private in Settings → Audience control, since only followers can see private profiles.',
+          'Add a clear caption, a fitting sound and a few relevant hashtags so people can find it.',
+          'Post when your followers are online and keep your videos short and engaging from the first second.',
+          'Boost a video from Promote to reach a wider audience.',
+        ],
+        link: { label: 'Promote a video', href: '/promote' },
+      },
+      {
+        q: 'Account safety',
+        a: 'Keep your account secure with a few quick checks:',
+        steps: [
+          'Turn on the Biometric Security Lock in Settings so profile changes and account switching need your fingerprint or screen lock.',
+          'Use a password you don’t use anywhere else, and change it if you think it was exposed.',
+          'Review Security alerts for new logins or changes you don’t recognise.',
+          'If something looks wrong, change your password straight away. That signs out your other sessions.',
+        ],
+        link: { label: 'Security alerts', href: '/settings/help/security' },
+      },
+      {
+        q: 'Others cannot see my newly uploaded videos',
+        a: 'Most of the time this is one of these:',
+        steps: [
+          'The upload is still processing. Wait a minute or two, then refresh your profile.',
+          'The video was posted as private, or your profile is Private, so only followers can see it.',
+          'The video is awaiting or failed review. Check Activity centre for notices about it.',
+          'The viewer is on a weak connection. Ask them to refresh or try again on Wi-Fi.',
+          'Still not showing? Open a support ticket with the video title and when you posted it.',
+        ],
+        link: { label: 'Open a support ticket', href: '/settings/help/tickets/new' },
+      },
+      {
         q: 'I forgot my password',
         a: 'Use “Forgot password” on the login screen. We’ll email you a link to choose a new one. If you signed up with Google, use Continue with Google instead.',
         link: { label: 'Reset my password', href: '/forgot-password' },

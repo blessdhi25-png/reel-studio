@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ChevronDown, ChevronRight, KeyRound, LifeBuoy, ShieldCheck } from 'lucide-react';
+import { ChevronDown, ChevronRight, KeyRound, LifeBuoy, MessageCircle, ShieldAlert, ShieldCheck, Ticket } from 'lucide-react';
 import { SettingsPage } from '@/components/settings/SettingsUI';
 import { FEATURED, HELP_CATEGORIES } from '@/lib/helpContent';
 
@@ -25,6 +25,16 @@ function Faq({ item }) {
       {open && (
         <div className="pb-4 -mt-1">
           <p className="font-sans text-sm leading-relaxed text-slate-600 dark:text-neutral-400">{item.a}</p>
+          {item.steps && (
+            <ol className="mt-2.5 space-y-2 rounded-xl bg-slate-100 dark:bg-neutral-900 p-3.5">
+              {item.steps.map((st, i) => (
+                <li key={i} className="flex gap-2.5 font-sans text-sm leading-snug text-slate-700 dark:text-neutral-300">
+                  <span className="shrink-0 w-5 h-5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 text-xs font-bold flex items-center justify-center">{i + 1}</span>
+                  <span>{st}</span>
+                </li>
+              ))}
+            </ol>
+          )}
           {item.link && (
             <Link href={item.link.href} className="mt-2.5 inline-flex items-center gap-1 font-sans font-bold text-sm text-amber-600 dark:text-amber-400">
               {item.link.label} <ChevronRight size={14} aria-hidden="true" />
@@ -36,7 +46,7 @@ function Faq({ item }) {
   );
 }
 
-function QuickCard({ href, Icon, label, tone }) {
+function QuickCard({ href, Icon, label, sub, tone }) {
   const cls = 'shrink-0 w-36 rounded-2xl bg-white dark:bg-neutral-900/90 border border-slate-200 dark:border-neutral-800 p-4 hover:bg-slate-50 dark:hover:bg-neutral-800/60 transition-colors';
   const body = (
     <>
@@ -44,6 +54,7 @@ function QuickCard({ href, Icon, label, tone }) {
         <Icon size={20} strokeWidth={2.25} />
       </span>
       <span className="block font-sans font-bold text-sm text-slate-900 dark:text-white leading-snug">{label}</span>
+      {sub && <span className="block font-sans text-xs text-slate-500 dark:text-neutral-400 leading-snug mt-1">{sub}</span>}
     </>
   );
   return href.startsWith('mailto:') ? (
@@ -91,9 +102,12 @@ export default function HelpCentrePage() {
 
   return (
     <SettingsPage title="Help Centre">
+      <div className="pb-24 lg:pb-0">
       <h2 className="font-sans font-extrabold text-3xl tracking-tight text-slate-900 dark:text-white mb-5">How can we help?</h2>
 
       <div className="flex gap-3 overflow-x-auto no-scrollbar -mx-4 px-4 pb-1 mb-7">
+        <QuickCard href="/settings/help/tickets" Icon={Ticket} label="Support tickets" sub="Create requests & check status" tone="bg-amber-500/10 text-amber-500" />
+        <QuickCard href="/settings/help/security" Icon={ShieldAlert} label="Security alerts" sub="New logins & account changes" tone="bg-rose-500/10 text-rose-500" />
         <QuickCard href="/forgot-password" Icon={KeyRound} label="Account recovery" tone="bg-blue-500/10 text-blue-500" />
         <QuickCard href="/legal/guidelines" Icon={ShieldCheck} label="Safety Centre" tone="bg-emerald-500/10 text-emerald-500" />
         {supportHref && <QuickCard href={supportHref} Icon={LifeBuoy} label="Support" tone="bg-indigo-500/10 text-indigo-500" />}
@@ -173,6 +187,19 @@ export default function HelpCentrePage() {
             Community Guidelines
           </Link>
         )}
+      </div>
+      </div>
+
+      {/* Pinned above the mobile bottom nav (~4rem); sits in the corner on desktop where there is no nav. */}
+      <div className="fixed inset-x-0 bottom-[4.25rem] lg:bottom-6 z-30 px-4 pointer-events-none">
+        <div className="mx-auto max-w-2xl lg:max-w-none lg:flex lg:justify-end">
+          <Link
+            href="/settings/help/tickets/new"
+            className="pointer-events-auto flex items-center justify-center gap-2 w-full lg:w-auto lg:px-6 py-3.5 rounded-full bg-amber-500 hover:bg-amber-400 text-black font-sans font-bold text-sm shadow-xl transition-colors"
+          >
+            <MessageCircle size={18} strokeWidth={2.5} aria-hidden="true" /> Chat with us
+          </Link>
+        </div>
       </div>
     </SettingsPage>
   );

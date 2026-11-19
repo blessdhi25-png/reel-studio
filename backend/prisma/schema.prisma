@@ -206,6 +206,15 @@ model User {
   reposts   Repost[]
   webauthnCredentials WebAuthnCredential[]
   loginEvents         LoginEvent[]
+  securityEvents      SecurityEvent[]
+  supportTickets      SupportTicket[]
+  supportReplies      SupportTicketReply[]
+  policiesEdited      PlatformPolicy[] @relation("policyEditor")
+  // Language preferences (Settings → Language). displayLanguage is a BCP-47-ish code from
+  // utils/languages.js; contentLanguages are the languages the person wants to see videos in.
+  displayLanguage     String   @default("en")
+  translateContent    Boolean  @default(true)
+  contentLanguages    String[] @default([])
   webauthnChallenges  WebAuthnChallenge[]
 }
 
@@ -544,6 +553,58 @@ model Message {
 // (see context/CallContext.jsx). status is from the caller's point of view of how it ended:
 // COMPLETED | MISSED (caller hung up before pickup) | NO_ANSWER (rang out / unreachable) | DECLINED.
 // For the receiver, MISSED and NO_ANSWER both read as "missed call".
+// Admin/moderator-editable legal text, shown at /legal/[doc]. Until a row exists for a slug the app
+// shows its bundled default copy (lib/legalDocs.js). Slugs: community-guidelines | privacy-policy | terms-of-service.
+model PlatformPolicy {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  title       String
+  content     String
+  updatedById String?
+  updatedBy   User?    @relation("policyEditor", fields: [updatedById], references: [id], onDelete: SetNull)
+  updatedAt   DateTime @updatedAt
+}
+
+// Settings → Help Centre → Support tickets.
+model SupportTicket {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject     String
+  category    String   @default("other")
+  status      String   @default("open") // open | in_progress | resolved | closed
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  replies     SupportTicketReply[]
+
+  @@index([userId, updatedAt])
+  @@index([status, updatedAt])
+}
+
+model SupportTicketReply {
+  id        String        @id @default(cuid())
+  ticketId  String
+  ticket    SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  isStaff   Boolean       @default(false)
+  message   String
+  createdAt DateTime      @default(now())
+
+  @@index([ticketId, createdAt])
+}
+
+// Account-security notices that aren't sign-ins (those are LoginEvent): password changed, biometric lock on/off.
+model SecurityEvent {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String   // password_changed | biometric_enabled | biometric_disabled
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
 // One row per successful sign-in, shown in Settings → Activity centre → Account history.
 // Deliberately stores no IP address: just a coarse device label and, when the host/CDN supplies it,
 // a country/region string.

@@ -7,6 +7,7 @@ import {
 } from '@simplewebauthn/server';
 import prisma from '../config/db.js';
 import { requireAuth } from '../middleware/auth.js';
+import { recordSecurityEvent } from '../utils/securityEvents.js';
 import { authLimiter } from '../middleware/rateLimiter.js';
 import {
   STEP_UP_SCOPES,
@@ -167,6 +168,7 @@ router.post('/webauthn/register/verify', requireAuth, requireBiometric('register
       deviceName: typeof deviceName === 'string' ? deviceName.slice(0, 60) : null,
     },
   });
+  recordSecurityEvent(req.userId, 'biometric_enabled');
   res.json({ ok: true, enabled: true });
 }));
 
@@ -190,6 +192,7 @@ router.post('/webauthn/auth/verify', requireAuth, authLimiter, asyncHandler(asyn
 
 router.post('/webauthn/disable', requireAuth, requireBiometric('disable'), asyncHandler(async (req, res) => {
   await prisma.webAuthnCredential.deleteMany({ where: { userId: req.userId } });
+  recordSecurityEvent(req.userId, 'biometric_disabled');
   res.json({ ok: true, enabled: false });
 }));
 

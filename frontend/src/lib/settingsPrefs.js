@@ -21,6 +21,12 @@ export const PREF_DEFAULTS = {
   dataSaver: false, // cap video resolution on cellular networks
   breakReminder: true, // "Take a break after N mins" (N = breakReminderMinutes); on by default, can be switched off
   breakReminderMinutes: 30, // 15 / 30 / 45 / 60
+  reduceMotion: false, // Settings → Accessibility: switch off animations/transitions app-wide
+  largeText: false, // Settings → Accessibility: scale text up ~12%
+  // Settings → Language (server-backed via /users/me/language; mirrored here for instant first paint)
+  displayLanguage: 'en',
+  translateContent: true,
+  contentLanguages: [],
 };
 
 const listeners = new Set();

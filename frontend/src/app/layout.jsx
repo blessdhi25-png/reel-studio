@@ -1,6 +1,7 @@
 import './globals.css';
 import { AuthProvider } from '@/context/AuthContext';
 import { ToastProvider } from '@/context/ToastContext';
+import PreferenceApplier from '@/components/PreferenceApplier';
 import { SocketProvider } from '@/context/SocketContext';
 import { CallProvider } from '@/context/CallContext';
 import { LiveAlertsProvider } from '@/context/LiveAlertsContext';
@@ -53,6 +54,7 @@ export default function RootLayout({ children }) {
               <SocketProvider>
                 <LiveAlertsProvider>
                   <CallProvider>
+                    <PreferenceApplier />
                     <AppShell>{children}</AppShell>
                   </CallProvider>
                 </LiveAlertsProvider>

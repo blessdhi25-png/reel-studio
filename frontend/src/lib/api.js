@@ -271,6 +271,24 @@ export const api = {
   // Settings → Activity centre (backend/src/routes/activity.js)
   getLoginHistory: () => request('/activity/logins'),
   getCommentHistory: () => request('/activity/comments'),
+  getSecurityAlerts: () => request('/activity/security'),
+  // Policies (backend/src/routes/policies.js): GET public, PUT admin/moderator only
+  getPolicy: (slug) => request(`/policies/${slug}`),
+  updatePolicy: (slug, { title, content }) => request(`/policies/${slug}`, { method: 'PUT', body: { title, content } }),
+  // Support tickets (backend/src/routes/support.js)
+  listSupportTickets: ({ scope, status } = {}) => {
+    const qs = new URLSearchParams();
+    if (scope) qs.set('scope', scope);
+    if (status) qs.set('status', status);
+    return request(`/support/tickets${qs.toString() ? `?${qs}` : ''}`);
+  },
+  createSupportTicket: (body) => request('/support/tickets', { method: 'POST', body }),
+  getSupportTicket: (id) => request(`/support/tickets/${id}`),
+  replySupportTicket: (id, message) => request(`/support/tickets/${id}/replies`, { method: 'POST', body: { message } }),
+  setSupportTicketStatus: (id, status) => request(`/support/tickets/${id}`, { method: 'PATCH', body: { status } }),
+  // Language preferences (backend/src/routes/preferences.js)
+  getLanguagePrefs: () => request('/users/me/language'),
+  updateLanguagePrefs: (partial) => request('/users/me/language', { method: 'PATCH', body: partial }),
   getWatchHistory: () => request('/activity/watch'),
   // Private account details (email, phone, bio, WhatsApp, external links) — backend/src/routes/userProfile.js
   getAccountProfile: () => request('/user/profile'),

@@ -4,6 +4,19 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Settings → Accessibility (see components/PreferenceApplier.jsx) */
+html[data-reduce-motion='true'] *,
+html[data-reduce-motion='true'] *::before,
+html[data-reduce-motion='true'] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+html[data-large-text='true'] {
+  font-size: 112.5%;
+}
+
 /* Light is the default theme (next-themes, attribute="class"); html.dark restores the
    original ink/bone palette. Pages not yet converted to dark: variants are wrapped in a
    forced-dark surface by components/ThemeSurface.jsx, so they look unchanged. */
