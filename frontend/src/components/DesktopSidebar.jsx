@@ -10,6 +10,7 @@ import { useLiveAlerts } from '../context/LiveAlertsContext';
 import { api } from '../lib/api';
 import { isNavHidden } from './BottomNav';
 import DesktopDrawer from './DesktopDrawers';
+import { useLanguage } from '../context/LanguageContext';
 
 // Persistent desktop navigation (lg+ only; the mobile BottomNav is `lg:hidden`).
 // Hidden on exactly the same routes as BottomNav. AppShell pads the page by w-64.
@@ -33,6 +34,7 @@ function SidebarInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, isAuthenticated } = useAuth();
+  const { t } = useLanguage();
   const { unreadCount } = useSocketContext();
   const { liveNow } = useLiveAlerts();
   const [q, setQ] = useState('');
@@ -74,16 +76,16 @@ function SidebarInner() {
   const authed = (href) => (isAuthenticated ? href : '/login');
   const toggleDrawer = (id) => () => (isAuthenticated || id === 'more' ? setDrawer((d) => (d === id ? null : id)) : router.push('/login'));
   const items = [
-    { label: 'For You', href: '/', Icon: Home, active: pathname === '/' && !onFollowingTab },
-    { label: 'Explore', href: '/search', Icon: Compass, active: pathname.startsWith('/search') },
-    { label: 'Following', href: authed('/?tab=following'), Icon: UserCheck, active: onFollowingTab },
-    { label: 'Friends', href: authed('/friends'), Icon: Users, active: pathname.startsWith('/friends') },
-    { label: 'LIVE', href: '/live', Icon: Radio, active: pathname.startsWith('/live'), badge: liveNow.length },
-    { label: 'Messages', onClick: toggleDrawer('messages'), Icon: MessageCircle, active: drawer === 'messages', badge: messageUnread },
-    { label: 'Activity', onClick: toggleDrawer('activity'), Icon: Bell, active: drawer === 'activity', badge: unreadCount },
-    { label: 'Upload', href: authed('/upload'), Icon: PlusSquare, active: pathname === '/upload' },
-    { label: 'Profile', href: user ? `/profile/${user.id}` : '/login', Icon: User, active: !!user && pathname === `/profile/${user.id}` },
-    { label: 'More', onClick: toggleDrawer('more'), Icon: MoreHorizontal, active: drawer === 'more' },
+    { label: t('nav.forYou'), href: '/', Icon: Home, active: pathname === '/' && !onFollowingTab },
+    { label: t('nav.explore'), href: '/search', Icon: Compass, active: pathname.startsWith('/search') },
+    { label: t('nav.following'), href: authed('/?tab=following'), Icon: UserCheck, active: onFollowingTab },
+    { label: t('nav.friends'), href: authed('/friends'), Icon: Users, active: pathname.startsWith('/friends') },
+    { label: t('nav.live'), href: '/live', Icon: Radio, active: pathname.startsWith('/live'), badge: liveNow.length },
+    { label: t('nav.messages'), onClick: toggleDrawer('messages'), Icon: MessageCircle, active: drawer === 'messages', badge: messageUnread },
+    { label: t('nav.activity'), onClick: toggleDrawer('activity'), Icon: Bell, active: drawer === 'activity', badge: unreadCount },
+    { label: t('nav.upload'), href: authed('/upload'), Icon: PlusSquare, active: pathname === '/upload' },
+    { label: t('nav.profile'), href: user ? `/profile/${user.id}` : '/login', Icon: User, active: !!user && pathname === `/profile/${user.id}` },
+    { label: t('nav.more'), onClick: toggleDrawer('more'), Icon: MoreHorizontal, active: drawer === 'more' },
   ];
 
   function onSearch(e) {
@@ -114,12 +116,12 @@ function SidebarInner() {
             value={q}
             onChange={(e) => setQ(e.target.value)}
             type="search"
-            placeholder="Search"
-            aria-label="Search"
+            placeholder={t('nav.search')}
+            aria-label={t('nav.search')}
             className="w-full h-10 pl-10 pr-3 rounded-full bg-neutral-900 text-sm font-bold text-white placeholder-neutral-500 outline-none focus:ring-2 focus:ring-amber-500/60"
           />
         </form>
-        <Link href="/search" aria-label="Search" title="Search" className="xl:hidden mb-3 mx-auto w-11 h-11 rounded-full bg-neutral-900 flex items-center justify-center hover:bg-neutral-800">
+        <Link href="/search" aria-label={t('nav.search')} title={t('nav.search')} className="xl:hidden mb-3 mx-auto w-11 h-11 rounded-full bg-neutral-900 flex items-center justify-center hover:bg-neutral-800">
           <Search className="w-5 h-5" strokeWidth={2.5} />
         </Link>
 
@@ -161,7 +163,7 @@ function SidebarInner() {
 
         {following.length > 0 && (
           <section aria-label="Following accounts" className="hidden xl:block mt-4 pt-4 border-t border-neutral-800">
-            <h2 className="px-3 mb-2 text-sm font-extrabold tracking-tight text-neutral-500">Following accounts</h2>
+            <h2 className="px-3 mb-2 text-sm font-extrabold tracking-tight text-neutral-500">{t('nav.followingAccounts')}</h2>
             <ul className="flex flex-col gap-0.5">
               {following.map((f) => (
                 <li key={f.id}>

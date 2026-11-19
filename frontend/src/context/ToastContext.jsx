@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useCallback, useContext, useRef, useState } from 'react';
+import { useLanguage } from './LanguageContext';
 
 const ToastContext = createContext(null);
 
@@ -104,6 +105,7 @@ function ToastContainer({ toasts, onDismiss }) {
 }
 
 function ToastItem({ toast: t, onDismiss }) {
+  const { tm } = useLanguage();
   const v = VARIANTS[t.type] || VARIANTS.info;
   return (
     <div
@@ -113,7 +115,7 @@ function ToastItem({ toast: t, onDismiss }) {
     >
       <span className={`w-1 self-stretch rounded-full ${v.accent} shrink-0`} />
       {v.icon}
-      <p className="font-body text-sm text-zinc-100 leading-snug">{t.message}</p>
+      <p className="font-body text-sm text-zinc-100 leading-snug">{tm(t.message)}</p>
     </div>
   );
 }

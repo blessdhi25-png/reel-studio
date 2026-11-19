@@ -3,6 +3,7 @@
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '../context/AuthContext';
 import { useSocketContext } from '../context/SocketContext';
+import { useLanguage } from '../context/LanguageContext';
 
 const HIDDEN_ON = ['/welcome', '/login', '/signup', '/verify-email', '/upload'];
 // Prefix-matched separately from HIDDEN_ON above: /admin has many
@@ -84,6 +85,7 @@ export default function BottomNav() {
   // this no longer needs its own copy of that logic (it used to duplicate
   // it here, independently from the notifications page).
   const { unreadCount } = useSocketContext();
+  const { t } = useLanguage();
 
   if (isNavHidden(pathname)) return null;
 
@@ -108,13 +110,13 @@ export default function BottomNav() {
     >
       <div className="flex items-end justify-between px-3 max-w-md mx-auto">
         <NavItem
-          label="Home"
+          label={t('nav.home')}
           active={isActive('/')}
           onClick={() => go('/')}
           icon={<HomeIcon active={isActive('/')} />}
         />
         <NavItem
-          label="Friends"
+          label={t('nav.friends')}
           active={isActive('/friends')}
           onClick={() => go('/friends')}
           icon={<FriendsIcon active={isActive('/friends')} />}
@@ -122,21 +124,21 @@ export default function BottomNav() {
         <button
           onClick={() => go('/upload', true)}
           className="relative z-10 flex flex-col items-center justify-center w-14 h-12"
-          aria-label="Upload"
+          aria-label={t('nav.upload')}
         >
           <span className="w-11 h-8 flex items-center justify-center rounded-sprocket bg-reel text-ink font-display text-2xl border border-reel2 pointer-events-none">
             +
           </span>
         </button>
         <NavItem
-          label="Inbox"
+          label={t('nav.inbox')}
           active={isActive('/notifications')}
           onClick={() => go('/notifications', true)}
           icon={<InboxIcon active={isActive('/notifications')} />}
           badge={unreadCount}
         />
         <NavItem
-          label="Profile"
+          label={t('nav.profile')}
           active={pathname.startsWith('/profile') && user ? pathname === `/profile/${user.id}` : false}
           onClick={() => go(user ? `/profile/${user.id}` : '/login')}
           icon={<ProfileIcon active={pathname === `/profile/${user?.id}`} />}

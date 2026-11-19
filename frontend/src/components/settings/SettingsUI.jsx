@@ -3,6 +3,7 @@
 import BackButton from '@/components/BackButton';
 import Link from 'next/link';
 import { ChevronRight } from 'lucide-react';
+import { useLanguage } from '@/context/LanguageContext';
 
 // Shared building blocks for the Settings & Privacy architecture. Every
 // settings screen uses these so spacing, typography (font-sans font-bold),
@@ -10,6 +11,8 @@ import { ChevronRight } from 'lucide-react';
 
 // Sticky top bar (back · centred title) like the rest of the settings tree, then the page body.
 export function SettingsPage({ title, backHref = '/settings', backLabel = 'Settings', children, headerRight }) {
+  const { tx } = useLanguage();
+  title = tx(title);
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-[#0a090e] text-slate-900 dark:text-white font-sans pb-36">
       <header className="sticky top-0 z-30 bg-slate-50/90 dark:bg-[#0a090e]/90 backdrop-blur-md border-b border-slate-200/70 dark:border-neutral-800/70">
@@ -57,6 +60,8 @@ export function SettingsUserCard({ user, email, verified, href }) {
 }
 
 export function SettingsGroup({ title, children, footer }) {
+  const { tx } = useLanguage();
+  title = tx(title);
   return (
     <section>
       {title && (
@@ -76,6 +81,9 @@ const ROW_BASE = 'w-full flex items-center gap-3 px-4 py-3.5 text-left transitio
 const ROW_INTERACTIVE = 'hover:bg-slate-100 dark:hover:bg-neutral-800/60 active:bg-neutral-800';
 
 function RowBody({ icon, title, subtitle, right, chevron, tone }) {
+  const { tx } = useLanguage();
+  title = tx(title);
+  subtitle = tx(subtitle);
   return (
     <>
       {icon && (

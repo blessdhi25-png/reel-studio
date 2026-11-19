@@ -19,6 +19,8 @@ import { useFeedPlayerPrefs, setFeedPlayerPref } from '../hooks/useFeedPlayerPre
 import { downloadWithWatermark, WatermarkUnsupportedError } from '../lib/downloadWithWatermark';
 import { downloadPlain, PlainDownloadUnsupportedError } from '../lib/downloadPlain';
 import { usePref } from '../lib/settingsPrefs';
+import { useContentTranslation } from '../hooks/useContentTranslation';
+import TranslationToggle from './TranslationToggle';
 import { getCachedVideoResponse, isVideoInManifest } from '../lib/offlineCache';
 
 // A second tap/click arriving within this window counts as a double-tap
@@ -163,6 +165,8 @@ const VideoCard = forwardRef(function VideoCard(
   const lastTapRef = useRef(0);
   const singleTapTimerRef = useRef(null);
   const toast = useToast();
+  // Caption translation: automatic when "Always translate" is on (only for the card on screen), else on demand.
+  const captionTr = useContentTranslation(video.caption, { active: isActive });
   const { liked, likeCount, toggleLike } = useOptimisticLike(video.id, video.isLiked, video.likeCount);
   const [commentCount, setCommentCount] = useState(Number(video.commentCount || 0));
   const [showTip, setShowTip] = useState(false);
@@ -244,7 +248,7 @@ const VideoCard = forwardRef(function VideoCard(
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [video.caption, isExpanded]);
+  }, [video.caption, captionTr.text, isExpanded]);
   // A new caption, or scrolling to another card, starts collapsed again.
   useEffect(() => {
     setIsExpanded(false);
@@ -373,14 +377,10 @@ const VideoCard = forwardRef(function VideoCard(
     }
   }
 
+  // Long-press menu "Translate": toggles the in-app translation of the caption (see useContentTranslation).
   function handleTranslate() {
     if (!video.caption) return;
-    const lang = (typeof navigator !== 'undefined' && navigator.language) || 'en';
-    window.open(
-      `https://translate.google.com/?sl=auto&tl=${encodeURIComponent(lang)}&text=${encodeURIComponent(video.caption)}&op=translate`,
-      '_blank',
-      'noopener,noreferrer'
-    );
+    captionTr.toggle();
     setShowLongPressMenu(false);
   }
 
@@ -954,8 +954,9 @@ const VideoCard = forwardRef(function VideoCard(
                 ref={captionRef}
                 className={`font-body text-sm font-bold tracking-tight text-white break-words ${isExpanded ? '' : 'line-clamp-2'}`}
               >
-                {renderCaption(video.caption)}
+                {renderCaption(captionTr.text)}
               </p>
+              <TranslationToggle tr={captionTr} className="mt-0.5 text-white" />
               {(captionOverflows || isExpanded) && (
                 <button
                   type="button"

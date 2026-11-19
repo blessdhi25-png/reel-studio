@@ -5,6 +5,8 @@ import { api } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { LoadingSpinner } from './LoadingScreen';
+import { useContentTranslation } from '../hooks/useContentTranslation';
+import TranslationToggle from './TranslationToggle';
 
 // Matches M:SS or MM:SS timestamps like "0:14" or "1:25" written in a
 // comment. Capped at 59 seconds in the SS group so we don't match things
@@ -51,6 +53,39 @@ function splitContent(content = '') {
 //   currentTime is highlighted as the "active chapter."
 // onSeek (fn(seconds), optional) — called when a timestamp badge is clicked.
 //   The caller is responsible for actually seeking the video player.
+// One comment's text, with optional machine translation (automatic when "Always translate" is on).
+// Timestamp chips are re-parsed from whichever text is shown so they keep working after translation.
+function CommentText({ comment, onSeek }) {
+  const tr = useContentTranslation(comment.content, { active: !comment.pending });
+  const parts = splitContent(tr.text);
+  return (
+    <>
+      <p className="font-semibold text-sm text-neutral-100 leading-snug tracking-tight break-words">
+        <span className="font-extrabold text-reel">@{comment.user?.username}</span>{' '}
+        {parts.map((p, i) =>
+          p.type === 'timestamp' ? (
+            <button
+              key={i}
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSeek(p.seconds);
+              }}
+              className="inline-flex items-center px-1.5 py-0.5 mx-0.5 rounded-sprocket bg-reel/20 text-reel font-bold text-xs align-middle hover:bg-reel/30 active:bg-reel/40"
+              title={`Jump to ${p.value}`}
+            >
+              ▶ {p.value}
+            </button>
+          ) : (
+            <span key={i}>{p.value}</span>
+          )
+        )}
+      </p>
+      {!comment.pending && <TranslationToggle tr={tr} className="mt-0.5 text-neutral-300" />}
+    </>
+  );
+}
+
 const CommentsPanel = forwardRef(function CommentsPanel(
   { videoId, onClose, onCountChange, variant = 'overlay', currentTime = null, onSeek },
   ref
@@ -182,27 +217,7 @@ const CommentsPanel = forwardRef(function CommentsPanel(
                 {c.user?.username?.[0]?.toUpperCase() || '?'}
               </div>
               <div className="min-w-0">
-                <p className="font-semibold text-sm text-neutral-100 leading-snug tracking-tight break-words">
-                  <span className="font-extrabold text-reel">@{c.user?.username}</span>{' '}
-                  {parts.map((p, i) =>
-                    p.type === 'timestamp' ? (
-                      <button
-                        key={i}
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleSeek(p.seconds);
-                        }}
-                        className="inline-flex items-center px-1.5 py-0.5 mx-0.5 rounded-sprocket bg-reel/20 text-reel font-bold text-xs align-middle hover:bg-reel/30 active:bg-reel/40"
-                        title={`Jump to ${p.value}`}
-                      >
-                        ▶ {p.value}
-                      </button>
-                    ) : (
-                      <span key={i}>{p.value}</span>
-                    )
-                  )}
-                </p>
+                <CommentText comment={c} onSeek={handleSeek} />
                 <p className="font-bold text-[11px] text-neutral-400 mt-1">
                   {c.pending ? 'Posting…' : new Date(c.createdAt).toLocaleDateString()}
                 </p>

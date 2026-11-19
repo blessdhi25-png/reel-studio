@@ -15,6 +15,10 @@ import DesktopUploadLanding from '@/components/DesktopUploadLanding';
 import TextOverlayEditor from '@/components/TextOverlayEditor';
 import { stitchClips } from '@/lib/stitchClips';
 import { friendlyError } from '@/lib/friendlyError';
+import PostLanguageSelect from '@/components/PostLanguageSelect';
+import { defaultPostLanguage } from '@/lib/postLanguage';
+import { useLanguage } from '@/context/LanguageContext';
+import { usePref } from '@/lib/settingsPrefs';
 import { templateSetup } from '@/lib/templates';
 import { DEFAULT_FILTER_ID, FILTERS } from '@/lib/cameraFilters';
 
@@ -225,6 +229,11 @@ function UploadPageInner() {
   const [communityTarget, setCommunityTarget] = useState(null); // { id, name }
   const [caption, setCaption] = useState('');
   const [circle, setCircle] = useState(null);
+  // Language the video is in. Defaults to the creator's first content language (else display language) until they pick one.
+  const [contentLangs] = usePref('contentLanguages');
+  const [displayLang] = usePref('displayLanguage');
+  const [pickedLanguage, setPostLanguage] = useState(null);
+  const postLanguage = pickedLanguage ?? defaultPostLanguage(contentLangs, displayLang);
 
   // Sound picker — SoundPicker itself handles searching tracks distributed
   // by registered artists (Artist Hub); this page just tracks whether the
@@ -636,6 +645,7 @@ function UploadPageInner() {
     if (thumbnailBlob) formData.append('thumbnail', thumbnailBlob, 'thumbnail.jpg');
     formData.append('caption', caption);
     formData.append('videoType', videoType);
+    formData.append('language', postLanguage);
     if (videoOverlays.length && !capturedFromCamera) formData.append('textOverlays', JSON.stringify(videoOverlays));
     if (circle) formData.append('circle', circle);
     if (selectedTrack) formData.append('trackId', selectedTrack.id);
@@ -1090,6 +1100,8 @@ function UploadPageInner() {
           communityTarget={communityTarget}
           setCommunityTarget={setCommunityTarget}
           handleCancel={handleCancel}
+          postLanguage={postLanguage}
+          setPostLanguage={setPostLanguage}
         />
       )}
 
@@ -1595,7 +1607,10 @@ function PublishDrawer({
   handleCancel,
   communityTarget,
   setCommunityTarget,
+  postLanguage,
+  setPostLanguage,
 }) {
+  const { t } = useLanguage();
   return (
     <div className="absolute inset-0 z-10 flex flex-col bg-black animate-sheet-up">
       <div className="flex items-center gap-3 px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-3 border-b border-zinc-900 shrink-0">
@@ -1608,13 +1623,13 @@ function PublishDrawer({
       <form onSubmit={onSubmit} className="flex-1 overflow-y-auto">
         <div className="max-w-2xl mx-auto px-4 sm:px-6 py-6 space-y-4 pb-[max(2rem,env(safe-area-inset-bottom))]">
           {/* 1 · Media */}
-          <FormCard title="Media">
+          <FormCard title={t('upload.media')}>
             <div className="flex items-start gap-4">
               <div className="relative w-28 sm:w-32 shrink-0 aspect-[9/16] rounded-xl overflow-hidden bg-black border border-zinc-800">
                 <VideoPreview src={previewUrl} />
               </div>
               <div className="min-w-0 flex-1">
-                <FieldLabel>Format</FieldLabel>
+                <FieldLabel>{t('upload.format')}</FieldLabel>
                 <div className="flex flex-col gap-2">
                   {[
                     { id: 'short', label: 'Short clip', hint: 'Under 60 seconds' },
@@ -1642,7 +1657,7 @@ function PublishDrawer({
           </FormCard>
 
           {/* 2 · Details */}
-          <FormCard title="Details">
+          <FormCard title={t('upload.details')}>
             {communityTarget && (
               <div className="flex items-center justify-between gap-3 border border-amber-500/30 rounded-xl px-4 py-2.5 mb-4">
                 <p className="text-sm text-white truncate">
@@ -1654,7 +1669,7 @@ function PublishDrawer({
               </div>
             )}
             <div className="flex items-center justify-between mb-2">
-              <FieldLabel className="mb-0">Description</FieldLabel>
+              <FieldLabel className="mb-0">{t('upload.description')}</FieldLabel>
               <span className={`text-[11px] font-mono ${captionRemaining <= 0 ? 'text-amber-400' : 'text-zinc-500'}`}>
                 {caption.length}/{CAPTION_MAX}
               </span>
@@ -1663,7 +1678,7 @@ function PublishDrawer({
               ref={captionRef}
               value={caption}
               onChange={(e) => setCaption(e.target.value.slice(0, CAPTION_MAX))}
-              placeholder="Write a caption that pops…"
+              placeholder={t('upload.captionPlaceholder')}
               rows={4}
               maxLength={CAPTION_MAX}
               className="w-full bg-black border border-zinc-800 text-white rounded-xl px-4 py-3 text-sm outline-none focus:border-amber-500/60 transition resize-none placeholder:text-zinc-600"
@@ -1688,11 +1703,12 @@ function PublishDrawer({
                 </div>
               )}
             </div>
+            <PostLanguageSelect value={postLanguage} onChange={setPostLanguage} />
             <AICoPilotDrawer open={isAiOpen} onClose={() => setIsAiOpen(false)} onInsert={handleAiInsert} initialTopic={caption} />
           </FormCard>
 
           {/* 3 · Category + sound */}
-          <FormCard title="Category">
+          <FormCard title={t('upload.category')}>
             <div className="flex flex-wrap gap-2">
               {ALLOWED_CIRCLES.map((c) => {
                 const active = circle === c;
@@ -1713,7 +1729,7 @@ function PublishDrawer({
             </div>
 
             <div className="mt-5 pt-5 border-t border-zinc-800">
-              <FieldLabel>Sound</FieldLabel>
+              <FieldLabel>{t('upload.sound')}</FieldLabel>
               {selectedTrack ? (
                 <div className="flex items-center justify-between gap-3 border border-amber-500/30 rounded-xl px-4 py-2.5">
                   <p className="text-sm text-white truncate">
@@ -1890,9 +1906,10 @@ function PublishingPrivileges({
   allowDownloads,
   setAllowDownloads,
 }) {
+  const { t } = useLanguage();
   return (
-    <FormCard title="Visibility">
-      <FieldLabel>Who can view this video</FieldLabel>
+    <FormCard title={t('upload.visibility')}>
+      <FieldLabel>{t('upload.whoCanView')}</FieldLabel>
       <select
         value={visibility}
         onChange={(e) => setVisibility(e.target.value)}

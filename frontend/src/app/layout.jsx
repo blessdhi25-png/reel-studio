@@ -1,6 +1,7 @@
 import './globals.css';
 import { AuthProvider } from '@/context/AuthContext';
 import { ToastProvider } from '@/context/ToastContext';
+import { LanguageProvider } from '@/context/LanguageContext';
 import PreferenceApplier from '@/components/PreferenceApplier';
 import { SocketProvider } from '@/context/SocketContext';
 import { CallProvider } from '@/context/CallContext';
@@ -49,6 +50,7 @@ export default function RootLayout({ children }) {
             ChatHub is mounted inside AppShell (fixed bottom-20 left-4 z-40)
             so it floats globally over the video feed without freezing playback. */}
         <Providers>
+          <LanguageProvider>
           <AuthProvider>
             <ToastProvider>
               <SocketProvider>
@@ -61,6 +63,7 @@ export default function RootLayout({ children }) {
               </SocketProvider>
             </ToastProvider>
           </AuthProvider>
+          </LanguageProvider>
         </Providers>
       </body>
     </html>

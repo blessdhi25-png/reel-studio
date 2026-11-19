@@ -8,11 +8,13 @@ import { useRequireAuth } from '@/hooks/useRequireAuth';
 import { useToast } from '@/context/ToastContext';
 import { LANGUAGES, MAX_CONTENT_LANGUAGES } from '@/lib/languages';
 import { setPref, usePref } from '@/lib/settingsPrefs';
+import { hasLocale, useLanguage } from '@/context/LanguageContext';
 import { SettingsGroup, SettingsPage, ToggleRow } from '@/components/settings/SettingsUI';
 
 export default function LanguagePage() {
   const ok = useRequireAuth();
   const toast = useToast();
+  const { t } = useLanguage();
   const [display] = usePref('displayLanguage');
   const [translate] = usePref('translateContent');
   const [content] = usePref('contentLanguages');
@@ -44,14 +46,14 @@ export default function LanguagePage() {
     <SettingsPage title="Language">
       <SettingsGroup
         title="Display language"
-        footer="Saved to your account and used for the page language. The app’s own menus and labels are still in English while translations are being prepared."
+        footer="Menus and labels switch immediately for languages marked as translated; other languages show the interface in English for now. Captions and comments can be translated into any language below."
       >
         <div role="radiogroup" aria-label="Display language" className="max-h-80 overflow-y-auto divide-y divide-slate-100 dark:divide-neutral-800">
           {LANGUAGES.map((l) => {
             const on = display === l.code;
             return (
               <button key={l.code} type="button" role="radio" aria-checked={on} disabled={busy} onClick={() => !on && change('displayLanguage', l.code)} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-slate-50 dark:hover:bg-neutral-800/60 disabled:opacity-60">
-                <span className="flex-1 font-sans text-[15px] text-slate-900 dark:text-white">{l.native}{l.native !== l.name && <span className="text-slate-400 dark:text-neutral-500"> · {l.name}</span>}</span>
+                <span className="flex-1 font-sans text-[15px] text-slate-900 dark:text-white">{l.native}{l.native !== l.name && <span className="text-slate-400 dark:text-neutral-500"> · {l.name}</span>}{hasLocale(l.code) && <span className="ml-2 px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold align-middle">{t('language.uiAvailable')}</span>}</span>
                 {on && <Check size={18} className="text-amber-500" aria-hidden="true" />}
               </button>
             );
@@ -59,11 +61,11 @@ export default function LanguagePage() {
         </div>
       </SettingsGroup>
 
-      <SettingsGroup footer="Stored on your account. Translation of captions and posts isn’t available yet, so this setting takes effect when it launches.">
-        <ToggleRow title="Translate captions & posts" subtitle="Show translations for content in other languages" checked={translate} onChange={(v) => change('translateContent', v)} />
+      <SettingsGroup footer="When on, captions and comments in other languages are translated into your display language automatically. When off, you can tap See translation on any caption or comment.">
+        <ToggleRow title={t('language.alwaysTranslate')} subtitle={t('language.alwaysTranslateSub')} checked={translate} onChange={(v) => change('translateContent', v)} />
       </SettingsGroup>
 
-      <SettingsGroup title="Preferred content languages" footer={`Pick up to ${MAX_CONTENT_LANGUAGES}. ${content.length} selected.`}>
+      <SettingsGroup title="Preferred content languages" footer={`Pick up to ${MAX_CONTENT_LANGUAGES}. ${content.length} selected. Videos in these languages are ranked higher in your For You feed.`}>
         <div className="flex flex-wrap gap-2 p-4">
           {LANGUAGES.map((l) => {
             const on = content.includes(l.code);

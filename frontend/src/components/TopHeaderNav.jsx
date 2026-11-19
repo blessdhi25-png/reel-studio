@@ -1,5 +1,6 @@
 'use client';
 
+import { useLanguage } from '../context/LanguageContext';
 import { useEffect, useRef } from 'react';
 
 // Labels here must match `FILTERS` labels in app/page.jsx exactly
@@ -7,8 +8,11 @@ import { useEffect, useRef } from 'react';
 // FILTERS lookup — 'DMs' is the one deliberate exception, handled as an
 // explicit case in that function since it has no FILTERS entry.
 const NAV_TABS = ['All', 'Shorts', 'Communities', 'Collections', 'LIVE', 'DMs'];
+// Tab ids stay English (other code matches on them); only the label is translated.
+const TAB_KEYS = { All: 'nav.all', Shorts: 'nav.shorts', Communities: 'nav.communities', Collections: 'nav.collections', LIVE: 'nav.live', DMs: 'nav.dms' };
 
 export default function TopHeaderNav({ activeTab, setActiveTab, onSearchClick, onMuteToggle, isMuted }) {
+  const { t } = useLanguage();
   const activeRef = useRef(null);
 
   // Keep the selected tab visible when the strip is scrolled (small phones
@@ -37,7 +41,7 @@ export default function TopHeaderNav({ activeTab, setActiveTab, onSearchClick, o
                 }`}
               >
                 {tab === 'LIVE' && <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" aria-hidden="true" />}
-                {tab}
+                {t(TAB_KEYS[tab])}
                 {/* Active underline */}
                 {isActive && (
                   <span className="absolute bottom-0 inset-x-0 h-[3px] bg-amber-500 rounded-full" aria-hidden="true" />
@@ -53,7 +57,7 @@ export default function TopHeaderNav({ activeTab, setActiveTab, onSearchClick, o
         <button
           onClick={onSearchClick}
           className="text-white hover:text-white transition-all active:scale-90 p-2 drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]"
-          aria-label="Search"
+          aria-label={t('nav.search')}
         >
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.6" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />

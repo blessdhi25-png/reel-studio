@@ -9,6 +9,20 @@ import { deleteVideoCascade } from '../utils/deleteVideoCascade.js';
 import { applyFeedTuning } from '../utils/feedTuning.js';
 import { ALLOWED_CIRCLES, normalizeCircle } from '../utils/circles.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
+import { isLanguage } from '../utils/languages.js';
+
+// A post's language: the uploader's pick if valid, else English.
+const postLanguage = (v) => (isLanguage(v) ? v : 'en');
+
+// Ranked feed boost for the viewer's preferred content languages (Settings → Language). Multiplies the
+// stored rankingScore so a matching video outranks a similarly-scored one without burying great videos
+// in other languages. The epsilon keeps matches ahead when scores are tied at 0.
+const LANGUAGE_BOOST = 1.5;
+const boosted = (v, match) => Number(v.rankingScore || 0) * (match ? LANGUAGE_BOOST : 1) + (match ? 1e-6 : 0);
+const FEED_INCLUDE = {
+  user: { select: { id: true, username: true, avatarUrl: true, stripeOnboarded: true } },
+  track: { include: { artist: { select: { stageName: true } } } },
+};
 
 const router = Router();
 
@@ -101,6 +115,7 @@ router.post(
         userId: req.userId,
         videoType: videoType === 'long' ? 'long' : 'short',
         caption: caption || '',
+        language: postLanguage(req.body.language),
         circle: normalizedCircle,
         trackId: validTrackId,
         communityId: req.communityTargetId || null,
@@ -134,6 +149,7 @@ router.post(
         mediaType: 'photo',
         videoType: 'short',
         caption: caption || '',
+        language: postLanguage(req.body.language),
         circle: normalizeCircle(circle),
         communityId: req.communityTargetId || null,
         rawPath: url,
@@ -240,17 +256,48 @@ router.get('/feed', optionalAuth, async (req, res) => {
     videos = applyFeedTuning(pool, { nicheWeight, freshWeight }).slice(0, Number(limit));
     nextCursor = null;
   } else {
-    videos = await prisma.video.findMany({
-      where: { ...visibilityFilter, ...(type ? { videoType: type } : {}), ...circleFilter, ...followingFilter, AND: [notInPrivateCommunity] },
-      orderBy,
-      take: Number(limit),
-      ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
-      include: {
-        user: { select: { id: true, username: true, avatarUrl: true, stripeOnboarded: true } },
-        track: { include: { artist: { select: { stageName: true } } } },
-      },
-    });
-    nextCursor = videos.length === Number(limit) ? videos[videos.length - 1].id : null;
+    const where = { ...visibilityFilter, ...(type ? { videoType: type } : {}), ...circleFilter, ...followingFilter, AND: [notInPrivateCommunity] };
+    const take = Number(limit);
+    const prefLangs = sort === 'ranked' && req.userId
+      ? (await prisma.user.findUnique({ where: { id: req.userId }, select: { contentLanguages: true } }))?.contentLanguages || []
+      : [];
+
+    if (prefLangs.length) {
+      // Two streams, each already in (rankingScore, createdAt) order: videos in the viewer's languages and
+      // everything else. Merge them by boosted score. The cursor is one id per stream ("l:<match>:<other>"),
+      // so paging stays exact, with no offsets and no duplicates.
+      const [, curM, curO] = typeof cursor === 'string' && cursor.startsWith('l:') ? cursor.split(':') : [];
+      const stream = (extra, cur) => prisma.video.findMany({
+        where: { ...where, ...extra },
+        orderBy: [{ rankingScore: 'desc' }, { createdAt: 'desc' }, { id: 'asc' }],
+        take,
+        ...(cur ? { skip: 1, cursor: { id: cur } } : {}),
+        include: FEED_INCLUDE,
+      });
+      const [m, o] = await Promise.all([
+        stream({ language: { in: prefLangs } }, curM),
+        stream({ language: { notIn: prefLangs } }, curO),
+      ]);
+      videos = [];
+      let i = 0;
+      let j = 0;
+      while (videos.length < take && (i < m.length || j < o.length)) {
+        const takeMatch = j >= o.length || (i < m.length && boosted(m[i], true) >= boosted(o[j], false));
+        videos.push(takeMatch ? m[i++] : o[j++]);
+      }
+      const done = i >= m.length && j >= o.length && m.length < take && o.length < take;
+      nextCursor = done ? null : `l:${(i ? m[i - 1].id : curM) || ''}:${(j ? o[j - 1].id : curO) || ''}`;
+    } else {
+      videos = await prisma.video.findMany({
+        where,
+        orderBy,
+        take,
+        // A language-feed cursor ('l:…') from before the viewer cleared their languages just restarts the page.
+        ...(cursor && !String(cursor).startsWith('l:') ? { skip: 1, cursor: { id: cursor } } : {}),
+        include: FEED_INCLUDE,
+      });
+      nextCursor = videos.length === take ? videos[videos.length - 1].id : null;
+    }
   }
 
   let followedIds = new Set();

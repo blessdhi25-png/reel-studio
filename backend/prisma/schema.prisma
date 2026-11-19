@@ -251,6 +251,8 @@ model Video {
   mediaType       MediaType   @default(video)
   // Validated [{ id, text, x, y, size, font, color, pill, pillColor }] — see utils/textOverlays.js.
   textOverlays    Json?
+  // Language the post is written/spoken in (utils/languages.js codes); drives feed language ranking.
+  language        String      @default("en")
   status          VideoStatus @default(processing)
   boostedUntil    DateTime?
   createdAt       DateTime    @default(now())
@@ -278,6 +280,7 @@ model Video {
 
   @@index([circle])
   @@index([communityId])
+  @@index([language, rankingScore])
 }
 
 // Communities/Interest Circles — a real, user-created group with
@@ -842,4 +845,16 @@ model WebAuthnChallenge {
   expiresAt DateTime
 
   @@index([userId])
+}
+
+// Cached machine translations (routes/translate.js), keyed by a hash of the source text.
+model TranslationCache {
+  id          String   @id @default(cuid())
+  hash        String
+  targetLang  String
+  sourceLang  String?
+  translated  String
+  createdAt   DateTime @default(now())
+
+  @@unique([hash, targetLang])
 }

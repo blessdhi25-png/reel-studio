@@ -14,6 +14,7 @@ import { useToast } from '@/context/ToastContext';
 import { useStaffAccess } from '@/hooks/useStaffAccess';
 import { usePref } from '@/lib/settingsPrefs';
 import { languageByCode } from '@/lib/languages';
+import { useLanguage } from '@/context/LanguageContext';
 import { formatBytes, getCachedMediaBytes, isCacheSupported } from '@/lib/storageCache';
 import { dailyAverageSeconds, formatDuration, readUsage, weekUsage } from '@/lib/screenTime';
 import ConfirmModal from '@/components/ConfirmModal';
@@ -32,6 +33,7 @@ const ic = (Icon) => <Icon size={18} strokeWidth={2.25} />;
 export default function SettingsDashboardPage() {
   const router = useRouter();
   const toast = useToast();
+  const { t } = useLanguage();
   const { user, ready, isAuthenticated, logout } = useAuth();
   // Admin visibility is decided by the backend (GET /admin/me re-reads the role
   // from the database), not by the role string cached in localStorage — which
@@ -220,9 +222,9 @@ export default function SettingsDashboardPage() {
 
       {confirmLogout && (
         <ConfirmModal
-          title="Log out of ClipPulse?"
-          message="You'll need to sign in again to access your account."
-          confirmLabel="Log Out"
+          title={t('logout.title')}
+          message={t('logout.message')}
+          confirmLabel={t('common.logOut')}
           onConfirm={handleLogout}
           onCancel={() => setConfirmLogout(false)}
         />

@@ -6,6 +6,8 @@ import { ImagePlus, X, Loader2 } from 'lucide-react';
 import { ALLOWED_CIRCLES } from '@/lib/circles';
 import { xhrUpload } from '@/lib/xhrUpload';
 import PhotoMedia from './PhotoMedia';
+import { usePref } from '@/lib/settingsPrefs';
+import { defaultPostLanguage } from '@/lib/postLanguage';
 import TextOverlayEditor from './TextOverlayEditor';
 
 const MAX_BYTES = 20 * 1024 * 1024;
@@ -61,6 +63,8 @@ async function normalizeImage(file) {
 }
 
 export default function UploadStudio({ communityTarget, initialFile, onSwitchToVideo, onExit }) {
+  const [contentLangs] = usePref('contentLanguages');
+  const [displayLang] = usePref('displayLanguage');
   const router = useRouter();
   const inputRef = useRef(null);
   const xhrRef = useRef(null);
@@ -116,6 +120,7 @@ export default function UploadStudio({ communityTarget, initialFile, onSwitchToV
     const fd = new FormData();
     fd.append('photo', file);
     fd.append('caption', caption);
+    fd.append('language', defaultPostLanguage(contentLangs, displayLang)); // no picker on the photo flow yet
     if (circle) fd.append('circle', circle);
     if (overlays.length) fd.append('textOverlays', JSON.stringify(overlays));
     try {
