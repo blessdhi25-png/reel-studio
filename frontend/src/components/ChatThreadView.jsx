@@ -14,6 +14,7 @@ import CallLogIcon from './CallLogIcon';
 import { LoadingSpinner } from './LoadingScreen';
 import SwipeableRow from './SwipeableRow';
 import MessageActionSheet, { DeleteMessageDialog } from './MessageActionSheet';
+import LinkifiedText from './LinkifiedText';
 import ForwardPicker from './ForwardPicker';
 
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
@@ -490,7 +491,7 @@ export default function ChatThreadView({ otherUserId }) {
                           </button>
                         )}
                         {m.attachmentUrl && <Attachment message={m} mine={mine} />}
-                        <span className="break-words whitespace-pre-wrap">{m.content}</span>
+                        <LinkifiedText text={m.content} />
                       </>
                     )}
                   </div>

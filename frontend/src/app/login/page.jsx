@@ -108,7 +108,9 @@ function LoginForm() {
       } else {
         window.localStorage.removeItem(REMEMBER_KEY);
       }
-      router.push('/');
+      // Return to where the visit started (e.g. a live-stream invite link). Same-site paths only.
+      const from = searchParams.get('from');
+      router.push(from && /^\/(?!\/)/.test(from) ? from : '/');
     } catch (err) {
       if (err.needsVerification) {
         router.push(`/verify-email?email=${encodeURIComponent(err.email || form.email)}`);

@@ -15,7 +15,7 @@ const isStaff = (req) => req.userRole === 'admin' || req.userRole === 'moderator
 
 const AUTHOR = { select: { id: true, username: true } };
 // Staff also see the submitter's contact email and avatar so they can follow up.
-const SUBMITTER = { select: { id: true, username: true, email: true, avatarUrl: true } };
+const SUBMITTER = { select: { id: true, username: true, displayName: true, email: true, avatarUrl: true } };
 const clean = (v, max) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
 
 // adminNote is internal: never leaves the server for the ticket's owner.
@@ -47,14 +47,14 @@ const notify = (ticket, actorId, content) =>
     .create({ data: { userId: ticket.userId, actorId, type: 'system', content, targetType: 'support_ticket', targetId: ticket.id } })
     .catch(() => {});
 
-// GET /support/tickets[?scope=all&status=OPEN]   mine (newest activity first); staff may pass scope=all
+// GET /support/tickets[?scope=all&status=OPEN]   mine, newest first; staff may pass scope=all for every user's tickets
 router.get('/tickets', requireAuth, asyncHandler(async (req, res) => {
   const all = req.query.scope === 'all';
   if (all && !isStaff(req)) return res.status(403).json({ error: 'Insufficient permissions' });
   const status = STATUSES.includes(req.query.status) ? req.query.status : undefined;
   const tickets = await prisma.supportTicket.findMany({
     where: { ...(all ? {} : { userId: req.userId }), ...(status ? { status } : {}) },
-    orderBy: { updatedAt: 'desc' },
+    orderBy: { createdAt: 'desc' },
     take: 100,
     select: {
       id: true, title: true, issueType: true, description: true, status: true, deviceInfo: true, locationText: true,

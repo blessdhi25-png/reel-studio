@@ -1,9 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api';
 import { useToast } from '@/context/ToastContext';
 import ConfirmModal from '@/components/ConfirmModal';
+import SupportTicketsQueue from '@/components/staff/SupportTicketsQueue';
 
 // Shared dashboard for the admin (/admin) and moderator (/moderator) portals:
 // KPI cards on top, then the flagged-video review queue with Approve / Delete /
@@ -108,6 +110,8 @@ export default function StaffDashboard({ mode = 'moderator', theme = 'light', vi
   const [error, setError] = useState(null);
   const [busyId, setBusyId] = useState(null);
   const [confirm, setConfirm] = useState(null); // { kind: 'delete' | 'ban', item }
+  const [tab, setTab] = useState('review'); // review | support
+  const [openTickets, setOpenTickets] = useState(null); // badge on the Support tickets tab
 
   const load = useCallback(async () => {
     setError(null);
@@ -123,6 +127,17 @@ export default function StaffDashboard({ mode = 'moderator', theme = 'light', vi
   useEffect(() => {
     load();
   }, [load]);
+
+  // ?tab=support deep-links straight to the tickets tab (the admin sidebar link uses it).
+  const wantsSupport = useSearchParams().get('tab') === 'support';
+  useEffect(() => {
+    if (wantsSupport) setTab('support');
+  }, [wantsSupport]);
+
+  // Badge: open tickets waiting for a response.
+  useEffect(() => {
+    api.listSupportTickets({ scope: 'all', status: 'OPEN' }).then((r) => setOpenTickets((r.tickets || []).length)).catch(() => {});
+  }, []);
 
   // Drop the card locally and refresh the KPI numbers in the background.
   async function afterAction(item, message) {
@@ -182,6 +197,28 @@ export default function StaffDashboard({ mode = 'moderator', theme = 'light', vi
         </div>
       )}
 
+      <div role="tablist" className="flex gap-2 mb-6">
+        {[['review', 'Review queue'], ['support', 'Support tickets']].map(([key, label]) => (
+          <button
+            key={key}
+            role="tab"
+            aria-selected={tab === key}
+            type="button"
+            onClick={() => setTab(key)}
+            className={`px-4 py-2 rounded-xl text-sm font-extrabold tracking-tight border transition-colors ${tab === key ? 'bg-amber-500 border-amber-500 text-black' : t.outlineBtn}`}
+          >
+            {label}
+            {key === 'support' && openTickets > 0 && (
+              <span className={`ml-2 rounded-full px-1.5 py-0.5 text-[11px] font-black ${tab === key ? 'bg-black/20' : 'bg-amber-500 text-black'}`}>{openTickets}</span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'support' ? (
+        <SupportTicketsQueue t={t} onCount={setOpenTickets} />
+      ) : (
+      <>
       <div className={`grid gap-3 mb-8 ${isAdmin ? 'grid-cols-2 lg:grid-cols-4' : 'grid-cols-2 lg:grid-cols-5'}`}>
         {kpis.map((k) => (
           <KpiCard key={k.key} t={t} label={k.label} hint={k.hint} tone={k.tone} value={stats ? stats[k.key] : undefined} />
@@ -257,6 +294,9 @@ export default function StaffDashboard({ mode = 'moderator', theme = 'light', vi
           );
         })}
       </ul>
+
+      </>
+      )}
 
       {confirm && (
         <ConfirmModal

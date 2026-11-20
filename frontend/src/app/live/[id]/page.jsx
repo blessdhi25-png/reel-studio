@@ -2,13 +2,14 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { MessageSquare, Mic, MicOff, MonitorUp, PhoneOff, Smile, SwitchCamera, Video, VideoOff, X } from 'lucide-react';
+import { MessageSquare, Mic, MicOff, MonitorUp, PhoneOff, Smile, SwitchCamera, UserPlus, Video, VideoOff, X } from 'lucide-react';
 import { api } from '@/lib/api';
 import { getSocket } from '@/lib/socket';
 import { useCameraDevices } from '@/lib/useCameraDevices';
 import CameraDeviceSelect from '@/components/CameraDeviceSelect';
 import { LoadingSpinner } from '@/components/LoadingScreen';
 import TipModal from '@/components/TipModal';
+import InviteSheet from '@/components/live/InviteSheet';
 
 const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
 const QUICK_REACTIONS = ['❤️', '🔥', '👏', '🚀', '😂'];
@@ -41,6 +42,7 @@ export default function LiveRoomPage({ params }) {
   const [pinned, setPinned] = useState(null);
   const [floatingReactions, setFloatingReactions] = useState([]);
   const [showTip, setShowTip] = useState(false);
+  const [showInvite, setShowInvite] = useState(false);
   const [screenStream, setScreenStream] = useState(null); // active screen share (also our outgoing video)
   const [canDisplayShare, setCanDisplayShare] = useState(false);
   const [streamEnded, setStreamEnded] = useState(false); // host ended the stream while we were in the room
@@ -82,7 +84,8 @@ export default function LiveRoomPage({ params }) {
 
   useEffect(() => {
     if (!localStorage.getItem('token')) {
-      router.push('/login');
+      // Come back to this room after logging in (an invite link opened while logged out).
+      router.push(`/login?from=${encodeURIComponent(`/live/${streamId}`)}`);
       return;
     }
     const storedUser = JSON.parse(localStorage.getItem('user') || 'null');
@@ -739,9 +742,17 @@ export default function LiveRoomPage({ params }) {
 
   if (!stream) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-zinc-950">
+      <main className="min-h-screen flex items-center justify-center bg-zinc-950 px-6 text-center">
         {error ? (
-          <p className="text-sm text-zinc-400">{error}</p>
+          // Invite link to a stream that doesn't exist (or a network failure): say so and offer a way out.
+          <div>
+            <p className="text-lg font-extrabold text-white">{/not found/i.test(error) ? 'This live stream isn’t available' : 'Couldn’t open this live stream'}</p>
+            <p className="text-sm text-zinc-400 mt-1.5">{/not found/i.test(error) ? 'The link may be wrong, or the stream was removed.' : 'Connection lost. Please try again.'}</p>
+            <div className="flex justify-center gap-3 mt-5">
+              <button type="button" onClick={() => router.push('/live')} className="px-5 py-2.5 rounded-xl bg-amber-500 text-black font-bold text-sm">Browse live streams</button>
+              {!/not found/i.test(error) && <button type="button" onClick={() => window.location.reload()} className="px-5 py-2.5 rounded-xl bg-zinc-800 text-white font-bold text-sm">Try again</button>}
+            </div>
+          </div>
         ) : (
           <LoadingSpinner label="Loading…" />
         )}
@@ -1088,6 +1099,11 @@ export default function LiveRoomPage({ params }) {
               <MessageSquare size={20} />
             </ToolbarButton>
           )}
+          {(joined || isHost) && !hasEnded && (
+            <ToolbarButton label="Invite friends" onClick={() => setShowInvite(true)}>
+              <UserPlus size={20} />
+            </ToolbarButton>
+          )}
           {joined && !hasEnded && (
             <ToolbarButton
               label={reactionsOpen ? 'Hide reactions' : 'Show reactions'}
@@ -1239,6 +1255,8 @@ export default function LiveRoomPage({ params }) {
           </div>
         </div>
       )}
+
+      {showInvite && <InviteSheet streamId={streamId} stream={stream} onClose={() => setShowInvite(false)} />}
 
       {showTip && (
         <TipModal

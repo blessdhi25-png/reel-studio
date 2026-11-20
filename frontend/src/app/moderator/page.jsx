@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
@@ -67,7 +67,7 @@ export default function ModeratorPage() {
         </div>
       </header>
       <main className="max-w-5xl mx-auto px-4 py-6">
-        {role ? <StaffDashboard mode="moderator" theme="light" viewerRole={role} /> : <p className="text-sm font-bold text-slate-500">Checking access…</p>}
+        {role ? <Suspense fallback={null}><StaffDashboard mode="moderator" theme="light" viewerRole={role} /></Suspense> : <p className="text-sm font-bold text-slate-500">Checking access…</p>}
       </main>
     </div>
   );
