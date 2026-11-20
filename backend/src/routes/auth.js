@@ -27,10 +27,14 @@ const CODE_EXPIRY_MS = 15 * 60 * 1000; // 15 minutes
 const RESEND_COOLDOWN_MS = 60 * 1000; // 1 minute between resends
 const RESET_TOKEN_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
 
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
-const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+// Hosting dashboards make it easy to paste a value with a trailing newline, spaces or wrapping quotes;
+// any of those turns into a Google "400 … malformed request" page, so normalise before use.
+const cleanEnv = (v) => (v || '').trim().replace(/^["']|["']$/g, '').trim();
+const GOOGLE_CLIENT_ID = cleanEnv(process.env.GOOGLE_CLIENT_ID);
+const GOOGLE_CLIENT_SECRET = cleanEnv(process.env.GOOGLE_CLIENT_SECRET);
 const GOOGLE_REDIRECT_URI =
-  process.env.GOOGLE_REDIRECT_URI || `${process.env.BASE_URL || 'http://localhost:4000'}/api/v1/auth/google/callback`;
+  cleanEnv(process.env.GOOGLE_REDIRECT_URI) ||
+  `${cleanEnv(process.env.BASE_URL).replace(/\/+$/, '') || 'http://localhost:4000'}/api/v1/auth/google/callback`;
 // No trailing slash (a "https://site/" value would produce "//login" redirects).
 const FRONTEND_URL = (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '');
 if (process.env.NODE_ENV === 'production' && /localhost|127\.0\.0\.1/.test(FRONTEND_URL)) {
@@ -464,10 +468,15 @@ router.post('/logout', (_req, res) => {
 // the URL, where a small callback page picks it up and stores it.
 
 router.get('/google', (_req, res) => {
-  if (!GOOGLE_CLIENT_ID) {
-    return res
-      .status(500)
-      .send('Google sign-in is not configured on this server. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.');
+  if (!GOOGLE_CLIENT_ID) return loginRedirect(res, 'google_not_configured');
+
+  // Don't send people to a Google page we already know will fail. A client ID is always
+  // "<digits>-<hash>.apps.googleusercontent.com", and the redirect URI must be an absolute http(s) URL.
+  let redirectOk = false;
+  try { redirectOk = /^https?:$/.test(new URL(GOOGLE_REDIRECT_URI).protocol); } catch {}
+  if (!/^[\w-]+\.apps\.googleusercontent\.com$/.test(GOOGLE_CLIENT_ID) || !redirectOk) {
+    console.error('[auth/google] GOOGLE_CLIENT_ID or GOOGLE_REDIRECT_URI is malformed (check for stray spaces, quotes or a missing https://).');
+    return loginRedirect(res, 'google_misconfigured');
   }
 
   const params = new URLSearchParams({

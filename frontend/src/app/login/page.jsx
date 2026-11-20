@@ -55,6 +55,7 @@ const OAUTH_ERROR_MESSAGES = {
   google_state_invalid: 'The Google sign-in session expired. Please try again.',
   google_token_exchange_failed: 'Google rejected the sign-in (check the server\'s Google client ID, secret and redirect URL).',
   google_profile_failed: 'We couldn\'t read your Google profile. Please try again.',
+  google_misconfigured: 'Google sign-in is misconfigured on the server (client ID or redirect URL is malformed).',
   server_misconfigured: 'The server isn\'t fully configured for sign-in yet.',
   server_schema_outdated: 'The server database is out of date. The site owner needs to apply the latest migrations.',
   server_db_unreachable: 'The server couldn\'t reach its database. Please try again shortly.',
