@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { api } from '../../../lib/api';
 import { useAuth } from '../../../context/AuthContext';
@@ -10,11 +10,14 @@ function GoogleCallbackInner() {
   const searchParams = useSearchParams();
   const { login } = useAuth();
   const [error, setError] = useState(null);
+  const ran = useRef(false);
 
   useEffect(() => {
+    if (ran.current) return; // Strict Mode / re-renders must not run the handshake twice
+    ran.current = true;
     const token = searchParams.get('token');
     if (!token) {
-      router.replace('/login?error=google_failed');
+      router.replace('/login?authError=google_failed');
       return;
     }
 
@@ -30,7 +33,18 @@ function GoogleCallbackInner() {
         login(token, user);
         router.replace('/');
       })
-      .catch(() => {
+      .catch((err) => {
+        // The server explicitly refused this token (not a network blip): don't keep a dead session
+        // that every guard would then bounce — go to /login and say why. Suspended/banned accounts
+        // are handled by the lockdown screen, so they continue to '/'.
+        if (err?.status === 401) {
+          try {
+            window.localStorage.removeItem('token');
+            window.localStorage.removeItem('user');
+          } catch {}
+          router.replace('/login?authError=session_rejected');
+          return;
+        }
         // Token was issued but the profile fetch failed (e.g. transient
         // network hiccup) — the token is still valid, so let the person in
         // and let the rest of the app refetch the user as needed.

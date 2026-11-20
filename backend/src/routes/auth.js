@@ -31,7 +31,11 @@ const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 const GOOGLE_REDIRECT_URI =
   process.env.GOOGLE_REDIRECT_URI || `${process.env.BASE_URL || 'http://localhost:4000'}/api/v1/auth/google/callback`;
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
+// No trailing slash (a "https://site/" value would produce "//login" redirects).
+const FRONTEND_URL = (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '');
+if (process.env.NODE_ENV === 'production' && /localhost|127\.0\.0\.1/.test(FRONTEND_URL)) {
+  console.warn('[auth] FRONTEND_URL points at localhost in production — Google sign-in will redirect people to the wrong site.');
+}
 
 // Used to verify One-Tap/GSI id_tokens (POST /google below). The redirect
 // flow (GET /google/callback) doesn't need this client — it exchanges the
@@ -478,18 +482,33 @@ router.get('/google', (_req, res) => {
   res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`);
 });
 
+// Every failure in the callback lands on /login?authError=<code> so the sign-in screen can say what
+// happened instead of silently bouncing. Codes are fixed strings — never raw error text or secrets.
+function loginRedirect(res, code) {
+  return res.redirect(`${FRONTEND_URL}/login?authError=${encodeURIComponent(code)}`);
+}
+
+// Maps a thrown error to a safe, coarse code (details stay in the server log).
+function classifyGoogleError(err) {
+  const c = err?.code;
+  if (c === 'P2021' || c === 'P2022') return 'server_schema_outdated'; // migrations not applied
+  if (c === 'P1001' || c === 'P1002' || c === 'P1008' || c === 'P1017') return 'server_db_unreachable';
+  if (c === 'P2002') return 'account_conflict'; // unique constraint (username/email/googleId)
+  if (c && String(c).startsWith('P')) return 'server_db_error';
+  return 'google_failed';
+}
+
 router.get('/google/callback', asyncHandler(async (req, res) => {
   const { code, state, error: googleError } = req.query;
 
-  if (googleError) {
-    return res.redirect(`${FRONTEND_URL}/login?error=google_denied`);
+  if (googleError) return loginRedirect(res, googleError === 'access_denied' ? 'google_denied' : 'google_failed');
+  if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) return loginRedirect(res, 'google_not_configured');
+  if (!process.env.JWT_SECRET) {
+    console.error('[auth/google-callback] JWT_SECRET is not set');
+    return loginRedirect(res, 'server_misconfigured');
   }
-  if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
-    return res.redirect(`${FRONTEND_URL}/login?error=google_not_configured`);
-  }
-  if (!code || !state || !verifyOAuthState(state)) {
-    return res.redirect(`${FRONTEND_URL}/login?error=google_failed`);
-  }
+  if (!code) return loginRedirect(res, 'google_failed');
+  if (!state || !verifyOAuthState(state)) return loginRedirect(res, 'google_state_invalid'); // expired (>10 min) or tampered
 
   try {
     const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
@@ -505,8 +524,9 @@ router.get('/google/callback', asyncHandler(async (req, res) => {
     });
     const tokenData = await tokenRes.json();
     if (!tokenRes.ok || !tokenData.access_token) {
-      console.error('[auth] Google token exchange failed:', tokenData);
-      return res.redirect(`${FRONTEND_URL}/login?error=google_failed`);
+      // invalid_grant / redirect_uri_mismatch / invalid_client — the Google error name is safe to log.
+      console.error('[auth] Google token exchange failed:', tokenData.error, tokenData.error_description);
+      return loginRedirect(res, 'google_token_exchange_failed');
     }
 
     const profileRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
@@ -514,25 +534,21 @@ router.get('/google/callback', asyncHandler(async (req, res) => {
     });
     const profile = await profileRes.json();
     if (!profileRes.ok || !profile.sub || !profile.email) {
-      console.error('[auth] Google profile fetch failed:', profile);
-      return res.redirect(`${FRONTEND_URL}/login?error=google_failed`);
+      console.error('[auth] Google profile fetch failed:', profile.error || profileRes.status);
+      return loginRedirect(res, 'google_profile_failed');
     }
-    if (profile.email_verified === false) {
-      return res.redirect(`${FRONTEND_URL}/login?error=google_email_unverified`);
-    }
+    if (profile.email_verified === false) return loginRedirect(res, 'google_email_unverified');
 
     const user = await findOrCreateGoogleUser(profile);
 
     const blocked = blockedReasonFor(user);
-    if (blocked) {
-      return res.redirect(`${FRONTEND_URL}/login?error=${blocked}`);
-    }
+    if (blocked) return loginRedirect(res, blocked);
 
     const jwtToken = signToken(user);
-    res.redirect(`${FRONTEND_URL}/auth/callback?token=${jwtToken}`);
+    res.redirect(`${FRONTEND_URL}/auth/callback?token=${encodeURIComponent(jwtToken)}`);
   } catch (err) {
-    console.error('[auth/google-callback error]:', err.stack || err);
-    res.redirect(`${FRONTEND_URL}/login?error=google_failed`);
+    console.error('[auth/google-callback error]:', err.code || '', err.stack || err);
+    loginRedirect(res, classifyGoogleError(err));
   }
 }));
 

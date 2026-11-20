@@ -52,6 +52,15 @@ const OAUTH_ERROR_MESSAGES = {
   google_failed: 'Google sign-in failed. Please try again.',
   google_not_configured: 'Google sign-in isn\'t set up on this server yet.',
   google_email_unverified: 'Your Google email isn\'t verified — verify it with Google first.',
+  google_state_invalid: 'The Google sign-in session expired. Please try again.',
+  google_token_exchange_failed: 'Google rejected the sign-in (check the server\'s Google client ID, secret and redirect URL).',
+  google_profile_failed: 'We couldn\'t read your Google profile. Please try again.',
+  server_misconfigured: 'The server isn\'t fully configured for sign-in yet.',
+  server_schema_outdated: 'The server database is out of date. The site owner needs to apply the latest migrations.',
+  server_db_unreachable: 'The server couldn\'t reach its database. Please try again shortly.',
+  server_db_error: 'The server hit a database error while signing you in.',
+  account_conflict: 'An account with these details already exists. Try signing in with your email and password.',
+  session_rejected: 'Your session was rejected. Please sign in again.',
   account_banned: 'This account has been banned.',
   account_suspended: 'This account is suspended.',
 };
@@ -83,9 +92,17 @@ function LoginForm() {
   }, []);
 
   useEffect(() => {
-    const oauthError = searchParams.get('error');
+    // authError is the current param; `error` is kept for links issued before it existed.
+    const oauthError = searchParams.get('authError') || searchParams.get('error');
     if (oauthError) {
       setError(OAUTH_ERROR_MESSAGES[oauthError] || 'Something went wrong signing in with Google.');
+      // Drop the param so a refresh doesn't replay the message (keeps `from` for the return trip).
+      try {
+        const u = new URL(window.location.href);
+        u.searchParams.delete('authError');
+        u.searchParams.delete('error');
+        window.history.replaceState(window.history.state, '', u.pathname + u.search);
+      } catch {}
     }
   }, [searchParams]);
 
