@@ -210,6 +210,9 @@ model User {
   supportTickets      SupportTicket[]
   supportReplies      SupportTicketReply[]
   policiesEdited      PlatformPolicy[] @relation("policyEditor")
+  // Tokens issued before this moment are rejected ("sign out of all other devices").
+  sessionsRevokedAt   DateTime?
+  syncedContacts      SyncedContact[]
   // Language preferences (Settings → Language). displayLanguage is a BCP-47-ish code from
   // utils/languages.js; contentLanguages are the languages the person wants to see videos in.
   displayLanguage     String   @default("en")
