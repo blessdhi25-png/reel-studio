@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { PROTECTED_PREFIXES } from './lib/protectedRoutes';
+import { PROTECTED_PREFIXES, isPublicPath } from './lib/protectedRoutes';
 
 // Route guard for signed-in-only screens (see lib/protectedRoutes.js) and the /admin/* + /moderator/* sections.
 // This is a UX-layer gate, not the real security boundary — the backend re-verifies the JWT (and re-reads
@@ -37,9 +37,14 @@ export function middleware(request) {
   const role = request.cookies.get('role')?.value;
   const { pathname } = request.nextUrl;
 
+  // Public/auth routes always pass straight through. The matcher already excludes them, but this keeps
+  // the guarantee local to the redirect logic: nothing here may ever redirect /login (or any redirect
+  // target) back onto itself.
+  if (isPublicPath(pathname)) return NextResponse.next();
+
   if (!token) {
     const loginUrl = new URL('/login', request.url);
-    loginUrl.searchParams.set('from', pathname);
+    loginUrl.searchParams.set('from', pathname + request.nextUrl.search);
     return noStore(NextResponse.redirect(loginUrl));
   }
 
@@ -47,6 +52,7 @@ export function middleware(request) {
   const isModerator = pathname === '/moderator' || pathname.startsWith('/moderator/');
   if (isAdmin || isModerator) {
     const allowed = isModerator ? MODERATOR_ROLES : ADMIN_ROLES;
+    // '/' is public, so this single hop ends there.
     if (!allowed.includes(role)) return noStore(NextResponse.redirect(new URL('/', request.url)));
   }
 

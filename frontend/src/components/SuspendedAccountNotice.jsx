@@ -22,7 +22,8 @@ export default function SuspendedAccountNotice({ code = 'ACCOUNT_SUSPENDED', rea
   function handleLogout() {
     onLogout?.();
     // Full load: drops sockets, cached feeds and any other state keyed to the locked account.
-    window.location.replace('/login');
+    if (window.location.pathname === '/login') window.location.reload();
+    else window.location.replace('/login');
   }
 
   return (

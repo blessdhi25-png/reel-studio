@@ -119,7 +119,7 @@ export function AuthProvider({ children }) {
     // no code and makes no request, so after a logout it would still show the signed-in screen. When
     // one comes back with no session behind it, hard-redirect to /login instead.
     function onPageShow(e) {
-      if (e.persisted && !readStoredToken() && isProtectedPath(window.location.pathname)) {
+      if (e.persisted && !readStoredToken() && isProtectedPath(window.location.pathname) && window.location.pathname !== '/login') {
         window.location.replace('/login');
       }
     }

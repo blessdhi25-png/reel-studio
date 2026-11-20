@@ -32,8 +32,8 @@ export default function AppShell({ children }) {
   // never render it — bounce to /login. Replacing the history entry keeps Back from re-opening it.
   const needsLogin = ready && !isAuthenticated && !suspension && isProtectedPath(pathname);
   useEffect(() => {
-    if (needsLogin) router.replace('/login');
-  }, [needsLogin, router]);
+    if (needsLogin && pathname !== '/login') router.replace('/login');
+  }, [needsLogin, pathname, router]);
   const [timedOut, setTimedOut] = useState(false);
 
   useEffect(() => {

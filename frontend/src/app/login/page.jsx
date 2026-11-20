@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { api, googleAuthUrl, pingServer } from '../../lib/api';
 import { useAuth } from '../../context/AuthContext';
 import AuthHero from '../../components/AuthHero';
+import { safeReturnPath } from '../../lib/protectedRoutes';
 
 function GoogleIcon() {
   return (
@@ -110,7 +111,7 @@ function LoginForm() {
       }
       // Return to where the visit started (e.g. a live-stream invite link). Same-site paths only.
       const from = searchParams.get('from');
-      router.push(from && /^\/(?!\/)/.test(from) ? from : '/');
+      router.push(safeReturnPath(from));
     } catch (err) {
       if (err.needsVerification) {
         router.push(`/verify-email?email=${encodeURIComponent(err.email || form.email)}`);

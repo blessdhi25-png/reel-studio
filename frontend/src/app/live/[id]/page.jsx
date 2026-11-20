@@ -580,14 +580,20 @@ export default function LiveRoomPage({ params }) {
     localStreamRef.current?.getTracks().forEach((t) => t.stop());
     localStreamRef.current = null;
     setLocalStream(null);
-    const shareTrack = screenTrackRef.current;
-    if (shareTrack) {
-      shareTrack.onended = null;
-      shareTrack.stop();
-    }
+    stopDisplayTracks();
     screenTrackRef.current = null;
     screenStreamRef.current = null;
     setScreenStream(null);
+  }
+
+  // Stops every track of the display stream (not just the video one) so the browser's
+  // "sharing your screen" indicator goes away, and detaches onended so it can't re-enter.
+  function stopDisplayTracks() {
+    const tracks = new Set([...(screenStreamRef.current?.getTracks() || []), screenTrackRef.current].filter(Boolean));
+    tracks.forEach((t) => {
+      t.onended = null;
+      try { t.stop(); } catch {}
+    });
   }
 
   // Point every peer connection at a new outgoing video track (screen <-> camera), renegotiating
@@ -659,14 +665,14 @@ export default function LiveRoomPage({ params }) {
   }
 
   async function stopScreenShare() {
-    const track = screenTrackRef.current;
-    if (!track) return;
-    track.onended = null;
-    track.stop();
+    if (!screenTrackRef.current) return; // already stopped (the browser bar and our button can both fire)
+    stopDisplayTracks(); // screenStream.getTracks().forEach((t) => t.stop())
     screenTrackRef.current = null;
     screenStreamRef.current = null;
     setScreenStream(null);
     getSocket()?.emit('live:screen-share', { streamId, active: false });
+    // Hand peers the camera track again. Its enabled flag already reflects the camera toggle, so a
+    // camera that was off stays off (peers see the avatar), one that was on resumes immediately.
     await swapOutgoingVideo(localStreamRef.current?.getVideoTracks()[0] || null);
   }
 
@@ -770,16 +776,22 @@ export default function LiveRoomPage({ params }) {
   const remoteWithMedia = peerList.filter(([, p]) => p.mediaStream);
   const hostEntry = peerList.find(([, p]) => p.userId === stream.hostId);
   const hostPeer = hostEntry && hostEntry[1].mediaStream ? hostEntry : null;
-  const localPreview = screenStream || localStream;
-  const localShowsAvatar = !localPreview || (!screenStream && !cameraOn);
+  // The local preview only ever shows the CAMERA. While sharing, the presenter slot renders a static
+  // "You are sharing your screen" card instead of the display stream: previewing your own screen
+  // inside the screen you're capturing is what produced the endless "hall of mirrors".
+  const sharingSelf = !!screenStream;
+  const watchingCount = Math.max(viewerCount - 1, 0); // everyone except you
   const localTile = {
     id: 'local',
-    stream: localPreview,
+    stream: sharingSelf ? null : localStream,
     label: isHost ? 'You' : '@you',
     muted: true,
-    mirror: !screenStream && facingMode !== 'environment',
-    contain: !!screenStream,
-    forceAvatar: localShowsAvatar,
+    mirror: facingMode !== 'environment',
+    contain: sharingSelf,
+    sharingSelf,
+    watchingCount,
+    onStopSharing: stopScreenShare,
+    forceAvatar: !sharingSelf && (!localStream || !cameraOn),
     avatarUrl: isHost ? stream.host?.avatarUrl : null,
     initial: isHost ? stream.host?.username?.[0] : 'Y',
     isLocal: true,
@@ -795,7 +807,10 @@ export default function LiveRoomPage({ params }) {
   });
   const remoteTiles = remoteWithMedia.map(remoteTile);
   const hasLocalPreview = !!(localStream || screenStream);
-  const sharingTile = (screenStream ? localTile : null) || remoteTiles.find((t) => t.contain) || null;
+  const sharingTile = (sharingSelf ? localTile : null) || remoteTiles.find((t) => t.contain) || null;
+  // While a screen is on stage, the shared content comes first: title card, pinned banner and extra
+  // status chips step aside (chat lives in the drawer, pins are still readable there).
+  const focusShare = !!sharingTile;
 
   let stageTiles = [];
   let stripTiles = [];
@@ -865,6 +880,7 @@ export default function LiveRoomPage({ params }) {
               <StreamTile
                 key={t.id}
                 {...t}
+                hideLabel={focusShare}
                 retryKey={previewNonce}
                 onPlayBlocked={t.isLocal ? () => setCameraIssue((c) => c || 'play') : undefined}
                 className={`w-full h-full min-h-0 ${stageTiles.length === 3 && i === 2 ? 'col-span-2' : ''}`}
@@ -887,14 +903,15 @@ export default function LiveRoomPage({ params }) {
 
       {/* ---------- Floating picture-in-picture tiles ---------- */}
       {joined && stripTiles.length > 0 && (
-        <div className="absolute top-20 right-3 z-20 flex flex-col gap-2 max-h-[55vh] overflow-y-auto no-scrollbar">
+        <div className={`absolute right-3 z-20 flex flex-col gap-2 max-h-[55vh] overflow-y-auto no-scrollbar ${focusShare ? 'top-14' : 'top-20'}`}>
           {stripTiles.map((t) => (
             <StreamTile
               key={t.id}
               {...t}
               retryKey={previewNonce}
               onPlayBlocked={t.isLocal ? () => setCameraIssue((c) => c || 'play') : undefined}
-              className="w-24 sm:w-32 aspect-[3/4] rounded-xl overflow-hidden border border-zinc-700 shadow-xl"
+              className={`${focusShare ? 'w-16 sm:w-24' : 'w-24 sm:w-32'} aspect-[3/4] rounded-xl overflow-hidden border border-zinc-700 shadow-xl`}
+              hideLabel={focusShare}
               compact
             />
           ))}
@@ -945,13 +962,16 @@ export default function LiveRoomPage({ params }) {
           <span className="bg-red-600/90 backdrop-blur-md text-white text-xs font-bold px-3 py-1.5 rounded-full flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" /> LIVE 🔴
           </span>
-          <span className="bg-zinc-900/80 backdrop-blur-md border border-zinc-800 text-zinc-200 text-xs font-semibold px-3 py-1.5 rounded-full">
-            👁️ {formatViewers(viewerCount)}
-          </span>
+          {!sharingSelf && (
+            <span className="bg-zinc-900/80 backdrop-blur-md border border-zinc-800 text-zinc-200 text-xs font-semibold px-3 py-1.5 rounded-full">
+              👁️ {formatViewers(viewerCount)}
+            </span>
+          )}
         </div>
 
       </div>
 
+      {!focusShare && (
       <div className="relative z-20 px-4 mt-2">
         <div className="bg-zinc-900/70 backdrop-blur-md border border-zinc-800 rounded-2xl px-4 py-2.5 inline-block max-w-full">
           <p className="font-extrabold text-white truncate">{stream.title}</p>
@@ -961,9 +981,10 @@ export default function LiveRoomPage({ params }) {
           </p>
         </div>
       </div>
+      )}
 
       {/* ---------- Pinned message banner ---------- */}
-      {pinned && (
+      {pinned && !focusShare && (
         <div className="relative z-20 px-4 mt-3">
           <div className="bg-amber-500/10 backdrop-blur-md border border-amber-500/40 rounded-2xl px-4 py-2.5 flex items-start gap-2 max-w-lg">
             <span className="text-amber-400 text-sm shrink-0">📌</span>
@@ -1065,7 +1086,7 @@ export default function LiveRoomPage({ params }) {
       {/* Anchored to the very bottom edge (the global bottom nav is hidden on /live/*), with
           home-indicator safe-area padding. The reaction tray, when toggled on, stacks just above the buttons. */}
       <div
-        className="fixed inset-x-0 bottom-0 z-40 flex flex-col items-center gap-3 px-4 pt-3 pb-6 bg-gradient-to-t from-black/70 via-black/30 to-transparent pointer-events-none"
+        className={`fixed inset-x-0 bottom-0 z-40 flex flex-col items-center gap-3 px-4 pt-3 pb-6 pointer-events-none ${focusShare ? '' : 'bg-gradient-to-t from-black/70 via-black/30 to-transparent'}`}
         style={{ paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom))' }}
       >
         {joined && !hasEnded && reactionsOpen && !chatOpen && (
@@ -1340,7 +1361,7 @@ function gridColsClass(n) {
 
 // One participant: plays the stream (audio included, unless muted) and falls back to an avatar
 // when there is no live video track (camera off, audio-only peer, still connecting).
-function StreamTile({ stream, label, muted, mirror, contain, forceAvatar, avatarUrl, initial, className = '', compact, retryKey, onPlayBlocked }) {
+function StreamTile({ stream, label, muted, mirror, contain, forceAvatar, avatarUrl, initial, className = '', compact, retryKey, onPlayBlocked, sharingSelf, watchingCount = 0, onStopSharing, hideLabel }) {
   const videoRef = useRef(null);
   const [hasVideo, setHasVideo] = useState(false);
 
@@ -1378,7 +1399,31 @@ function StreamTile({ stream, label, muted, mirror, contain, forceAvatar, avatar
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stream, retryKey]);
 
-  const showAvatar = forceAvatar || !hasVideo;
+  const showAvatar = !sharingSelf && (forceAvatar || !hasVideo);
+  if (sharingSelf) {
+    // No <video> at all: nothing of our own screen is ever rendered back to us.
+    return (
+      <div className={`relative overflow-hidden bg-zinc-950 ${className}`}>
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center bg-gradient-to-br from-zinc-900 to-zinc-950">
+          <span className="w-14 h-14 rounded-full bg-amber-500/15 border border-amber-500/40 text-amber-400 flex items-center justify-center">
+            <MonitorUp size={26} />
+          </span>
+          <p className="font-extrabold text-lg text-white">You are sharing your screen</p>
+          <p className="text-sm text-zinc-400 flex items-center gap-1.5" role="status">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" aria-hidden="true" />
+            {watchingCount === 1 ? '1 viewer watching' : `${watchingCount} viewers watching`}
+          </p>
+          <button
+            type="button"
+            onClick={onStopSharing}
+            className="mt-1 h-10 px-5 rounded-full bg-red-600 hover:bg-red-500 text-white text-sm font-bold shadow-lg transition active:scale-95"
+          >
+            Stop sharing
+          </button>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className={`relative overflow-hidden ${contain ? 'bg-black' : 'bg-zinc-900'} ${className}`}>
       <video
@@ -1396,7 +1441,7 @@ function StreamTile({ stream, label, muted, mirror, contain, forceAvatar, avatar
           </div>
         </div>
       )}
-      {label && (
+      {label && !hideLabel && (
         <span className="absolute bottom-1.5 left-1.5 z-10 text-[10px] font-semibold text-white bg-black/70 px-1.5 py-0.5 rounded-md">
           {label}
         </span>
