@@ -13,13 +13,17 @@ export default function PreferenceApplier() {
   const { isAuthenticated } = useAuth();
   const [reduceMotion] = usePref('reduceMotion');
   const [largeText] = usePref('largeText');
+  const [textSize] = usePref('textSize');
+  const [highContrast] = usePref('highContrast');
   const [displayLanguage] = usePref('displayLanguage');
 
   useEffect(() => {
     const el = document.documentElement;
     el.dataset.reduceMotion = String(!!reduceMotion);
-    el.dataset.largeText = String(!!largeText);
-  }, [reduceMotion, largeText]);
+    el.dataset.largeText = String(!!largeText && textSize === 'default'); // legacy toggle, only when no size is chosen
+    el.dataset.textSize = textSize || 'default';
+    el.dataset.highContrast = String(!!highContrast);
+  }, [reduceMotion, largeText, textSize, highContrast]);
 
   useEffect(() => {
     const lang = languageByCode(displayLanguage);

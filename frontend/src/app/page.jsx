@@ -16,6 +16,7 @@ import Logo from '../components/Logo';
 import StoriesBar from '../components/StoriesBar';
 import TopHeaderNav from '../components/TopHeaderNav';
 import { useFeedSync } from '../hooks/useFeedSync';
+import { getPref } from '@/lib/settingsPrefs';
 import { getOfflineFeed, precacheVideo } from '../lib/offlineCache';
 
 const FILTERS = [
@@ -421,10 +422,10 @@ export default function FeedPage() {
       if (!card) return;
       const box = el.getBoundingClientRect();
       const r = card.getBoundingClientRect();
-      el.scrollTo({ top: el.scrollTop + (r.top + r.height / 2) - (box.top + box.height / 2), behavior: 'smooth' });
+      el.scrollTo({ top: el.scrollTop + (r.top + r.height / 2) - (box.top + box.height / 2), behavior: getPref('fastScroll') ? 'auto' : 'smooth' });
       return;
     }
-    el.scrollTo({ top: clamped * el.clientHeight, behavior: 'smooth' });
+    el.scrollTo({ top: clamped * el.clientHeight, behavior: getPref('fastScroll') ? 'auto' : 'smooth' });
   }
 
   // Measure the real bottom-nav height (it grows with the device's safe-area inset), so the

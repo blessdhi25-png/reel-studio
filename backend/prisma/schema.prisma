@@ -570,15 +570,19 @@ model PlatformPolicy {
 
 // Settings → Help Centre → Support tickets.
 model SupportTicket {
-  id          String   @id @default(cuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  subject     String
-  category    String   @default("other")
-  status      String   @default("open") // open | in_progress | resolved | closed
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  replies     SupportTicketReply[]
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  issueType    String   @default("other") // account | live | traffic | interaction | post | monetization | feed | other
+  title        String
+  description  String
+  status       String   @default("OPEN") // OPEN | IN_REVIEW | RESOLVED | CLOSED (closed = the person closed it themselves)
+  deviceInfo   String?  // e.g. "Chrome 130 on Windows · 1920×1080", captured from the browser at submit time
+  locationText String?  // e.g. "5.6037° N, 0.1870° W (±25 m)", only when the person allowed location
+  adminNote    String?  // internal staff note; never returned to the ticket owner
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  replies      SupportTicketReply[]
 
   @@index([userId, updatedAt])
   @@index([status, updatedAt])
@@ -857,4 +861,17 @@ model TranslationCache {
   createdAt   DateTime @default(now())
 
   @@unique([hash, targetLang])
+}
+
+// Hashed (SHA-256) phone numbers / emails from a contact sync the person ran themselves. Never stored in clear.
+model SyncedContact {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  source    String   @default("contacts") // contacts | facebook
+  hash      String
+  createdAt DateTime @default(now())
+
+  @@unique([userId, hash])
+  @@index([userId, source])
 }

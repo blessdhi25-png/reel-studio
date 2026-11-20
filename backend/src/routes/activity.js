@@ -2,6 +2,7 @@ import { Router } from 'express';
 import prisma from '../config/db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
+import { describeDevice } from '../utils/loginEvents.js';
 
 // Settings → Activity centre. Everything here is the signed-in user's own history, newest first.
 const router = Router();
@@ -20,6 +21,22 @@ router.get('/logins', requireAuth, asyncHandler(async (req, res) => {
 
 // Security alerts (Help Centre → Security alerts): recent sign-ins — flagging devices this account hasn't
 // signed in from before — plus password / biometric-lock changes, newest first (last 90 days).
+// GET /activity/devices: browsers/devices that signed in over the last 90 days, newest first.
+// Sessions are stateless tokens, so this is built from the sign-in history rather than a live session table;
+// "Sign out of other devices" (POST /auth/sessions/revoke-others) is what ends them.
+router.get('/devices', requireAuth, asyncHandler(async (req, res) => {
+  const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+  const events = await prisma.loginEvent.findMany({ where: { userId: req.userId, createdAt: { gte: since } }, orderBy: { createdAt: 'desc' }, take: 500 });
+  const current = describeDevice(req.headers['user-agent'] || '');
+  const byDevice = new Map();
+  for (const e of events) {
+    const d = byDevice.get(e.device);
+    if (d) d.signIns += 1;
+    else byDevice.set(e.device, { device: e.device, lastSeenAt: e.createdAt, location: e.location, method: e.method, signIns: 1, current: e.device === current });
+  }
+  res.json({ devices: [...byDevice.values()].slice(0, 20), currentDevice: current });
+}));
+
 router.get('/security', requireAuth, asyncHandler(async (req, res) => {
   const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
   const [logins, changes] = await Promise.all([

@@ -610,6 +610,41 @@ router.get('/me', requireAuth, asyncHandler(async (req, res) => {
   res.json(user);
 }));
 
+// Creates a reset token and emails the link. Shared by forgot-password and account lookup.
+async function issueResetEmail(user) {
+  // The raw token goes out in the email and is never stored anywhere —
+  // only its SHA-256 hash is saved to the DB (see the schema comment on
+  // User.resetPasswordToken). 256 bits of entropy from randomBytes(32)
+  // is well beyond brute-forceable within the 1-hour window even if the
+  // stored hash somehow leaked.
+  const rawToken = crypto.randomBytes(32).toString('hex');
+  const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      resetPasswordToken: hashedToken,
+      resetPasswordExpires: new Date(Date.now() + RESET_TOKEN_EXPIRY_MS),
+    },
+  });
+
+  const resetUrl = `${FRONTEND_URL}/reset-password?token=${rawToken}`;
+  try {
+    await sendMail({
+      to: user.email,
+      subject: 'Reset your Bledhi password',
+      text: `We got a request to reset your password. This link expires in 1 hour:\n\n${resetUrl}\n\nIf you didn't request this, you can ignore this email — your password won't change.`,
+      html: `<p>We got a request to reset your password. This link expires in 1 hour:</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>If you didn't request this, you can ignore this email — your password won't change.</p>`,
+    });
+  } catch (err) {
+    // Same reasoning as sendVerificationCode above — a mail-provider
+    // hiccup shouldn't turn into a 500 that also (via a non-generic
+    // error) reveals that the email did in fact match an account.
+    console.error('[auth/forgot-password] failed to send reset email:', err.message);
+  }
+
+}
+
 // Always returns the same generic success message whether or not the email
 // exists — a distinguishable response here (e.g. 404 for unknown emails)
 // would let an attacker enumerate which addresses have accounts on this
@@ -631,36 +666,7 @@ router.post('/forgot-password', authLimiter, validate(forgotPasswordSchema), asy
       return res.json(GENERIC_MESSAGE);
     }
 
-    // The raw token goes out in the email and is never stored anywhere —
-    // only its SHA-256 hash is saved to the DB (see the schema comment on
-    // User.resetPasswordToken). 256 bits of entropy from randomBytes(32)
-    // is well beyond brute-forceable within the 1-hour window even if the
-    // stored hash somehow leaked.
-    const rawToken = crypto.randomBytes(32).toString('hex');
-    const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
-
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        resetPasswordToken: hashedToken,
-        resetPasswordExpires: new Date(Date.now() + RESET_TOKEN_EXPIRY_MS),
-      },
-    });
-
-    const resetUrl = `${FRONTEND_URL}/reset-password?token=${rawToken}`;
-    try {
-      await sendMail({
-        to: user.email,
-        subject: 'Reset your Bledhi password',
-        text: `We got a request to reset your password. This link expires in 1 hour:\n\n${resetUrl}\n\nIf you didn't request this, you can ignore this email — your password won't change.`,
-        html: `<p>We got a request to reset your password. This link expires in 1 hour:</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>If you didn't request this, you can ignore this email — your password won't change.</p>`,
-      });
-    } catch (err) {
-      // Same reasoning as sendVerificationCode above — a mail-provider
-      // hiccup shouldn't turn into a 500 that also (via a non-generic
-      // error) reveals that the email did in fact match an account.
-      console.error('[auth/forgot-password] failed to send reset email:', err.message);
-    }
+    await issueResetEmail(user);
 
     res.json(GENERIC_MESSAGE);
   } catch (err) {
@@ -695,6 +701,7 @@ router.post('/reset-password', authLimiter, validate(resetPasswordSchema), async
         // Clearing both fields invalidates the token immediately — a used
         // (or abandoned) reset link can never be replayed.
         resetPasswordToken: null,
+        sessionsRevokedAt: new Date(), // a reset signs out every device that was using the old password
         resetPasswordExpires: null,
       },
     });
@@ -704,6 +711,42 @@ router.post('/reset-password', authLimiter, validate(resetPasswordSchema), async
     console.error('[auth/reset-password error]:', err.stack || err);
     throw err;
   }
+}));
+
+// "Look up your account": find an account by username, email or phone number and start recovery.
+// Whatever the input matches (or doesn't), the response is identical, so this can't be used to find out who
+// has an account; the recovery link is only ever sent to the email address already on file.
+const LOOKUP_MESSAGE = { message: "If we find a matching account, we've emailed recovery instructions to the address on file. Check your inbox and spam folder." };
+router.post('/account-lookup', authLimiter, asyncHandler(async (req, res) => {
+  const raw = typeof req.body?.identifier === 'string' ? req.body.identifier.trim().slice(0, 120) : '';
+  if (raw.length < 3) return res.status(400).json({ error: 'Enter your username, email or phone number.' });
+
+  try {
+    let user = null;
+    if (raw.includes('@') && !raw.startsWith('@')) {
+      user = await prisma.user.findFirst({ where: { email: { equals: raw, mode: 'insensitive' } } });
+    } else if (/^\+?[\d\s().-]{7,20}$/.test(raw)) {
+      // Phone numbers are stored in whatever format people typed, so match on the last 9 digits and confirm.
+      const digits = raw.replace(/\D/g, '');
+      const tail = digits.slice(-9);
+      const candidates = await prisma.user.findMany({ where: { phone: { contains: tail } }, take: 5 });
+      const exact = candidates.filter((u) => (u.phone || '').replace(/\D/g, '').endsWith(tail));
+      user = exact.length === 1 ? exact[0] : null; // ambiguous matches are ignored rather than guessed
+    } else {
+      user = await prisma.user.findFirst({ where: { username: { equals: raw.replace(/^@/, ''), mode: 'insensitive' } } });
+    }
+    if (user && user.passwordHash) await issueResetEmail(user);
+  } catch (err) {
+    console.error('[auth/account-lookup]', err.message); // same response either way
+  }
+  res.json(LOOKUP_MESSAGE);
+}));
+
+// Sign out of every other device: tokens issued before now stop working; this device gets a fresh token.
+router.post('/sessions/revoke-others', requireAuth, authLimiter, asyncHandler(async (req, res) => {
+  await prisma.user.update({ where: { id: req.userId }, data: { sessionsRevokedAt: new Date() } });
+  recordSecurityEvent(req.userId, 'sessions_revoked');
+  res.json({ token: signToken({ id: req.userId }) });
 }));
 
 // Authenticated password change from within the app (Settings), as

@@ -15,6 +15,7 @@ export default function TicketsPage() {
   const [scope, setScope] = useState('mine');
   const [tickets, setTickets] = useState(null);
   const [error, setError] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
 
   useEffect(() => {
     if (!ok) return;
@@ -26,11 +27,11 @@ export default function TicketsPage() {
     let off = false;
     setTickets(null);
     setError('');
-    api.listSupportTickets({ scope: scope === 'all' ? 'all' : undefined })
+    api.listSupportTickets({ scope: scope === 'all' ? 'all' : undefined, status: statusFilter || undefined })
       .then((r) => { if (!off) setTickets(r.tickets || []); })
       .catch((e) => { if (!off) { setError(friendlyError(e)); setTickets([]); } });
     return () => { off = true; };
-  }, [ok, scope]);
+  }, [ok, scope, statusFilter]);
 
   if (!ok) return null;
   const cat = (v) => TICKET_CATEGORIES.find((c) => c.value === v)?.label || 'Other';
@@ -47,10 +48,19 @@ export default function TicketsPage() {
       }
     >
       {isStaff && (
-        <div className="flex gap-2 mb-4">
-          {[['mine', 'My tickets'], ['all', 'All tickets']].map(([v, l]) => (
-            <button key={v} type="button" onClick={() => setScope(v)} className={`px-4 py-2 rounded-full font-sans font-bold text-sm ${scope === v ? 'bg-slate-900 text-white dark:bg-white dark:text-black' : 'bg-slate-200/70 dark:bg-neutral-800 text-slate-600 dark:text-neutral-300'}`}>{l}</button>
-          ))}
+        <div className="mb-4 space-y-3">
+          <div className="flex gap-2">
+            {[['mine', 'My tickets'], ['all', 'Support inbox']].map(([v, l]) => (
+              <button key={v} type="button" onClick={() => setScope(v)} className={`px-4 py-2 rounded-full font-sans font-bold text-sm ${scope === v ? 'bg-slate-900 text-white dark:bg-white dark:text-black' : 'bg-slate-200/70 dark:bg-neutral-800 text-slate-600 dark:text-neutral-300'}`}>{l}</button>
+            ))}
+          </div>
+          {scope === 'all' && (
+            <div className="flex gap-1.5 overflow-x-auto">
+              {[['', 'All'], ['OPEN', 'Open'], ['IN_REVIEW', 'In review'], ['RESOLVED', 'Resolved']].map(([v, l]) => (
+                <button key={v} type="button" onClick={() => setStatusFilter(v)} className={`shrink-0 px-3 py-1.5 rounded-full font-sans font-bold text-xs ${statusFilter === v ? 'bg-amber-500 text-black' : 'bg-slate-200/70 dark:bg-neutral-800 text-slate-600 dark:text-neutral-300'}`}>{l}</button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -70,10 +80,14 @@ export default function TicketsPage() {
             <li key={t.id}>
               <Link href={`/settings/help/tickets/${t.id}`} className="flex items-center gap-3 px-4 py-3.5 hover:bg-slate-50 dark:hover:bg-neutral-800/60">
                 <div className="min-w-0 flex-1">
-                  <p className="font-sans font-bold text-[15px] text-slate-900 dark:text-white truncate">{t.subject}</p>
+                  <p className="font-sans font-bold text-[15px] text-slate-900 dark:text-white truncate">{t.title}</p>
                   <p className="font-sans text-xs text-slate-500 dark:text-neutral-400 mt-0.5 truncate">
-                    {scope === 'all' && t.user?.username ? `@${t.user.username} · ` : ''}{cat(t.category)} · {t._count?.replies || 0} {t._count?.replies === 1 ? 'reply' : 'replies'} · {timeAgo(t.updatedAt)}
+                    {scope === 'all' && t.user?.username ? `@${t.user.username} · ` : ''}{cat(t.issueType)} · {t._count?.replies || 0} {t._count?.replies === 1 ? 'reply' : 'replies'} · {timeAgo(t.updatedAt)}
                   </p>
+                  {scope === 'all' && <p className="font-sans text-xs text-slate-600 dark:text-neutral-300 mt-1 line-clamp-2">{t.description}</p>}
+                  {scope === 'all' && (t.deviceInfo || t.locationText) && (
+                    <p className="font-sans text-[11px] text-slate-400 dark:text-neutral-500 mt-1 truncate">{[t.deviceInfo, t.locationText].filter(Boolean).join(' · ')}</p>
+                  )}
                 </div>
                 <StatusPill status={t.status} />
               </Link>

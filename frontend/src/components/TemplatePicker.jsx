@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Film, Music2, Search, X } from 'lucide-react';
 import { TEMPLATES, TEMPLATE_CATEGORIES } from '@/lib/templates';
+import { useStillThumbnails } from '@/hooks/useStillThumbnails';
 import AiTemplatePicker from '@/components/AiTemplatePicker';
 
 const compact = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 });
@@ -16,18 +17,7 @@ const BADGE_STYLES = {
   Aesthetic: 'bg-sky-400 text-black',
 };
 
-function usePrefersReducedMotion() {
-  const [reduce, setReduce] = useState(false);
-  useEffect(() => {
-    const mq = window.matchMedia?.('(prefers-reduced-motion: reduce)');
-    if (!mq) return undefined;
-    setReduce(mq.matches);
-    const onChange = (e) => setReduce(e.matches);
-    mq.addEventListener?.('change', onChange);
-    return () => mq.removeEventListener?.('change', onChange);
-  }, []);
-  return reduce;
-}
+const usePrefersReducedMotion = useStillThumbnails; // OS setting, Reduced motion, or Animated thumbnails off
 
 function TemplateCard({ template, onClick }) {
   const cardRef = useRef(null);

@@ -30,7 +30,7 @@ export default function DisplayPage() {
       </SettingsGroup>
       <SettingsGroup>
         <SettingsRow href="/settings/language" icon={ic(Languages)} title="Language" />
-        <SettingsRow href="/settings/accessibility" icon={ic(Accessibility)} title="Accessibility" subtitle="Reduce motion, larger text" />
+        <SettingsRow href="/settings/accessibility" icon={ic(Accessibility)} title="Accessibility" subtitle="Text size, contrast, motion" />
       </SettingsGroup>
     </SettingsPage>
   );

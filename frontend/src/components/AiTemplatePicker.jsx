@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Film, Music2, Sparkles } from 'lucide-react';
 import { api } from '@/lib/api';
+import { useStillThumbnails } from '@/hooks/useStillThumbnails';
 import { TEMPLATES } from '@/lib/templates';
 
 const compact = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 });
@@ -13,18 +14,7 @@ const FALLBACK = TEMPLATES.filter((t) => t.category === 'AI').map((t) => ({
   id: t.id, title: t.title, category: t.category, previewUrl: t.previewUrl, uses: t.uses, soundTitle: t.sound, creditsCost: 1,
 }));
 
-function usePrefersReducedMotion() {
-  const [reduce, setReduce] = useState(false);
-  useEffect(() => {
-    const mq = window.matchMedia?.('(prefers-reduced-motion: reduce)');
-    if (!mq) return undefined;
-    setReduce(mq.matches);
-    const onChange = (e) => setReduce(e.matches);
-    mq.addEventListener?.('change', onChange);
-    return () => mq.removeEventListener?.('change', onChange);
-  }, []);
-  return reduce;
-}
+const usePrefersReducedMotion = useStillThumbnails; // OS setting, Reduced motion, or Animated thumbnails off
 
 export function AiBadge({ className = '' }) {
   return (

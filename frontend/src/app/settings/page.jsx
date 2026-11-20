@@ -1,7 +1,7 @@
 'use client';
 
 import {
-  Accessibility, Clock, CloudOff, FileText, Fingerprint, HardDrive, KeyRound, Languages, LifeBuoy, Lock, MapPin,
+  Accessibility, Image as ImageIcon, Clock, CloudOff, FileText, Fingerprint, HardDrive, KeyRound, Languages, LifeBuoy, Lock, MapPin,
   Megaphone, MessageSquare, Moon, Music, PlayCircle, Shield, ShieldCheck, Timer, User, Users,
 } from 'lucide-react';
 import { disableBiometric, getBiometricStatus, isBiometricSupported, registerBiometricCredential } from '@/lib/biometrics';
@@ -178,8 +178,9 @@ export default function SettingsDashboardPage() {
         <SettingsRow href="/settings/ads" icon={ic(Megaphone)} title="Ads" subtitle="Promotions & ad activity" />
         <SettingsRow href="/settings/playback" icon={ic(PlayCircle)} title="Playback" subtitle={dataSaver ? 'Data Saver on' : 'Data Saver off'} />
         <SettingsRow href="/settings/display" icon={ic(Moon)} title="Display" subtitle={themeMounted ? (theme === 'dark' ? 'Dark theme' : 'Light theme') : 'Theme'} />
+        <SettingsRow href="/settings/wallpaper" icon={ic(ImageIcon)} title="Wallpaper" subtitle="Set videos as your phone wallpaper" />
         <SettingsRow href="/settings/language" icon={ic(Languages)} title="Language" subtitle={languageByCode(displayLanguage)?.native || 'English'} />
-        <SettingsRow href="/settings/accessibility" icon={ic(Accessibility)} title="Accessibility" subtitle="Reduce motion, larger text" />
+        <SettingsRow href="/settings/accessibility" icon={ic(Accessibility)} title="Accessibility" subtitle="Text size, contrast, motion" />
         <SettingsRow href="/settings/contacts-location" icon={ic(MapPin)} title="Contacts and location" subtitle="Location, camera, microphone & notifications" />
       </SettingsGroup>
 

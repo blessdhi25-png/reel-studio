@@ -286,6 +286,17 @@ export const api = {
   getSupportTicket: (id) => request(`/support/tickets/${id}`),
   replySupportTicket: (id, message) => request(`/support/tickets/${id}/replies`, { method: 'POST', body: { message } }),
   setSupportTicketStatus: (id, status) => request(`/support/tickets/${id}`, { method: 'PATCH', body: { status } }),
+  // Staff: { status?, adminNote? }. The owner may only send { status: 'CLOSED' }.
+  updateSupportTicket: (id, body) => request(`/support/tickets/${id}`, { method: 'PATCH', body }),
+  // "Chat with us" assistant. Failures are mapped to one friendly message by the caller.
+  supportChat: (body) => request('/support/chat', { method: 'POST', body, timeoutMs: 30000 }),
+  // Account recovery ("Look up your account"): always resolves with the same generic message.
+  accountLookup: (identifier) => request('/auth/account-lookup', { method: 'POST', body: { identifier } }),
+  getDevices: () => request('/activity/devices'),
+  revokeOtherSessions: () => request('/auth/sessions/revoke-others', { method: 'POST' }),
+  getSyncedContacts: () => request('/users/me/contacts'),
+  syncContacts: (hashes) => request('/users/me/contacts/sync', { method: 'POST', body: { hashes } }),
+  removeSyncedContacts: (source = 'contacts') => request(`/users/me/contacts?source=${source}`, { method: 'DELETE' }),
   // Language preferences (backend/src/routes/preferences.js)
   getLanguagePrefs: () => request('/users/me/language'),
   updateLanguagePrefs: (partial) => request('/users/me/language', { method: 'PATCH', body: partial }),

@@ -13,9 +13,13 @@ export async function requireAuth(req, res, next) {
 
     const user = await prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, role: true, accountStatus: true, statusReason: true },
+      select: { id: true, role: true, accountStatus: true, statusReason: true, sessionsRevokedAt: true },
     });
     if (!user) return res.status(401).json({ error: 'User not found' });
+    // "Sign out of other devices": tokens issued (second precision) before the cut-off are no longer valid.
+    if (user.sessionsRevokedAt && payload.iat < Math.floor(user.sessionsRevokedAt.getTime() / 1000)) {
+      return res.status(401).json({ error: 'Session expired. Please log in again.' });
+    }
 
     if (user.accountStatus === 'banned') {
       return res.status(403).json({

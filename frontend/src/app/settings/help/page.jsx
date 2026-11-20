@@ -108,7 +108,7 @@ export default function HelpCentrePage() {
       <div className="flex gap-3 overflow-x-auto no-scrollbar -mx-4 px-4 pb-1 mb-7">
         <QuickCard href="/settings/help/tickets" Icon={Ticket} label="Support tickets" sub="Create requests & check status" tone="bg-amber-500/10 text-amber-500" />
         <QuickCard href="/settings/help/security" Icon={ShieldAlert} label="Security alerts" sub="New logins & account changes" tone="bg-rose-500/10 text-rose-500" />
-        <QuickCard href="/forgot-password" Icon={KeyRound} label="Account recovery" tone="bg-blue-500/10 text-blue-500" />
+        <QuickCard href="/recover" Icon={KeyRound} label="Look up your account" sub="Find your account and recover access" tone="bg-blue-500/10 text-blue-500" />
         <QuickCard href="/legal/guidelines" Icon={ShieldCheck} label="Safety Centre" tone="bg-emerald-500/10 text-emerald-500" />
         {supportHref && <QuickCard href={supportHref} Icon={LifeBuoy} label="Support" tone="bg-indigo-500/10 text-indigo-500" />}
       </div>
@@ -194,7 +194,7 @@ export default function HelpCentrePage() {
       <div className="fixed inset-x-0 bottom-[4.25rem] lg:bottom-6 z-30 px-4 pointer-events-none">
         <div className="mx-auto max-w-2xl lg:max-w-none lg:flex lg:justify-end">
           <Link
-            href="/settings/help/tickets/new"
+            href="/settings/help/chat"
             className="pointer-events-auto flex items-center justify-center gap-2 w-full lg:w-auto lg:px-6 py-3.5 rounded-full bg-amber-500 hover:bg-amber-400 text-black font-sans font-bold text-sm shadow-xl transition-colors"
           >
             <MessageCircle size={18} strokeWidth={2.5} aria-hidden="true" /> Chat with us

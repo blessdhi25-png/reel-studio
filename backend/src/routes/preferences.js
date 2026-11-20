@@ -33,4 +33,31 @@ router.patch('/users/me/language', requireAuth, asyncHandler(async (req, res) =>
   res.json(await prisma.user.update({ where: { id: req.userId }, data, select: SELECT }));
 }));
 
+// ── Contacts sync (Settings → Contacts and location) ────────────────────────────────────────────
+// The browser hands over only what the person picks; the app hashes each phone number / email before it
+// leaves the device, so the server never stores a contact in the clear.
+const MAX_SYNC = 500;
+const HASH = /^[a-f0-9]{64}$/;
+
+router.get('/users/me/contacts', requireAuth, asyncHandler(async (req, res) => {
+  const rows = await prisma.syncedContact.groupBy({ by: ['source'], where: { userId: req.userId }, _count: { _all: true } });
+  const count = (src) => rows.find((r) => r.source === src)?._count._all || 0;
+  res.json({ contacts: count('contacts'), facebook: count('facebook') });
+}));
+
+router.post('/users/me/contacts/sync', requireAuth, asyncHandler(async (req, res) => {
+  const hashes = Array.isArray(req.body?.hashes) ? [...new Set(req.body.hashes.filter((h) => typeof h === 'string' && HASH.test(h)))] : [];
+  if (!hashes.length) return res.status(400).json({ error: 'No contacts to sync.' });
+  if (hashes.length > MAX_SYNC) return res.status(400).json({ error: `Sync up to ${MAX_SYNC} contacts at a time.` });
+  await prisma.syncedContact.createMany({ data: hashes.map((hash) => ({ userId: req.userId, source: 'contacts', hash })), skipDuplicates: true });
+  res.json({ contacts: await prisma.syncedContact.count({ where: { userId: req.userId, source: 'contacts' } }) });
+}));
+
+// DELETE /users/me/contacts?source=contacts|facebook  removes previously synced contacts
+router.delete('/users/me/contacts', requireAuth, asyncHandler(async (req, res) => {
+  const source = req.query.source === 'facebook' ? 'facebook' : 'contacts';
+  const { count } = await prisma.syncedContact.deleteMany({ where: { userId: req.userId, source } });
+  res.json({ removed: count });
+}));
+
 export default router;

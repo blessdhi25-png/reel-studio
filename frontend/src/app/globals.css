@@ -13,9 +13,25 @@ html[data-reduce-motion='true'] *::after {
   transition-duration: 0.01ms !important;
   scroll-behavior: auto !important;
 }
-html[data-large-text='true'] {
-  font-size: 112.5%;
-}
+html[data-large-text='true'],
+html[data-text-size='large'] { font-size: 112.5%; }
+html[data-text-size='small'] { font-size: 93.75%; }
+html[data-text-size='xlarge'] { font-size: 125%; }
+
+/* Increase colour contrast: lift the dim greys and faint borders the UI uses for secondary text. */
+html[data-high-contrast='true'] .text-neutral-400,
+html[data-high-contrast='true'] .text-neutral-500,
+html[data-high-contrast='true'] .text-zinc-400,
+html[data-high-contrast='true'] .text-zinc-500 { color: #e5e5e5 !important; }
+html[data-high-contrast='true'] .text-slate-500,
+html[data-high-contrast='true'] .text-slate-400 { color: #1e293b !important; }
+html[data-high-contrast='true'].dark .text-slate-500,
+html[data-high-contrast='true'].dark .text-slate-400 { color: #e5e5e5 !important; }
+html[data-high-contrast='true'] .border-neutral-800,
+html[data-high-contrast='true'] .border-zinc-800 { border-color: #737373 !important; }
+html[data-high-contrast='true'] .border-slate-200,
+html[data-high-contrast='true'] .border-slate-100 { border-color: #64748b !important; }
+html[data-high-contrast='true'] :focus-visible { outline: 3px solid #f59e0b !important; outline-offset: 2px; }
 
 /* Light is the default theme (next-themes, attribute="class"); html.dark restores the
    original ink/bone palette. Pages not yet converted to dark: variants are wrapped in a

@@ -17,7 +17,8 @@ export default function LanguagePage() {
   const { t } = useLanguage();
   const [display] = usePref('displayLanguage');
   const [translate] = usePref('translateContent');
-  const [content] = usePref('contentLanguages');
+  const [storedContent] = usePref('contentLanguages');
+  const content = Array.isArray(storedContent) ? storedContent : []; // tolerate a bad stored value
   const [busy, setBusy] = useState(false);
 
   // Apply locally first so the change is instant, persist to the account, and roll back if the server refuses.

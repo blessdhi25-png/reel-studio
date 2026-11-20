@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { useSocketContext } from '../context/SocketContext';
 import { useLanguage } from '../context/LanguageContext';
 
-const HIDDEN_ON = ['/welcome', '/login', '/signup', '/verify-email', '/upload'];
+const HIDDEN_ON = ['/welcome', '/login', '/signup', '/verify-email', '/upload', '/recover', '/forgot-password'];
 // Prefix-matched separately from HIDDEN_ON above: /admin has many
 // sub-routes (users, videos, fraud-signals, audit-log, ...) and the admin
 // portal has its own dedicated layout/nav (see app/admin/layout.jsx) — the
@@ -21,7 +21,8 @@ const HIDDEN_ON = ['/welcome', '/login', '/signup', '/verify-email', '/upload'];
 // the conversation list page has room for both and keeps the nav.
 // '/live/' (a live room, host or viewer) is a full-screen immersive view with its own controls;
 // the lobby at the bare /live keeps the nav, and the desktop sidebar follows the same rule.
-const HIDDEN_PREFIXES = ['/admin', '/moderator', '/messages/', '/live/'];
+// '/settings/help/chat' is the support chat: a full-screen conversation with its own pinned input bar.
+const HIDDEN_PREFIXES = ['/admin', '/moderator', '/messages/', '/live/', '/settings/help/chat'];
 
 // Shared with DesktopNav so the two bars are always hidden on exactly the same routes.
 export function isNavHidden(pathname) {

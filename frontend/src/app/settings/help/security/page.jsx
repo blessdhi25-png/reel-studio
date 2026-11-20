@@ -20,7 +20,9 @@ function describe(a) {
         detail: [a.device, a.location, METHODS[a.method]].filter(Boolean).join(' · '),
       };
     case 'password_changed':
-      return { Icon: KeyRound, title: 'Password changed', detail: 'Your other sessions were signed out.' };
+      return { Icon: KeyRound, title: 'Password changed', detail: 'If this wasn’t you, reset your password and sign out of other devices.' };
+    case 'sessions_revoked':
+      return { Icon: ShieldAlert, title: 'Signed out of other devices' };
     case 'biometric_enabled':
       return { Icon: Fingerprint, title: 'Biometric lock turned on' };
     case 'biometric_disabled':
