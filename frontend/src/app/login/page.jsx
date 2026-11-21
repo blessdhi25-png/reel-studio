@@ -69,7 +69,7 @@ const OAUTH_ERROR_MESSAGES = {
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { login } = useAuth();
+  const { login, ready, isAuthenticated } = useAuth();
   const [form, setForm] = useState({ email: '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
   const [remember, setRemember] = useState(false);
@@ -107,12 +107,23 @@ function LoginForm() {
     }
   }, [searchParams]);
 
+  // Already signed in (token in storage) but landed here anyway — e.g. the route guard saw no cookie.
+  // AuthContext re-mirrors the cookie in the same step that flips `ready`; only forward once that cookie
+  // really exists, otherwise middleware would bounce us straight back here and loop.
+  useEffect(() => {
+    if (!ready || !isAuthenticated || loading) return;
+    if (searchParams.get('add')) return; // "Add account" deliberately signs in while already signed in
+    let cookieOk = false;
+    try { cookieOk = /(?:^|;\s*)token=/.test(document.cookie); } catch {}
+    if (cookieOk) router.replace(safeReturnPath(searchParams.get('from')));
+  }, [ready, isAuthenticated, loading, router, searchParams]);
+
   function update(field) {
     return (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
   }
 
   function handleGoogleClick() {
-    window.location.href = googleAuthUrl();
+    window.location.href = googleAuthUrl(safeReturnPath(searchParams.get('from')) !== '/' ? safeReturnPath(searchParams.get('from')) : undefined);
   }
 
   async function handleSubmit(e) {

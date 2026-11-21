@@ -61,16 +61,25 @@ function generateCode() {
 
 // Short-lived, self-verifying OAuth state — avoids needing server-side
 // session storage just to guard against CSRF on the Google redirect.
-function signOAuthState() {
-  return jwt.sign({ purpose: 'google_oauth_state' }, process.env.JWT_SECRET, { expiresIn: '10m' });
+// Same-site return path carried through the signed state (so it can't be tampered with). Anything that
+// isn't a plain "/path" — or that points at an auth screen — is dropped.
+function safeFrom(from) {
+  if (typeof from !== 'string' || from.length > 300 || !/^\/(?!\/|\\)/.test(from)) return null;
+  return /^\/(login|signup|register|auth)(\/|\?|#|$)/.test(from) ? null : from;
 }
 
+function signOAuthState(from) {
+  const safe = safeFrom(from);
+  return jwt.sign({ purpose: 'google_oauth_state', ...(safe ? { from: safe } : {}) }, process.env.JWT_SECRET, { expiresIn: '10m' });
+}
+
+// Returns the verified payload, or null.
 function verifyOAuthState(state) {
   try {
     const payload = jwt.verify(state, process.env.JWT_SECRET);
-    return payload.purpose === 'google_oauth_state';
+    return payload.purpose === 'google_oauth_state' ? payload : null;
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -467,7 +476,7 @@ router.post('/logout', (_req, res) => {
 // user → issue our own JWT → redirect to the frontend with the token in
 // the URL, where a small callback page picks it up and stores it.
 
-router.get('/google', (_req, res) => {
+router.get('/google', (req, res) => {
   if (!GOOGLE_CLIENT_ID) return loginRedirect(res, 'google_not_configured');
 
   // Don't send people to a Google page we already know will fail. A client ID is always
@@ -484,7 +493,7 @@ router.get('/google', (_req, res) => {
     redirect_uri: GOOGLE_REDIRECT_URI,
     response_type: 'code',
     scope: 'openid email profile',
-    state: signOAuthState(),
+    state: signOAuthState(req.query.from),
     prompt: 'select_account',
   });
 
@@ -517,7 +526,8 @@ router.get('/google/callback', asyncHandler(async (req, res) => {
     return loginRedirect(res, 'server_misconfigured');
   }
   if (!code) return loginRedirect(res, 'google_failed');
-  if (!state || !verifyOAuthState(state)) return loginRedirect(res, 'google_state_invalid'); // expired (>10 min) or tampered
+  const statePayload = state ? verifyOAuthState(state) : null;
+  if (!statePayload) return loginRedirect(res, 'google_state_invalid'); // expired (>10 min) or tampered
 
   try {
     const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
@@ -554,7 +564,8 @@ router.get('/google/callback', asyncHandler(async (req, res) => {
     if (blocked) return loginRedirect(res, blocked);
 
     const jwtToken = signToken(user);
-    res.redirect(`${FRONTEND_URL}/auth/callback?token=${encodeURIComponent(jwtToken)}`);
+    const fromQs = statePayload.from ? `&from=${encodeURIComponent(statePayload.from)}` : '';
+    res.redirect(`${FRONTEND_URL}/auth/callback?token=${encodeURIComponent(jwtToken)}${fromQs}`);
   } catch (err) {
     console.error('[auth/google-callback error]:', err.code || '', err.stack || err);
     loginRedirect(res, classifyGoogleError(err));

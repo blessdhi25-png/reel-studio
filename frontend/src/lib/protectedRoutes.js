@@ -34,6 +34,7 @@ export const PUBLIC_PREFIXES = [
   '/recover',
   '/legal',
   '/offline',
+  '/auth', // OAuth hand-off (/auth/callback) — must never be bounced to /login mid sign-in
   '/api',
   '/_next',
 ];

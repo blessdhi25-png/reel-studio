@@ -149,8 +149,9 @@ async function request(path, { method = 'GET', body, isForm = false, timeoutMs =
 // Full-page redirect target for "Continue with Google" — the backend
 // handles the OAuth handshake and sends the browser back to
 // /auth/callback with a token once it's done.
-export function googleAuthUrl() {
-  return `${API_BASE}/auth/google`;
+export function googleAuthUrl(from) {
+  // `from` (a same-site path) rides along in the signed OAuth state and comes back on /auth/callback.
+  return `${API_BASE}/auth/google${from ? `?from=${encodeURIComponent(from)}` : ''}`;
 }
 
 // Render's free tier spins the backend down after ~15 minutes of

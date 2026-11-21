@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { api } from '../../../lib/api';
+import { safeReturnPath } from '../../../lib/protectedRoutes';
 import { useAuth } from '../../../context/AuthContext';
 
 function GoogleCallbackInner() {
@@ -31,7 +32,8 @@ function GoogleCallbackInner() {
       .getMe()
       .then((user) => {
         login(token, user);
-        router.replace('/');
+        // Session is confirmed by the server and mirrored to storage + cookie; now go where they were headed.
+        router.replace(safeReturnPath(searchParams.get('from')));
       })
       .catch((err) => {
         // The server explicitly refused this token (not a network blip): don't keep a dead session
