@@ -1,28 +1,35 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { Bell, Camera, MapPin, Mic, Trash2, Users } from 'lucide-react';
+import { Suspense, useCallback, useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Camera, MapPin, Mic, Trash2, Users } from 'lucide-react';
 import { api } from '@/lib/api';
 import { friendlyError } from '@/lib/friendlyError';
 import { useRequireAuth } from '@/hooks/useRequireAuth';
 import { useToast } from '@/context/ToastContext';
 import { usePref } from '@/lib/settingsPrefs';
+import { usePermissions } from '@/lib/usePermissions';
 import ConfirmModal from '@/components/ConfirmModal';
+import DevicePushRows from '@/components/settings/DevicePushRows';
+import FacebookFriends from '@/components/settings/FacebookFriends';
 import { SettingsGroup, SettingsPage, SettingsRow, ToggleRow } from '@/components/settings/SettingsUI';
 
 const ic = (Icon) => <Icon size={18} strokeWidth={2.25} />;
 const LABEL = { granted: 'Allowed', denied: 'Blocked', prompt: 'Not asked yet', unsupported: 'Not supported' };
+const FB_RESULT = {
+  linked: ['success', 'Facebook linked'],
+  linked_no_friends: ['info', 'Facebook linked, but Facebook didn’t share a friends list. Friends only appear if they also use ClipPulse and you granted the friends permission.'],
+  denied: ['error', 'Facebook linking was cancelled.'],
+  already_linked: ['error', 'That Facebook account is already linked to another ClipPulse account.'],
+  state_invalid: ['error', 'The Facebook sign-in expired. Please try again.'],
+  not_configured: ['error', 'Facebook linking isn’t set up on this server yet.'],
+  schema_outdated: ['error', 'The server database is out of date. The site owner needs to apply the latest migrations.'],
+  token_failed: ['error', 'Facebook rejected the sign-in. Please try again.'],
+  profile_failed: ['error', 'We couldn’t read your Facebook profile.'],
+  failed: ['error', 'Facebook linking failed. Please try again.'],
+};
+const when = (iso) => (iso ? new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : null);
 const BTN = 'shrink-0 px-3 py-1.5 rounded-xl bg-amber-500 text-black font-sans font-bold text-xs disabled:opacity-40';
-
-async function query(name) {
-  try {
-    if (name === 'notifications' && typeof Notification !== 'undefined') return Notification.permission === 'default' ? 'prompt' : Notification.permission;
-    const r = await navigator.permissions.query({ name });
-    return r.state;
-  } catch {
-    return 'unsupported';
-  }
-}
 
 async function sha256(text) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
@@ -34,36 +41,66 @@ async function sha256(text) {
 const normalisePhone = (v) => { const t = String(v).trim(); const d = t.replace(/\D/g, ''); return d.length >= 7 ? (t.startsWith('+') ? `+${d}` : d) : null; };
 const normaliseEmail = (v) => { const t = String(v).trim().toLowerCase(); return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(t) ? t : null; };
 
-export default function ContactsLocationPage() {
+function ContactsLocationInner() {
   const ok = useRequireAuth();
   const toast = useToast();
-  const [perm, setPerm] = useState({});
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { state: perm, request: requestPermission } = usePermissions();
+  const [fb, setFb] = useState(null); // /auth/facebook/status
+  const [fbKey, setFbKey] = useState(0); // bumps to reload the friends list
   const [contactsEnabled, setContactsEnabled] = usePref('contactsEnabled');
   const [facebookEnabled, setFacebookEnabled] = usePref('facebookEnabled');
   const [counts, setCounts] = useState({ contacts: 0, facebook: 0 });
   const [busy, setBusy] = useState('');
   const [confirm, setConfirm] = useState(null); // 'contacts' | 'facebook'
 
-  const refreshPerms = useCallback(async () => {
-    const names = ['geolocation', 'camera', 'microphone', 'notifications'];
-    const results = await Promise.all(names.map(query));
-    setPerm(Object.fromEntries(names.map((n, i) => [n, results[i]])));
-  }, []);
   const refreshCounts = useCallback(() => { api.getSyncedContacts().then(setCounts).catch(() => {}); }, []);
-  useEffect(() => { refreshPerms(); refreshCounts(); }, [refreshPerms, refreshCounts]);
+  const refreshFb = useCallback(() => api.getFacebookStatus().then((st) => { setFb(st); setFbKey((k) => k + 1); }).catch(() => setFb({ configured: false, linked: false })), []);
+  useEffect(() => { refreshCounts(); refreshFb(); }, [refreshCounts, refreshFb]);
 
-  async function requestPermission(name) {
+  // Back from Facebook's consent screen: /settings/contacts-location?facebook=<result>
+  useEffect(() => {
+    const result = searchParams.get('facebook');
+    if (!result) return;
+    const [kind, message] = FB_RESULT[result] || FB_RESULT.failed;
+    toast[kind]?.(message);
+    if (result.startsWith('linked')) setFacebookEnabled(true);
+    router.replace('/settings/contacts-location'); // drop the param so a refresh doesn't repeat the toast
+    refreshFb();
+    refreshCounts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  async function allow(name) {
+    const next = await requestPermission(name);
+    if (next === 'denied') toast.error('Blocked. Change it in your browser’s site settings (the lock icon in the address bar).');
+  }
+
+  async function startFacebook(resync) {
+    setBusy('fb');
     try {
-      if (name === 'geolocation') await new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej, { timeout: 15000 }));
-      else if (name === 'notifications') await Notification.requestPermission();
-      else {
-        const stream = await navigator.mediaDevices.getUserMedia(name === 'camera' ? { video: true } : { audio: true });
-        stream.getTracks().forEach((t) => t.stop());
-      }
-    } catch {
-      toast.error('Permission wasn’t granted. You can change it in your browser’s site settings.');
+      const { url } = resync ? await api.facebookSync() : await api.startFacebookLink();
+      window.location.href = url; // Facebook consent → backend callback → back here
+    } catch (err) {
+      toast.error(err?.code === 'facebook_not_configured' ? 'Facebook linking isn’t set up on this server yet.' : friendlyError(err));
+      setBusy('');
     }
-    refreshPerms();
+  }
+
+  async function unlinkFacebook() {
+    setBusy('fb-unlink');
+    try {
+      await api.unlinkFacebook();
+      setCounts((c) => ({ ...c, facebook: 0 }));
+      toast.success('Facebook unlinked and synced friends removed');
+      setConfirm(null);
+      refreshFb();
+    } catch (err) {
+      toast.error(friendlyError(err));
+    } finally {
+      setBusy('');
+    }
   }
 
   async function syncContacts() {
@@ -105,7 +142,6 @@ export default function ContactsLocationPage() {
     ['geolocation', MapPin, 'Location', 'Used for nearby content and showing where you signed in'],
     ['camera', Camera, 'Camera', 'Needed to record videos, go live and make video calls'],
     ['microphone', Mic, 'Microphone', 'Needed for sound, live streams and calls'],
-    ['notifications', Bell, 'Notifications', 'Alerts for messages, calls and activity'],
   ];
 
   if (!ok) return null;
@@ -138,19 +174,39 @@ export default function ContactsLocationPage() {
 
       <SettingsGroup
         title="Facebook friends"
-        footer="Linking a Facebook account isn’t available in ClipPulse yet, so there are no Facebook friends to sync. This switch is saved for when it launches."
+        footer={
+          fb && !fb.configured
+            ? 'Facebook linking isn’t set up on this server yet (the site owner needs to add the Facebook app keys).'
+            : 'We store your Facebook name and ID so friends can find you. Facebook only shares friends who also use ClipPulse, and you can unlink and delete everything at any time.'
+        }
       >
         <ToggleRow icon={ic(Users)} title="Facebook friends" subtitle="Find Facebook friends on ClipPulse" checked={facebookEnabled} onChange={setFacebookEnabled} />
-        {facebookEnabled && (
+        {facebookEnabled && !fb && <SettingsRow icon={ic(Users)} title="Facebook" subtitle="Checking…" chevron={false} />}
+        {facebookEnabled && fb && !fb.linked && (
+          <SettingsRow
+            icon={ic(Users)}
+            title="Connect Facebook"
+            subtitle={fb.configured ? 'Not connected' : 'Not available on this server yet'}
+            chevron={false}
+            right={<button type="button" onClick={() => startFacebook(false)} disabled={!fb.configured || busy === 'fb'} className={BTN}>{busy === 'fb' ? 'Opening…' : 'Connect'}</button>}
+          />
+        )}
+        {facebookEnabled && fb?.linked && (
           <>
             <SettingsRow
               icon={ic(Users)}
-              title="Connect Facebook"
-              subtitle="Not connected"
+              title="Facebook account"
+              subtitle={`Linked${fb.name ? ` as ${fb.name}` : ''}${when(fb.linkedAt) ? ` · since ${when(fb.linkedAt)}` : ''}`}
               chevron={false}
-              right={<button type="button" onClick={() => toast.error('Facebook linking isn’t available yet.')} className={BTN}>Connect</button>}
+              right={<button type="button" onClick={() => setConfirm('unlink')} disabled={busy === 'fb-unlink'} className="shrink-0 px-3 py-1.5 rounded-xl bg-slate-200 dark:bg-neutral-800 text-slate-800 dark:text-neutral-200 font-sans font-bold text-xs disabled:opacity-40">Disconnect</button>}
             />
-            <SettingsRow icon={ic(Users)} title="Sync Facebook friends" subtitle="Connect Facebook first" chevron={false} right={<button type="button" disabled className={BTN}>Sync</button>} />
+            <SettingsRow
+              icon={ic(Users)}
+              title="Sync Facebook friends"
+              subtitle={fb.syncedAt ? `Synced ${when(fb.syncedAt)} · ${fb.friendsSynced} friend${fb.friendsSynced === 1 ? '' : 's'} found, ${fb.matched} on ClipPulse` : 'Not synced yet'}
+              chevron={false}
+              right={<button type="button" onClick={() => startFacebook(true)} disabled={busy === 'fb'} className={BTN}>{busy === 'fb' ? 'Opening…' : 'Sync'}</button>}
+            />
             <SettingsRow
               onClick={counts.facebook ? () => setConfirm('facebook') : undefined}
               icon={ic(Trash2)}
@@ -162,6 +218,8 @@ export default function ContactsLocationPage() {
         )}
       </SettingsGroup>
 
+      {facebookEnabled && fb?.linked && <FacebookFriends refreshKey={fbKey} />}
+
       <SettingsGroup title="Device permissions" footer="Permissions are controlled by your browser or device; if one is blocked, change it from the site settings (the lock icon in the address bar).">
         {rows.map(([name, Icon, title, sub]) => {
           const s = perm[name];
@@ -172,22 +230,32 @@ export default function ContactsLocationPage() {
               title={title}
               subtitle={`${s ? LABEL[s] || s : 'Checking…'} · ${sub}`}
               chevron={false}
-              right={s === 'prompt' ? <button type="button" onClick={() => requestPermission(name)} className={BTN}>Allow</button> : null}
+              right={s === 'prompt' || s === 'unsupported' ? <button type="button" onClick={() => allow(name)} className={BTN}>Allow</button> : null}
             />
           );
         })}
+        <DevicePushRows />
       </SettingsGroup>
 
       {confirm && (
         <ConfirmModal
-          title={confirm === 'facebook' ? 'Remove synced Facebook friends?' : 'Remove synced contacts?'}
-          message="They’ll be deleted from ClipPulse. You can sync again any time."
-          confirmLabel={busy.startsWith('remove') ? 'Removing…' : 'Remove'}
-          confirmDisabled={busy.startsWith('remove')}
-          onConfirm={() => removeSynced(confirm)}
+          title={confirm === 'unlink' ? 'Disconnect Facebook?' : confirm === 'facebook' ? 'Remove synced Facebook friends?' : 'Remove synced contacts?'}
+          message={confirm === 'unlink' ? 'Your Facebook link and every friend synced from it will be deleted from ClipPulse. You can link again any time.' : 'They’ll be deleted from ClipPulse. You can sync again any time.'}
+          confirmLabel={busy.startsWith('remove') || busy === 'fb-unlink' ? 'Working…' : confirm === 'unlink' ? 'Disconnect' : 'Remove'}
+          confirmDisabled={busy.startsWith('remove') || busy === 'fb-unlink'}
+          onConfirm={() => (confirm === 'unlink' ? unlinkFacebook() : removeSynced(confirm))}
           onCancel={() => setConfirm(null)}
         />
       )}
     </SettingsPage>
+  );
+}
+
+// useSearchParams() (for the Facebook return trip) needs a Suspense boundary in Next 14.
+export default function ContactsLocationPage() {
+  return (
+    <Suspense fallback={null}>
+      <ContactsLocationInner />
+    </Suspense>
   );
 }

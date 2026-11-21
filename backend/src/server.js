@@ -57,6 +57,8 @@ process.on('uncaughtException', (err) => {
 });
 
 import authRoutes from './routes/auth.js';
+import { authRouter as facebookAuthRoutes, friendsRouter as facebookFriendsRoutes } from './routes/facebook.js';
+import pushRoutes from './routes/push.js';
 import userRoutes from './routes/users.js';
 import videoRoutes from './routes/videos.js';
 import engagementRoutes from './routes/engagement.js';
@@ -188,7 +190,10 @@ app.use('/uploads', express.static(uploadsPath));
 app.get('/health', (_req, res) => res.json({ ok: true }));
 app.get('/api/v1/health', (_req, res) => res.json({ ok: true }));
 
+app.use('/api/v1/auth/facebook', facebookAuthRoutes); // link/unlink Facebook (before the generic /auth router)
 app.use('/api/v1/auth', authRoutes);
+app.use('/api/v1/friends', facebookFriendsRoutes); // /friends/facebook, /friends/facebook-sync
+app.use('/api/v1/push', pushRoutes); // Web Push subscribe/unsubscribe/test
 app.use('/api/v1/users', userRoutes);
 app.use('/api/v1/videos', videoRoutes);
 app.use('/api/v1', engagementRoutes); // /videos/:id/like, /videos/:id/comments, /comments/:id

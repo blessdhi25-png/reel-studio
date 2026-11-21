@@ -213,6 +213,12 @@ model User {
   // Tokens issued before this moment are rejected ("sign out of all other devices").
   sessionsRevokedAt   DateTime?
   syncedContacts      SyncedContact[]
+  pushSubscriptions   PushSubscription[]
+  // Linked Facebook account (Settings → Contacts and location). facebookId is the app-scoped Graph id.
+  facebookId          String?   @unique
+  facebookName        String?
+  facebookLinkedAt    DateTime?
+  facebookSyncedAt    DateTime?
   // Language preferences (Settings → Language). displayLanguage is a BCP-47-ish code from
   // utils/languages.js; contentLanguages are the languages the person wants to see videos in.
   displayLanguage     String   @default("en")
@@ -867,6 +873,20 @@ model TranslationCache {
 }
 
 // Hashed (SHA-256) phone numbers / emails from a contact sync the person ran themselves. Never stored in clear.
+// One row per browser/device that agreed to Web Push (endpoint is unique to the device).
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
 model SyncedContact {
   id        String   @id @default(cuid())
   userId    String

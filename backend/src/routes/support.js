@@ -3,6 +3,7 @@ import rateLimit from 'express-rate-limit';
 import prisma from '../config/db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
+import { pushForNotification } from '../utils/push.js';
 
 // Support tickets (Settings → Help Centre → Support tickets).
 // People create and follow their own tickets; moderators/admins can see every ticket, reply and set the status.
@@ -45,6 +46,7 @@ async function loadTicket(req, res) {
 const notify = (ticket, actorId, content) =>
   prisma.notification
     .create({ data: { userId: ticket.userId, actorId, type: 'system', content, targetType: 'support_ticket', targetId: ticket.id } })
+    .then((n) => pushForNotification(n))
     .catch(() => {});
 
 // GET /support/tickets[?scope=all&status=OPEN]   mine, newest first; staff may pass scope=all for every user's tickets

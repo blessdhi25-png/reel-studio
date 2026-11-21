@@ -10,10 +10,12 @@ const PROTECTED = ['/settings', '/messages', '/upload', '/studio', '/notificatio
 const nextConfig = {
   // Signed-in screens must never be served from the HTTP/back-forward cache after logout.
   async headers() {
-    return PROTECTED.flatMap((p) => [
+    // The push service worker must always be revalidated so updates reach installed browsers promptly.
+    const swHeaders = [{ source: '/sw.js', headers: [{ key: 'Cache-Control', value: 'no-cache, max-age=0, must-revalidate' }, { key: 'Service-Worker-Allowed', value: '/' }] }];
+    return [...swHeaders, ...PROTECTED.flatMap((p) => [
       { source: p, headers: NO_STORE },
       { source: `${p}/:path*`, headers: NO_STORE },
-    ]);
+    ])];
   },
   // Common legal URLs (and old links, e.g. from app-store listings or emails) map to the real pages.
   async redirects() {

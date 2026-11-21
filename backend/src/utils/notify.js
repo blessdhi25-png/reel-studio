@@ -1,5 +1,6 @@
 import prisma from '../config/db.js';
 import { pushNotification } from '../realtime/socket.js';
+import { pushForNotification } from './push.js';
 
 // Fire-and-forget notification creation — callers should not await-block
 // their main response on this, just call it and move on.
@@ -10,6 +11,7 @@ export async function notify({ userId, actorId, type, content, targetType, targe
       data: { userId, actorId: actorId || null, type, content, targetType, targetId },
     });
     pushNotification(userId, notification);
+    pushForNotification(notification); // device notification (no-op without VAPID keys / subscriptions)
   } catch (err) {
     console.error('[notify] failed to create notification:', err.message);
   }

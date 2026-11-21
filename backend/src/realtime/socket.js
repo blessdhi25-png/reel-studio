@@ -1,5 +1,6 @@
 import { Server } from 'socket.io';
 import jwt from 'jsonwebtoken';
+import { sendPushToUser } from '../utils/push.js';
 import prisma from '../config/db.js';
 import { canMessage } from '../utils/messagingAccess.js';
 
@@ -230,9 +231,17 @@ export function initSocket(httpServer) {
       const fail = (event, extra = {}) => socket.emit(event, { callId, ...extra });
 
       if (!(await canMessage(me, toUserId))) return fail('call:unavailable', { reason: 'not-allowed' });
-      if ((io.sockets.adapter.rooms.get(`user:${toUserId}`)?.size || 0) === 0) {
-        return fail('call:unavailable', { reason: 'offline' });
-      }
+      const calleeOnline = (io.sockets.adapter.rooms.get(`user:${toUserId}`)?.size || 0) > 0;
+      // Device notification for the callee. The service worker skips it while the app is open and visible.
+      prisma.user.findUnique({ where: { id: me }, select: { username: true } }).then((u) => sendPushToUser(toUserId, {
+        title: calleeOnline ? `Incoming ${callType} call` : 'Missed call',
+        body: calleeOnline ? `@${u?.username || 'Someone'} is calling you` : `@${u?.username || 'Someone'} tried to call you`,
+        url: `/messages/${me}`,
+        tag: `call:${callId}`,
+        type: 'call',
+        requireInteraction: calleeOnline,
+      })).catch(() => {});
+      if (!calleeOnline) return fail('call:unavailable', { reason: 'offline' });
       if (getBusyCall(toUserId) || getBusyCall(me)) return fail('call:busy');
 
       const now = Date.now();

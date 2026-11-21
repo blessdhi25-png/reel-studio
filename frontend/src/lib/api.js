@@ -298,6 +298,17 @@ export const api = {
   getSyncedContacts: () => request('/users/me/contacts'),
   syncContacts: (hashes) => request('/users/me/contacts/sync', { method: 'POST', body: { hashes } }),
   removeSyncedContacts: (source = 'contacts') => request(`/users/me/contacts?source=${source}`, { method: 'DELETE' }),
+  // Facebook linking + friends (backend/src/routes/facebook.js)
+  getFacebookStatus: () => request('/auth/facebook/status'),
+  startFacebookLink: () => request('/auth/facebook/start', { method: 'POST' }), // -> { url }
+  facebookSync: () => request('/friends/facebook-sync', { method: 'POST' }), // -> { url }
+  unlinkFacebook: () => request('/auth/facebook', { method: 'DELETE' }),
+  getFacebookFriends: () => request('/friends/facebook'),
+  // Device push notifications (backend/src/routes/push.js)
+  getPushConfig: () => request('/push/config'),
+  pushSubscribe: (body) => request('/push/subscribe', { method: 'POST', body }),
+  pushUnsubscribe: (endpoint) => request('/push/unsubscribe', { method: 'DELETE', body: { endpoint } }),
+  pushTest: () => request('/push/test', { method: 'POST' }),
   // Language preferences (backend/src/routes/preferences.js)
   getLanguagePrefs: () => request('/users/me/language'),
   updateLanguagePrefs: (partial) => request('/users/me/language', { method: 'PATCH', body: partial }),
