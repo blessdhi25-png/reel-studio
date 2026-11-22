@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Bell, BellRing } from 'lucide-react';
 import { useToast } from '@/context/ToastContext';
 import { friendlyError } from '@/lib/friendlyError';
-import { disablePush, enablePush, getPushState, sendTestPush } from '@/lib/push';
+import { disablePush, enablePush, getPushState, resyncPushIfNeeded, sendTestPush } from '@/lib/push';
 import { SettingsRow, ToggleRow } from '@/components/settings/SettingsUI';
 
 const BTN = 'shrink-0 px-3 py-1.5 rounded-xl bg-amber-500 text-black font-sans font-bold text-xs disabled:opacity-40';
@@ -20,6 +20,7 @@ export default function DevicePushRows({ onChange }) {
   const refresh = useCallback(async () => { setSt(await getPushState()); onChange?.(); }, [onChange]);
   useEffect(() => {
     refresh();
+    resyncPushIfNeeded(); // repairs a device the server doesn't know about, before anyone taps Send
     const on = () => document.visibilityState === 'visible' && refresh();
     document.addEventListener('visibilitychange', on); // coming back from the browser's site settings
     window.addEventListener('focus', refresh);
@@ -53,7 +54,16 @@ export default function DevicePushRows({ onChange }) {
       await sendTestPush();
       toast.success('Test sent — look for it in your notification tray.');
     } catch (err) {
-      toast.error(err?.status === 404 ? 'No device received it. Turn Device notifications off and on again.' : friendlyError(err));
+      if (err?.code === 'no_subscription' || err?.code === 'subscription_expired') {
+        // Self-heal once: rebuild this device's subscription, then retry the test.
+        try {
+          await enablePush();
+          await sendTestPush();
+          toast.success('Test sent — look for it in your notification tray.');
+          return;
+        } catch (err2) { err = err2; }
+      }
+      toast.error(err?.error || friendlyError(err)); // server messages are specific (missing package, VAPID mismatch …)
     } finally {
       setBusy('');
     }

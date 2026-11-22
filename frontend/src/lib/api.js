@@ -306,6 +306,7 @@ export const api = {
   getFacebookFriends: () => request('/friends/facebook'),
   // Device push notifications (backend/src/routes/push.js)
   getPushConfig: () => request('/push/config'),
+  getPushStatus: () => request('/push/status'),
   pushSubscribe: (body) => request('/push/subscribe', { method: 'POST', body }),
   pushUnsubscribe: (endpoint) => request('/push/unsubscribe', { method: 'DELETE', body: { endpoint } }),
   pushTest: () => request('/push/test', { method: 'POST' }),

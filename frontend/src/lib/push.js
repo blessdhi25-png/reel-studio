@@ -23,12 +23,22 @@ function urlBase64ToUint8Array(b64) {
   return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
 }
 
+// The SERVER's key wins: it's the one its private key signs with, so a stale or different
+// NEXT_PUBLIC_VAPID_PUBLIC_KEY on the frontend can't produce subscriptions the server is unable to use.
 async function getPublicKey() {
-  const fromEnv = (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || '').trim();
-  if (fromEnv) return fromEnv;
-  const cfg = await api.getPushConfig();
-  return cfg?.enabled ? cfg.publicKey : null;
+  try {
+    const cfg = await api.getPushConfig();
+    if (cfg?.enabled && cfg.publicKey) return cfg.publicKey;
+  } catch {}
+  return (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || '').trim() || null;
 }
+
+const sameKey = (buf, key) => {
+  if (!buf) return false;
+  const a = new Uint8Array(buf);
+  const b = urlBase64ToUint8Array(key);
+  return a.length === b.length && a.every((v, i) => v === b[i]);
+};
 
 async function getRegistration() {
   const existing = await navigator.serviceWorker.getRegistration(SW_URL);
@@ -62,9 +72,30 @@ export async function enablePush() {
   const reg = await getRegistration();
   await navigator.serviceWorker.ready;
   let sub = await reg.pushManager.getSubscription();
+  // A subscription made with a different VAPID key is useless (the push service rejects the server's sends): replace it.
+  if (sub && !sameKey(sub.options?.applicationServerKey, key)) {
+    await sub.unsubscribe().catch(() => {});
+    sub = null;
+  }
   if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(key) });
   await api.pushSubscribe({ subscription: sub.toJSON(), userAgent: navigator.userAgent });
   return true;
+}
+
+/**
+ * The browser can hold a subscription the server never stored (earlier save failed, migration wasn't applied,
+ * database reset). If this device is subscribed locally but the server knows no devices, save it again.
+ */
+export async function resyncPushIfNeeded() {
+  try {
+    const reg = await navigator.serviceWorker.getRegistration(SW_URL);
+    const sub = await reg?.pushManager.getSubscription();
+    if (!sub || Notification.permission !== 'granted') return;
+    const key = await getPublicKey();
+    if (key && !sameKey(sub.options?.applicationServerKey, key)) return enablePush(); // wrong key: rebuild it
+    const { devices } = await api.getPushStatus();
+    if (!devices) await api.pushSubscribe({ subscription: sub.toJSON(), userAgent: navigator.userAgent });
+  } catch {}
 }
 
 export async function disablePush() {

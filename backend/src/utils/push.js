@@ -29,11 +29,12 @@ function loadWebPush() {
 export const pushConfigured = () => !!(PUBLIC_KEY && PRIVATE_KEY && /^(mailto:|https:)/.test(SUBJECT));
 export const vapidPublicKey = () => PUBLIC_KEY;
 
-async function sendOne(wp, sub, body) {
+async function sendOne(wp, sub, body, errors) {
   try {
     await wp.sendNotification({ endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } }, body, { TTL: 60 * 60, urgency: 'high' });
     return true;
   } catch (err) {
+    errors?.push(err.statusCode || 0);
     // 404/410: the browser dropped this subscription (uninstalled, permission revoked) — forget it.
     if (err.statusCode === 404 || err.statusCode === 410) {
       await prisma.pushSubscription.deleteMany({ where: { endpoint: sub.endpoint } }).catch(() => {});
@@ -42,6 +43,22 @@ async function sendOne(wp, sub, body) {
     }
     return false;
   }
+}
+
+/**
+ * Same as sendPushToUser but reports WHY nothing was delivered (used by "Send Test Notification"):
+ * { devices, sent, errors: [httpStatus…], libMissing }.
+ */
+export async function sendPushDetailed(userId, payload) {
+  const out = { devices: 0, sent: 0, errors: [], libMissing: false };
+  const subs = await prisma.pushSubscription.findMany({ where: { userId } });
+  out.devices = subs.length;
+  if (!subs.length) return out;
+  const wp = await loadWebPush();
+  if (!wp) { out.libMissing = true; return out; }
+  const body = JSON.stringify({ url: '/notifications', ...payload });
+  out.sent = (await Promise.all(subs.map((s) => sendOne(wp, s, body, out.errors)))).filter(Boolean).length;
+  return out;
 }
 
 /**
