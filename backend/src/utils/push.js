@@ -41,6 +41,18 @@ function loadWebPush() {
   return webpushPromise;
 }
 
+// Lengths only (never the values): a valid pair is 87 characters public / 43 private (url-safe base64, no padding).
+export function vapidShape() {
+  const pub = PUBLIC_KEY.length;
+  const priv = PRIVATE_KEY.length;
+  let hint = '';
+  if (pub !== 87) hint = `VAPID_PUBLIC_KEY is ${pub} characters (expected 87).`;
+  if (priv !== 43) hint += `${hint ? ' ' : ''}VAPID_PRIVATE_KEY is ${priv} characters (expected 43).`;
+  if (priv === 87 && pub === 43) hint += ' The public and private keys look swapped.';
+  if (PRIVATE_KEY && PRIVATE_KEY === PUBLIC_KEY) hint += ' Both variables hold the same value.';
+  return { pub, priv, hint };
+}
+
 export const pushConfigured = () => !!(PUBLIC_KEY && PRIVATE_KEY && /^(mailto:|https:)/.test(SUBJECT));
 export const vapidPublicKey = () => PUBLIC_KEY;
 
