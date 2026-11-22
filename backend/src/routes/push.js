@@ -3,7 +3,7 @@ import rateLimit from 'express-rate-limit';
 import prisma from '../config/db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
-import { pushConfigured, sendPushDetailed, vapidPublicKey } from '../utils/push.js';
+import { pushConfigured, pushLoadError, sendPushDetailed, vapidPublicKey } from '../utils/push.js';
 
 // Device (Web Push) notifications. Mounted at /api/v1/push.
 const router = Router();
@@ -60,7 +60,10 @@ router.post('/test', requireAuth, testLimiter, asyncHandler(async (req, res) => 
   });
   if (r.sent) return res.json({ sent: r.sent, devices: r.devices });
   // Say precisely why, so the cause is fixable instead of "try again".
-  if (r.libMissing) return res.status(503).json({ code: 'server_lib_missing', error: 'The server is missing the web-push package. Run npm install in backend/ and redeploy.' });
+  if (r.libMissing && pushLoadError.stage === 'vapid') {
+    return res.status(503).json({ code: 'vapid_invalid', error: `The server’s VAPID settings were rejected: ${pushLoadError.message}. Re-generate the pair with "npx web-push generate-vapid-keys" and paste them without quotes or spaces (VAPID_SUBJECT must start with mailto: or https:).` });
+  }
+  if (r.libMissing) return res.status(503).json({ code: 'server_lib_missing', error: 'The server couldn’t load the web-push package. Make sure backend/package.json (with "web-push") is committed and the host reinstalled dependencies.' });
   if (!r.devices) return res.status(404).json({ code: 'no_subscription', error: 'This device isn’t registered on the server yet.' });
   if (r.errors.some((c) => c === 401 || c === 403)) return res.status(502).json({ code: 'vapid_mismatch', error: 'The push service rejected the server’s VAPID keys. The key this device subscribed with doesn’t match the server’s VAPID_PRIVATE_KEY.' });
   if (r.errors.every((c) => c === 404 || c === 410)) return res.status(404).json({ code: 'subscription_expired', error: 'This device’s subscription expired and was removed.' });

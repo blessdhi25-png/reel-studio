@@ -5,21 +5,36 @@ import prisma from '../config/db.js';
 //   npx web-push generate-vapid-keys
 // Everything here is best-effort: a missing package, missing keys or a dead subscription never breaks the
 // request that triggered the push.
-const PUBLIC_KEY = (process.env.VAPID_PUBLIC_KEY || process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || '').trim();
-const PRIVATE_KEY = (process.env.VAPID_PRIVATE_KEY || '').trim();
-const SUBJECT = (process.env.VAPID_SUBJECT || '').trim();
+// Pasted env values often carry wrapping quotes, spaces, a newline or "=" padding; web-push rejects all of those.
+const cleanKey = (v) => (v || '').trim().replace(/^["']|["']$/g, '').trim().replace(/=+$/, '');
+const cleanEnv = (v) => (v || '').trim().replace(/^["']|["']$/g, '').trim();
+const PUBLIC_KEY = cleanKey(process.env.VAPID_PUBLIC_KEY || process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY);
+const PRIVATE_KEY = cleanKey(process.env.VAPID_PRIVATE_KEY);
+const SUBJECT = cleanEnv(process.env.VAPID_SUBJECT);
 
+// stage tells the two failure modes apart: 'import' = package not installed on the server,
+// 'vapid' = package is there but rejected the keys/subject (message is web-push's own, never the key).
+export const pushLoadError = { stage: null, message: null };
 let webpushPromise = null;
 function loadWebPush() {
   if (!webpushPromise) {
     webpushPromise = import('web-push')
       .then((m) => {
         const wp = m.default || m;
-        wp.setVapidDetails(SUBJECT, PUBLIC_KEY, PRIVATE_KEY);
+        try {
+          wp.setVapidDetails(SUBJECT, PUBLIC_KEY, PRIVATE_KEY);
+        } catch (err) {
+          pushLoadError.stage = 'vapid';
+          pushLoadError.message = err.message;
+          console.error('[push] VAPID details rejected:', err.message);
+          return null;
+        }
         return wp;
       })
       .catch((err) => {
-        console.error('[push] web-push unavailable:', err.message);
+        pushLoadError.stage = 'import';
+        pushLoadError.message = err.message;
+        console.error('[push] web-push could not be imported:', err.message);
         return null;
       });
   }
