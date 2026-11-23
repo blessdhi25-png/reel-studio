@@ -72,6 +72,11 @@ function feedKey(filter, circle, weights) {
   return JSON.stringify([filter || null, circle || null, weights || null]);
 }
 
+// A slide counts as "the one playing" once this much of it is in view (≥ 0.75).
+const ACTIVE_RATIO = 0.75;
+// After one wheel/keyboard step, ignore further steps for this long (matches the smooth-scroll duration).
+const STEP_LOCK_MS = 420;
+
 export default function FeedPage() {
   const router = useRouter();
   const [guest, setGuest] = useState(false);
@@ -373,45 +378,54 @@ export default function FeedPage() {
     setVideos((prev) => prev.filter((v) => v.id !== videoId));
   }
 
+  // Active video = the slide that is (almost) fully in view. An IntersectionObserver with a high threshold
+  // only promotes a slide once it has snapped into place, so a card that is merely sliding past never starts
+  // playing (and the one leaving pauses) — no competing playback mid-swipe.
   useEffect(() => {
-    const mobileEl = mobileContainerRef.current;
-    const desktopEl = desktopContainerRef.current;
+    const el = isDesktop ? desktopContainerRef.current : mobileContainerRef.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return undefined;
+    const indexOfSlide = (node) => Array.prototype.indexOf.call(el.children, node);
+    const io = new IntersectionObserver(
+      (entries) => {
+        let best = null;
+        for (const e of entries) {
+          if (!e.isIntersecting || e.intersectionRatio < ACTIVE_RATIO) continue;
+          if (!best || e.intersectionRatio > best.intersectionRatio) best = e;
+        }
+        if (!best) return;
+        const i = indexOfSlide(best.target);
+        if (i >= 0 && i < videos.length) setActiveIndex(i);
+      },
+      { root: el, threshold: [ACTIVE_RATIO, 0.9, 1] }
+    );
+    const count = Math.min(el.children.length, videos.length);
+    for (let i = 0; i < count; i++) io.observe(el.children[i]);
 
-    function makeScrollHandler(el) {
-      return () => setActiveIndex(Math.round(el.scrollTop / el.clientHeight));
-    }
-
-    // Desktop cards are shorter than the scroller (88vh + gap), so index-by-height
-    // doesn't work: the active card is the one whose centre is nearest the scroller's centre.
-    function makeCenterHandler(el) {
-      return () => {
+    // Safety net: if nothing reaches the threshold (very short last slide, odd zoom levels), settle on the
+    // nearest slide once scrolling stops — never while it is still moving.
+    let timer;
+    const onScroll = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
         const box = el.getBoundingClientRect();
         const mid = box.top + box.height / 2;
-        const count = Math.min(el.children.length, videos.length);
         let best = 0;
         let bestDist = Infinity;
         for (let i = 0; i < count; i++) {
           const r = el.children[i].getBoundingClientRect();
           const d = Math.abs(r.top + r.height / 2 - mid);
-          if (d < bestDist) {
-            bestDist = d;
-            best = i;
-          }
+          if (d < bestDist) { bestDist = d; best = i; }
         }
         setActiveIndex(best);
-      };
-    }
-
-    const onMobileScroll = mobileEl && makeScrollHandler(mobileEl);
-    const onDesktopScroll = desktopEl && makeCenterHandler(desktopEl);
-
-    mobileEl?.addEventListener('scroll', onMobileScroll);
-    desktopEl?.addEventListener('scroll', onDesktopScroll);
-    return () => {
-      mobileEl?.removeEventListener('scroll', onMobileScroll);
-      desktopEl?.removeEventListener('scroll', onDesktopScroll);
+      }, 160);
     };
-  }, [videos, isDesktop]);
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      io.disconnect();
+      clearTimeout(timer);
+      el.removeEventListener('scroll', onScroll);
+    };
+  }, [videos.length, isDesktop]);
 
   function scrollToIndex(i) {
     const clamped = Math.max(0, Math.min(videos.length - 1, i));
@@ -571,16 +585,37 @@ export default function FeedPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Keyboard: ArrowDown / ArrowUp step through the feed on desktop. Ignored while typing,
-  // with modifier keys held, or while a dialog is open.
+  // Desktop paging: wheel / trackpad / ArrowUp / ArrowDown move exactly ONE video per gesture. After a step the
+  // feed is locked for STEP_LOCK_MS so a fast wheel spin or a trackpad's inertia tail can't chain extra steps;
+  // the target index is remembered meanwhile because activeIndex only updates once the slide has snapped.
   const scrollToIndexRef = useRef(null);
   scrollToIndexRef.current = scrollToIndex;
-  const keyTargetRef = useRef(null);
-  const keyTimerRef = useRef(null);
+  const stepTargetRef = useRef(null);
+  const stepLockUntilRef = useRef(0);
+  const stepClearRef = useRef(null);
   const activeIndexRef = useRef(0);
   activeIndexRef.current = activeIndex;
+  const videosLenRef = useRef(0);
+  videosLenRef.current = videos.length;
+
+  const stepFeed = useCallback((dir) => {
+    const now = performance.now();
+    if (now < stepLockUntilRef.current) return false;
+    const base = stepTargetRef.current ?? activeIndexRef.current;
+    const next = Math.max(0, Math.min(videosLenRef.current - 1, base + dir));
+    if (next === base) return false;
+    stepLockUntilRef.current = now + STEP_LOCK_MS;
+    stepTargetRef.current = next;
+    clearTimeout(stepClearRef.current);
+    stepClearRef.current = setTimeout(() => { stepTargetRef.current = null; }, STEP_LOCK_MS + 200);
+    scrollToIndexRef.current?.(next);
+    return true;
+  }, []);
+
   useEffect(() => {
-    if (!isDesktop) return;
+    if (!isDesktop) return undefined;
+    const el = desktopContainerRef.current;
+
     function onKeyDown(e) {
       if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
       if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
@@ -589,19 +624,40 @@ export default function FeedPage() {
       if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
       if (document.querySelector('[aria-modal="true"]')) return;
       e.preventDefault();
-      const base = keyTargetRef.current ?? activeIndexRef.current;
-      const next = Math.max(0, base + (e.key === 'ArrowDown' ? 1 : -1));
-      keyTargetRef.current = next;
-      clearTimeout(keyTimerRef.current);
-      keyTimerRef.current = setTimeout(() => { keyTargetRef.current = null; }, 450);
-      scrollToIndexRef.current?.(next);
+      stepFeed(e.key === 'ArrowDown' ? 1 : -1);
     }
+
+    // Wheel: ignore the tiny deltas of a resting trackpad, ignore a decaying inertia tail, and leave wheel
+    // events alone when the pointer is over something inside the card that scrolls on its own.
+    let lastTs = 0;
+    let lastAbs = 0;
+    function onWheel(e) {
+      if (e.ctrlKey) return; // pinch-zoom
+      const abs = Math.abs(e.deltaY);
+      if (abs < Math.abs(e.deltaX)) return; // sideways gesture
+      for (let n = e.target; n && n !== el; n = n.parentElement) {
+        if (!(n instanceof HTMLElement)) continue;
+        const oy = getComputedStyle(n).overflowY;
+        if ((oy === 'auto' || oy === 'scroll') && n.scrollHeight > n.clientHeight + 1) return;
+      }
+      e.preventDefault(); // we own paging here; native wheel scrolling would skip several snap points
+      const now = performance.now();
+      const gap = now - lastTs;
+      const decaying = gap < 120 && abs < lastAbs; // inertia tail of the previous flick
+      lastTs = now;
+      lastAbs = abs;
+      if (abs < 4 || decaying) return;
+      stepFeed(e.deltaY > 0 ? 1 : -1);
+    }
+
     window.addEventListener('keydown', onKeyDown);
+    el?.addEventListener('wheel', onWheel, { passive: false });
     return () => {
       window.removeEventListener('keydown', onKeyDown);
-      clearTimeout(keyTimerRef.current);
+      el?.removeEventListener('wheel', onWheel);
+      clearTimeout(stepClearRef.current);
     };
-  }, [isDesktop]);
+  }, [isDesktop, stepFeed]);
 
   // Video currently centered in the feed — feeds the desktop side rail
   // (comments/details) and its seek callback below. This was previously
@@ -752,11 +808,11 @@ export default function FeedPage() {
         <div className="pt-16 pb-20 lg:pt-0 lg:pb-0 h-full w-full flex-1 min-h-0 flex flex-col items-center" style={bottomNavH ? { paddingBottom: bottomNavH } : undefined}>
           <div
             ref={mobileContainerRef}
-            className="feed-scroll h-full w-full overflow-y-scroll snap-y snap-mandatory"
+            className="feed-scroll h-full w-full overflow-y-scroll snap-y snap-mandatory overscroll-y-contain scroll-auto"
             {...scrollHandlers}
           >
             {videos.map((video, i) => (
-              <div key={video.id} className="h-full w-full snap-start flex items-center justify-center relative">
+              <div key={video.id} className="h-full w-full snap-start snap-always shrink-0 flex items-center justify-center relative">
                <div className="h-full w-full">
                 <VideoCard
                   ref={(el) => { videoCardRefs.current[video.id] = el; }}
@@ -775,12 +831,12 @@ export default function FeedPage() {
               </div>
             ))}
             {loadingMore && (
-              <div className="h-full w-full snap-start">
+              <div className="h-full w-full snap-start shrink-0">
                 <FeedSkeletonCard />
               </div>
             )}
             {videos.length === 0 && initialLoading && (
-              <div className="h-full w-full snap-start">
+              <div className="h-full w-full snap-start shrink-0">
                 <FeedSkeletonCard />
               </div>
             )}
@@ -848,11 +904,11 @@ export default function FeedPage() {
             <div className="h-full w-full max-w-[calc((100vh-6rem)*9/16+2rem)] flex items-center justify-center lg:h-full bg-zinc-900/60 border border-zinc-800 rounded-2xl backdrop-blur-md shadow-2xl p-4 lg:max-w-none lg:bg-transparent lg:border-0 lg:shadow-none lg:backdrop-blur-none lg:p-0">
               <div
                 ref={desktopContainerRef}
-                className="feed-scroll h-full max-h-[calc(100vh-8rem)] w-auto aspect-[9/16] overflow-y-scroll snap-y snap-mandatory rounded-xl mx-auto lg:aspect-auto lg:w-full lg:max-h-none lg:mx-0 lg:rounded-none lg:flex lg:flex-col lg:items-center lg:pt-14 lg:pb-6"
+                className="feed-scroll h-full max-h-[calc(100vh-8rem)] w-auto aspect-[9/16] overflow-y-scroll snap-y snap-mandatory overscroll-y-contain scroll-auto rounded-xl mx-auto lg:aspect-auto lg:w-full lg:max-h-none lg:mx-0 lg:rounded-none lg:flex lg:flex-col lg:items-center lg:pt-14 lg:pb-6"
                 {...scrollHandlers}
               >
                 {videos.map((video, i) => (
-                  <div key={video.id} className="h-full w-full snap-start lg:h-[88vh] lg:max-w-[560px] lg:shrink-0 lg:snap-center lg:snap-always lg:flex lg:items-center lg:justify-center lg:relative lg:mb-8">
+                  <div key={video.id} className="h-full w-full snap-start snap-always shrink-0 lg:h-[88vh] lg:max-w-[560px] lg:snap-center lg:flex lg:items-center lg:justify-center lg:relative lg:mb-8">
                     <VideoCard
                       ref={(el) => { videoCardRefs.current[video.id] = el; }}
                       video={video}

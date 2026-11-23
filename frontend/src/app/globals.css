@@ -53,6 +53,10 @@ body {
 .feed-scroll {
   -ms-overflow-style: none;
   scrollbar-width: none;
+  /* One video per swipe: contain overscroll (no outer-page double scroll) and never let a CSS smooth-scroll
+     rule fight touch momentum — programmatic paging passes behavior:'smooth' explicitly where wanted. */
+  overscroll-behavior-y: contain;
+  scroll-behavior: auto;
 }
 
 /* Same treatment, generalized — StoriesBar's horizontal tray needs the
