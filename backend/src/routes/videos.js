@@ -20,7 +20,7 @@ const postLanguage = (v) => (isLanguage(v) ? v : 'en');
 const LANGUAGE_BOOST = 1.5;
 const boosted = (v, match) => Number(v.rankingScore || 0) * (match ? LANGUAGE_BOOST : 1) + (match ? 1e-6 : 0);
 const FEED_INCLUDE = {
-  user: { select: { id: true, username: true, avatarUrl: true, stripeOnboarded: true } },
+  user: { select: { id: true, username: true, displayName: true, avatarUrl: true, stripeOnboarded: true } },
   track: { include: { artist: { select: { stageName: true } } } },
 };
 
@@ -249,7 +249,7 @@ router.get('/feed', optionalAuth, async (req, res) => {
       orderBy: [{ rankingScore: 'desc' }, { createdAt: 'desc' }],
       take: poolSize,
       include: {
-        user: { select: { id: true, username: true, avatarUrl: true, stripeOnboarded: true } },
+        user: { select: { id: true, username: true, displayName: true, avatarUrl: true, stripeOnboarded: true } },
         track: { include: { artist: { select: { stageName: true } } } },
       },
     });
@@ -339,6 +339,7 @@ router.get('/feed', optionalAuth, async (req, res) => {
           audioUrl: v.track.audioUrl,
           artistName: v.track.artist.stageName,
           durationSeconds: v.track.durationSeconds,
+          coverUrl: v.track.coverUrl,
         }
       : null,
   }));
@@ -350,7 +351,7 @@ router.get('/:id', optionalAuth, async (req, res) => {
   const video = await prisma.video.findUnique({
     where: { id: req.params.id },
     include: {
-      user: { select: { id: true, username: true, avatarUrl: true, stripeOnboarded: true } },
+      user: { select: { id: true, username: true, displayName: true, avatarUrl: true, stripeOnboarded: true } },
       track: { include: { artist: { select: { stageName: true } } } },
     },
   });
@@ -381,6 +382,7 @@ router.get('/:id', optionalAuth, async (req, res) => {
           audioUrl: video.track.audioUrl,
           artistName: video.track.artist.stageName,
           durationSeconds: video.track.durationSeconds,
+          coverUrl: video.track.coverUrl,
         }
       : null,
   });

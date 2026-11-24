@@ -347,6 +347,12 @@ export const api = {
   getMyArtistProfile: () => request('/artists/me'),
   registerArtist: (data) => request('/artists/register', { method: 'POST', body: data }),
   getMyTracks: () => request('/artists/me/tracks'),
+  // Direct-to-storage track upload: sign -> browser uploads the file -> save the record (see lib/trackUpload.js)
+  getUploadSignature: (kind) => request('/sounds/upload-signature', { method: 'POST', body: { kind } }),
+  createSound: (body) => request('/sounds', { method: 'POST', body }),
+  getSound: (id) => request(`/sounds/${id}`),
+  getSoundVideos: (id) => request(`/sounds/${id}/videos`),
+  likeComment: (commentId) => request(`/comments/${commentId}/like`, { method: 'POST' }),
   uploadTrack: (formData) => request('/artists/me/tracks', { method: 'POST', body: formData, isForm: true }),
   searchTracks: (q) => request(`/artists/tracks/search${q ? `?q=${encodeURIComponent(q)}` : ''}`),
   getTrendingSounds: ({ query, limit } = {}) => {

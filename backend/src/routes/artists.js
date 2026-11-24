@@ -2,6 +2,7 @@ import { Router } from 'express';
 import prisma from '../config/db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { uploadTrack } from '../utils/upload.js';
+import cloudinary from '../config/cloudinary.js';
 
 const router = Router();
 const LABEL_STATUSES = ['independent', 'signed'];
@@ -71,6 +72,7 @@ router.get('/me/tracks', requireAuth, async (req, res) => {
         id: t.id,
         title: t.title,
         audioUrl: t.audioUrl,
+        coverUrl: t.coverUrl,
         durationSeconds: t.durationSeconds,
         createdAt: t.createdAt,
         useCount: t.videos.length,
@@ -82,23 +84,78 @@ router.get('/me/tracks', requireAuth, async (req, res) => {
   res.json(enriched);
 });
 
-router.post('/me/tracks', requireAuth, uploadTrack.single('audio'), async (req, res) => {
-  const profile = await prisma.artistProfile.findUnique({ where: { userId: req.userId } });
-  if (!profile) return res.status(404).json({ error: 'Register as an artist first' });
-  if (!req.file) return res.status(400).json({ error: 'No audio file uploaded' });
-  if (!req.body.title?.trim()) return res.status(400).json({ error: 'Track title is required' });
+// ---- Direct-to-storage track uploads -------------------------------------------------------------
+// Audio no longer travels through this server (large files + request timeouts were what made uploads fail):
+// the browser asks for a short-lived signed upload, sends the file straight to Cloudinary, then calls
+// createTrackHandler with the resulting URLs. The multipart route below is kept for older clients.
+const AUDIO_FORMATS = 'mp3,wav,m4a,aac,mp4,ogg,webm';
+const COVER_FORMATS = 'jpg,jpeg,png,webp';
+const CLOUD = () => (process.env.CLOUDINARY_CLOUD_NAME || '').trim();
 
+async function requireArtist(req, res) {
+  const profile = await prisma.artistProfile.findUnique({ where: { userId: req.userId } });
+  if (!profile) res.status(404).json({ error: 'Register as an artist first' });
+  return profile;
+}
+
+export async function uploadSignatureHandler(req, res) {
+  if (!(await requireArtist(req, res))) return;
+  if (!CLOUD() || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
+    return res.status(503).json({ error: 'Uploads aren’t set up on this server yet.' });
+  }
+  const kind = req.body?.kind === 'cover' ? 'cover' : 'audio';
+  const timestamp = Math.round(Date.now() / 1000);
+  const params = kind === 'audio'
+    ? { allowed_formats: AUDIO_FORMATS, folder: 'reel/tracks', timestamp }
+    : { allowed_formats: COVER_FORMATS, folder: 'reel/track-covers', timestamp };
+  const signature = cloudinary.utils.api_sign_request(params, process.env.CLOUDINARY_API_SECRET);
+  res.json({
+    uploadUrl: `https://api.cloudinary.com/v1_1/${CLOUD()}/${kind === 'audio' ? 'video' : 'image'}/upload`,
+    apiKey: process.env.CLOUDINARY_API_KEY,
+    signature,
+    params, // the client must send exactly these fields alongside the file
+    maxBytes: kind === 'audio' ? 50 * 1024 * 1024 : 5 * 1024 * 1024,
+  });
+}
+
+// Only URLs that point into OUR Cloudinary account and the track folders are accepted.
+const urlInFolder = (url, resource, folder) =>
+  typeof url === 'string' && url.length < 1000 && url.startsWith(`https://res.cloudinary.com/${CLOUD()}/${resource}/upload/`) && url.includes(`/${folder}/`);
+
+export async function createTrackHandler(req, res) {
+  const profile = await requireArtist(req, res);
+  if (!profile) return;
+  const title = (req.body?.title || '').trim();
+  if (!title) return res.status(400).json({ error: 'Track title is required' });
+  if (title.length > 120) return res.status(400).json({ error: 'Track title is too long' });
+
+  let audioUrl;
+  let coverUrl = null;
+  if (req.file) {
+    audioUrl = req.file.path; // legacy multipart upload (Cloudinary URL via multer-storage)
+  } else {
+    audioUrl = req.body?.audioUrl;
+    if (!urlInFolder(audioUrl, 'video', 'reel/tracks')) return res.status(400).json({ error: 'Invalid audio upload. Please try again.' });
+    if (req.body?.coverUrl) {
+      if (!urlInFolder(req.body.coverUrl, 'image', 'reel/track-covers')) return res.status(400).json({ error: 'Invalid cover image. Please try again.' });
+      coverUrl = req.body.coverUrl;
+    }
+  }
+  const duration = Number(req.body?.durationSeconds ?? req.body?.duration);
   const track = await prisma.track.create({
     data: {
       artistId: profile.id,
-      title: req.body.title.trim(),
-      audioUrl: req.file.path, // Cloudinary secure CDN URL — see utils/upload.js
-      durationSeconds: req.body.durationSeconds ? Number(req.body.durationSeconds) : null,
+      title,
+      audioUrl,
+      coverUrl,
+      durationSeconds: Number.isFinite(duration) && duration > 0 && duration < 3600 ? Math.round(duration) : null,
     },
   });
-
   res.status(201).json(track);
-});
+}
+
+router.post('/me/tracks/upload-signature', requireAuth, uploadSignatureHandler);
+router.post('/me/tracks', requireAuth, (req, res, next) => (req.is('multipart/form-data') ? uploadTrack.single('audio')(req, res, next) : next()), createTrackHandler);
 
 // Lets any creator browse distributed tracks to attach to a new post —
 // this is the actual "for other creators to use in their reels" mechanism.
@@ -134,6 +191,7 @@ router.get('/tracks/trending', async (req, res) => {
       id: t.id,
       title: t.title,
       audioUrl: t.audioUrl,
+      coverUrl: t.coverUrl,
       artistName: t.artist.stageName,
       durationSeconds: t.durationSeconds,
       useCount: t._count.videos,
@@ -156,7 +214,7 @@ router.get('/tracks/search', async (req, res) => {
     take: 30,
     include: { artist: { select: { stageName: true } } },
   });
-  res.json(tracks.map((t) => ({ id: t.id, title: t.title, audioUrl: t.audioUrl, artistName: t.artist.stageName })));
+  res.json(tracks.map((t) => ({ id: t.id, title: t.title, audioUrl: t.audioUrl, coverUrl: t.coverUrl, artistName: t.artist.stageName })));
 });
 
 // Other reels using this same sound — powers the SoundPicker's "Reels
@@ -165,7 +223,7 @@ router.get('/tracks/search', async (req, res) => {
 // tracks/search above — no auth needed just to browse. Declared before the
 // generic /tracks/:id below so Express doesn't try to match the trailing
 // /videos segment as part of an :id.
-router.get('/tracks/:id/videos', async (req, res) => {
+export async function trackVideosHandler(req, res) {
   const videos = await prisma.video.findMany({
     where: { trackId: req.params.id, status: 'published' },
     orderBy: { createdAt: 'desc' },
@@ -177,10 +235,13 @@ router.get('/tracks/:id/videos', async (req, res) => {
       id: v.id,
       thumbnailUrl: v.thumbnailUrl,
       caption: v.caption,
+      viewCount: Number(v.viewCount ?? 0), // BigInt column -> plain number for JSON
+      likeCount: v.likeCount ?? 0,
       user: v.user,
     }))
   );
-});
+}
+router.get('/tracks/:id/videos', trackVideosHandler);
 
 // A single track by id — used to preselect a sound handed off via
 // /upload?trackId=... (see the SoundPicker "Use This Sound" flow in
@@ -189,19 +250,27 @@ router.get('/tracks/:id/videos', async (req, res) => {
 // otherwise shadow the literal /tracks/trending and /tracks/search routes
 // above (Express matches route order, and "trending"/"search" would just
 // get captured as :id).
-router.get('/tracks/:id', async (req, res) => {
+export async function trackDetailHandler(req, res) {
   const track = await prisma.track.findUnique({
     where: { id: req.params.id },
-    include: { artist: { select: { stageName: true } } },
+    include: {
+      artist: { select: { stageName: true, userId: true } },
+      _count: { select: { videos: { where: { status: 'published' } } } },
+    },
   });
-  if (!track) return res.status(404).json({ error: 'Track not found' });
+  if (!track) return res.status(404).json({ error: 'Sound not found' });
   res.json({
     id: track.id,
     title: track.title,
     audioUrl: track.audioUrl,
+    coverUrl: track.coverUrl,
     artistName: track.artist.stageName,
+    artistUserId: track.artist.userId,
     durationSeconds: track.durationSeconds,
+    useCount: track._count.videos,
+    createdAt: track.createdAt,
   });
-});
+}
+router.get('/tracks/:id', trackDetailHandler);
 
 export default router;

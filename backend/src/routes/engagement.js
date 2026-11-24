@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import prisma from '../config/db.js';
-import { requireAuth } from '../middleware/auth.js';
+import { optionalAuth, requireAuth } from '../middleware/auth.js';
 import { notify } from '../utils/notify.js';
 import { isBlocked } from './privacy.js';
 
@@ -105,13 +105,36 @@ router.get('/users/me/likes', requireAuth, async (req, res) => {
   res.json(likes.map((l) => l.video));
 });
 
-router.get('/videos/:id/comments', async (req, res) => {
+router.get('/videos/:id/comments', optionalAuth, async (req, res) => {
   const comments = await prisma.comment.findMany({
     where: { videoId: req.params.id },
     orderBy: { createdAt: 'desc' },
-    include: { user: { select: { id: true, username: true, avatarUrl: true } } },
+    include: { user: { select: { id: true, username: true, displayName: true, avatarUrl: true } } },
   });
-  res.json(comments);
+  // `liked` = whether the signed-in viewer has hearted each comment (false when signed out).
+  let likedIds = new Set();
+  if (req.userId && comments.length) {
+    const mine = await prisma.commentLike.findMany({
+      where: { userId: req.userId, commentId: { in: comments.map((c) => c.id) } },
+      select: { commentId: true },
+    });
+    likedIds = new Set(mine.map((l) => l.commentId));
+  }
+  res.json(comments.map((c) => ({ ...c, liked: likedIds.has(c.id) })));
+});
+
+// Toggle: first call likes, second call un-likes. Returns the new state + count.
+router.post('/comments/:id/like', requireAuth, async (req, res) => {
+  const comment = await prisma.comment.findUnique({ where: { id: req.params.id }, select: { id: true } });
+  if (!comment) return res.status(404).json({ error: 'Comment not found' });
+  const key = { userId_commentId: { userId: req.userId, commentId: comment.id } };
+  const existing = await prisma.commentLike.findUnique({ where: key });
+  const updated = await prisma.$transaction(async (tx) => {
+    if (existing) await tx.commentLike.delete({ where: key });
+    else await tx.commentLike.create({ data: { userId: req.userId, commentId: comment.id } });
+    return tx.comment.update({ where: { id: comment.id }, data: { likeCount: { increment: existing ? -1 : 1 } }, select: { likeCount: true } });
+  });
+  res.json({ liked: !existing, likeCount: Math.max(0, updated.likeCount) });
 });
 
 router.post('/videos/:id/comments', requireAuth, async (req, res) => {

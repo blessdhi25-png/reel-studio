@@ -75,6 +75,7 @@ import liveRoutes from './routes/live.js';
 import studioRoutes from './routes/studio.js';
 import privacyRoutes from './routes/privacy.js';
 import artistRoutes from './routes/artists.js';
+import soundRoutes from './routes/sounds.js';
 import storiesRoutes from './routes/stories.js';
 import aiRoutes from './routes/ai.js';
 import aiTemplatesRoutes from './routes/aiTemplates.js';
@@ -208,6 +209,7 @@ app.use('/api/v1', notificationsRoutes); // /notifications, /notifications/:id/r
 app.use('/api/v1', liveRoutes); // /live, /live/:id, /live/start, /live/:id/end
 app.use('/api/v1', studioRoutes); // /studio/overview, /videos/:id/boost/checkout
 app.use('/api/v1', privacyRoutes); // /users/me/privacy, /users/:id/block
+app.use('/api/v1/sounds', soundRoutes); // sounds catalog (alias of artist tracks) + direct-upload signing
 app.use('/api/v1/artists', artistRoutes); // artist registration, track catalog & analytics
 app.use('/api/v1', storiesRoutes); // /stories, /stories/feed, /stories/:id/view|like|poll-vote|qa-response
 app.use('/api/v1/ai', aiTemplatesRoutes); // /ai/templates, /ai/credits, /ai/generate-template (GPU pipeline, credit-metered)

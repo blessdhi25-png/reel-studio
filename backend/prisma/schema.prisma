@@ -214,6 +214,7 @@ model User {
   sessionsRevokedAt   DateTime?
   syncedContacts      SyncedContact[]
   pushSubscriptions   PushSubscription[]
+  commentLikes        CommentLike[]
   // Linked Facebook account (Settings → Contacts and location). facebookId is the app-scoped Graph id.
   facebookId          String?   @unique
   facebookName        String?
@@ -404,6 +405,7 @@ model Track {
   artist          ArtistProfile @relation(fields: [artistId], references: [id])
   title           String
   audioUrl        String
+  coverUrl        String?
   durationSeconds Int?
   createdAt       DateTime      @default(now())
 
@@ -461,9 +463,21 @@ model Comment {
   replies          Comment[] @relation("CommentReplies")
   content          String
   likeCount        Int       @default(0)
+  likes            CommentLike[]
   createdAt        DateTime  @default(now())
 
   @@index([parentCommentId])
+}
+
+model CommentLike {
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  commentId String
+  comment   Comment  @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([userId, commentId])
+  @@index([commentId])
 }
 
 model Transaction {

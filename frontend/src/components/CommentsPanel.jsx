@@ -7,6 +7,7 @@ import { useToast } from '../context/ToastContext';
 import { LoadingSpinner } from './LoadingScreen';
 import { useContentTranslation } from '../hooks/useContentTranslation';
 import TranslationToggle from './TranslationToggle';
+import { Heart, X } from 'lucide-react';
 
 // Matches M:SS or MM:SS timestamps like "0:14" or "1:25" written in a
 // comment. Capped at 59 seconds in the SS group so we don't match things
@@ -55,13 +56,25 @@ function splitContent(content = '') {
 //   The caller is responsible for actually seeking the video player.
 // One comment's text, with optional machine translation (automatic when "Always translate" is on).
 // Timestamp chips are re-parsed from whichever text is shown so they keep working after translation.
-function CommentText({ comment, onSeek }) {
+function timeAgo(iso) {
+  const sec = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  if (sec < 60) return 'now';
+  if (sec < 3600) return `${Math.floor(sec / 60)}m`;
+  if (sec < 86400) return `${Math.floor(sec / 3600)}h`;
+  if (sec < 604800) return `${Math.floor(sec / 86400)}d`;
+  return new Date(iso).toLocaleDateString();
+}
+
+function CommentText({ comment, onSeek, light }) {
   const tr = useContentTranslation(comment.content, { active: !comment.pending });
   const parts = splitContent(tr.text);
   return (
     <>
-      <p className="font-semibold text-sm text-neutral-100 leading-snug tracking-tight break-words">
-        <span className="font-extrabold text-reel">@{comment.user?.username}</span>{' '}
+      {light && (
+        <p className="font-bold text-[13px] text-zinc-900 leading-tight">{comment.user?.displayName || comment.user?.username}</p>
+      )}
+      <p className={light ? 'font-normal text-sm text-zinc-700 leading-snug break-words' : 'font-semibold text-sm text-neutral-100 leading-snug tracking-tight break-words'}>
+        {!light && <span className="font-extrabold text-reel">@{comment.user?.username} </span>}
         {parts.map((p, i) =>
           p.type === 'timestamp' ? (
             <button
@@ -71,7 +84,7 @@ function CommentText({ comment, onSeek }) {
                 e.stopPropagation();
                 onSeek(p.seconds);
               }}
-              className="inline-flex items-center px-1.5 py-0.5 mx-0.5 rounded-sprocket bg-reel/20 text-reel font-bold text-xs align-middle hover:bg-reel/30 active:bg-reel/40"
+              className={`inline-flex items-center px-1.5 py-0.5 mx-0.5 rounded-sprocket font-bold text-xs align-middle ${light ? 'bg-zinc-100 text-zinc-900 hover:bg-zinc-200' : 'bg-reel/20 text-reel hover:bg-reel/30 active:bg-reel/40'}`}
               title={`Jump to ${p.value}`}
             >
               ▶ {p.value}
@@ -81,7 +94,7 @@ function CommentText({ comment, onSeek }) {
           )
         )}
       </p>
-      {!comment.pending && <TranslationToggle tr={tr} className="mt-0.5 text-neutral-300" />}
+      {!comment.pending && <TranslationToggle tr={tr} className={`mt-0.5 ${light ? 'text-zinc-500' : 'text-neutral-300'}`} />}
     </>
   );
 }
@@ -188,15 +201,44 @@ const CommentsPanel = forwardRef(function CommentsPanel(
     onSeek?.(seconds);
   }
 
+  const light = variant !== 'inline';
+
+  // Optimistic like toggle; rolled back if the request fails. Temp (pending) comments can't be liked yet.
+  async function handleLike(c) {
+    if (c.pending) return;
+    if (!localStorage.getItem('token')) {
+      window.location.href = '/login';
+      return;
+    }
+    const apply = (liked, likeCount) =>
+      setComments((prev) => prev.map((x) => (x.id === c.id ? { ...x, liked, likeCount } : x)));
+    const wasLiked = !!c.liked;
+    const was = c.likeCount || 0;
+    apply(!wasLiked, Math.max(0, was + (wasLiked ? -1 : 1)));
+    try {
+      const r = await api.likeComment(c.id);
+      apply(!!r.liked, r.likeCount ?? 0);
+    } catch {
+      apply(wasLiked, was);
+      toast.error('Something went wrong. Please try again.');
+    }
+  }
+
+  function handleReply(c) {
+    const handle = c.user?.username ? `@${c.user.username} ` : '';
+    setText((t) => (t.startsWith(handle) ? t : handle));
+    inputRef.current?.focus();
+  }
+
   const body = (
     <>
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+      <div className={`flex-1 overflow-y-auto px-4 py-4 space-y-4 ${light ? 'bg-white' : ''}`}>
         {loading && <LoadingSpinner label="Loading…" />}
         {!loading && comments.length === 0 && (
           <div className="h-full flex flex-col items-center justify-center text-center py-12 gap-2">
             <span className="text-4xl text-zinc-400">💬</span>
-            <p className="font-bold tracking-tight text-neutral-300 text-sm">No comments yet</p>
-            <p className="font-semibold text-neutral-400 text-xs">Be the first to say something.</p>
+            <p className={`font-bold tracking-tight text-sm ${light ? 'text-zinc-700' : 'text-neutral-300'}`}>No comments yet</p>
+            <p className={`font-semibold text-xs ${light ? 'text-zinc-400' : 'text-neutral-400'}`}>Be the first to say something.</p>
           </div>
         )}
         {comments.map((c) => {
@@ -210,18 +252,39 @@ const CommentsPanel = forwardRef(function CommentsPanel(
               key={c.id}
               ref={isActive ? activeCommentRef : null}
               className={`flex gap-3 -mx-2 px-2 py-1.5 rounded-sprocket transition-colors ${
-                isActive ? 'bg-reel/10 ring-1 ring-reel/40' : ''
+                isActive ? (light ? 'bg-zinc-50 ring-1 ring-zinc-200' : 'bg-reel/10 ring-1 ring-reel/40') : ''
               } ${c.pending ? 'opacity-60' : ''}`}
             >
-              <div className="w-8 h-8 rounded-full bg-reel/20 flex items-center justify-center font-extrabold text-xs text-reel shrink-0">
-                {c.user?.username?.[0]?.toUpperCase() || '?'}
-              </div>
-              <div className="min-w-0">
-                <CommentText comment={c} onSeek={handleSeek} />
-                <p className="font-bold text-[11px] text-neutral-400 mt-1">
-                  {c.pending ? 'Posting…' : new Date(c.createdAt).toLocaleDateString()}
+              {c.user?.avatarUrl ? (
+                <img src={c.user.avatarUrl} alt="" className="w-9 h-9 rounded-full object-cover shrink-0 bg-zinc-200" />
+              ) : (
+                <div className={`w-9 h-9 rounded-full flex items-center justify-center font-extrabold text-xs shrink-0 ${light ? 'bg-zinc-200 text-zinc-600' : 'bg-reel/20 text-reel'}`}>
+                  {c.user?.username?.[0]?.toUpperCase() || '?'}
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <CommentText comment={c} onSeek={handleSeek} light={light} />
+                <p className={`text-xs mt-1 flex items-center gap-3 ${light ? 'text-zinc-400 font-medium' : 'font-bold text-[11px] text-neutral-400'}`}>
+                  <span>{c.pending ? 'Posting…' : timeAgo(c.createdAt)}</span>
+                  {light && !c.pending && (
+                    <button type="button" onClick={() => handleReply(c)} className="font-semibold text-zinc-500 active:opacity-60">
+                      Reply
+                    </button>
+                  )}
                 </p>
               </div>
+              {light && !c.pending && (
+                <button
+                  type="button"
+                  onClick={() => handleLike(c)}
+                  aria-label={c.liked ? 'Unlike comment' : 'Like comment'}
+                  aria-pressed={!!c.liked}
+                  className="shrink-0 flex flex-col items-center gap-0.5 pt-1 px-1 active:scale-90 transition-transform"
+                >
+                  <Heart size={18} className={c.liked ? 'text-[#fe2c55]' : 'text-zinc-400'} fill={c.liked ? 'currentColor' : 'none'} />
+                  <span className="text-[11px] text-zinc-400 font-medium tabular-nums">{c.likeCount || 0}</span>
+                </button>
+              )}
             </div>
           );
         })}
@@ -233,29 +296,39 @@ const CommentsPanel = forwardRef(function CommentsPanel(
         // over the bottom of the sheet, so the input row needs extra bottom
         // padding to land fully above the nav icons. The inline (desktop
         // rail) variant has no BottomNav, so it keeps the normal padding.
-        className={`relative z-30 flex flex-col gap-1.5 p-4 border-t border-smoke/10 bg-ink2 ${
-          variant === 'inline' ? '' : 'pb-[calc(5rem+env(safe-area-inset-bottom))]'
-        }`}
+        className={`relative z-30 flex flex-col gap-1.5 p-4 border-t ${
+          light ? 'border-zinc-100 bg-white' : 'border-smoke/10 bg-ink2'
+        } ${variant === 'inline' ? '' : 'pb-[calc(5rem+env(safe-area-inset-bottom))]'}`}
       >
         <div className="flex gap-2">
           <input
             ref={inputRef}
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder="Add a comment… try a timestamp like 0:14"
-            className="flex-1 bg-zinc-800/80 border border-zinc-700 text-white placeholder:text-neutral-400 placeholder:font-bold font-bold text-xs rounded-sprocket px-3 py-2 min-w-0 outline-none focus:ring-2 focus:ring-amber-500/50"
+            placeholder={light ? 'Add comment…' : 'Add a comment… try a timestamp like 0:14'}
+            className={`flex-1 text-sm min-w-0 outline-none ${
+              light
+                ? 'bg-zinc-100 text-zinc-900 placeholder:text-zinc-400 rounded-full px-4 py-2.5 focus:ring-2 focus:ring-zinc-300'
+                : 'bg-zinc-800/80 border border-zinc-700 text-white placeholder:text-neutral-400 placeholder:font-bold font-bold text-xs rounded-sprocket px-3 py-2 focus:ring-2 focus:ring-amber-500/50'
+            }`}
           />
           <button
             type="submit"
             disabled={posting || !text.trim()}
-            className="bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs px-4 py-2 rounded-xl transition-all disabled:opacity-50 disabled:hover:bg-amber-500"
+            className={`font-bold text-xs px-4 py-2 rounded-full transition-all disabled:opacity-100 ${
+              light
+                ? 'bg-[#fe2c55] text-white disabled:bg-zinc-100 disabled:text-zinc-400'
+                : 'bg-amber-500 hover:bg-amber-400 text-black rounded-xl disabled:opacity-50 disabled:hover:bg-amber-500'
+            }`}
           >
             Post
           </button>
         </div>
-        <p className="font-semibold text-[11px] text-neutral-400 px-1 leading-snug">
-          Timestamps like 0:14 or 1:25 become clickable chapter markers.
-        </p>
+        {!light && (
+          <p className="font-semibold text-[11px] text-neutral-400 px-1 leading-snug">
+            Timestamps like 0:14 or 1:25 become clickable chapter markers.
+          </p>
+        )}
       </form>
     </>
   );
@@ -266,12 +339,15 @@ const CommentsPanel = forwardRef(function CommentsPanel(
 
   return (
     <div className="absolute inset-0 z-30 flex items-end" data-no-swipe>
-      <div className="absolute inset-0 bg-ink/70" onClick={onClose} />
-      <div className="relative w-full max-h-[70%] bg-ink2 rounded-t-2xl flex flex-col">
-        <div className="flex items-center justify-between px-4 py-4 border-b border-smoke/10">
-          <p className="font-extrabold text-xs tracking-wider uppercase text-neutral-400">Comments</p>
-          <button onClick={onClose} className="text-neutral-300 text-xs font-bold">
-            Close
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="relative w-full max-h-[70%] min-h-[45%] bg-white rounded-t-2xl flex flex-col font-sans text-zinc-900">
+        <div className="pt-2 pb-3 px-4 relative">
+          <div className="mx-auto w-10 h-1 rounded-full bg-zinc-300" aria-hidden="true" />
+          <p className="mt-3 text-center font-bold text-sm text-zinc-900">
+            {comments.length} {comments.length === 1 ? 'comment' : 'comments'}
+          </p>
+          <button onClick={onClose} aria-label="Close comments" className="absolute right-3 top-5 p-1 text-zinc-500">
+            <X size={20} />
           </button>
         </div>
         {body}

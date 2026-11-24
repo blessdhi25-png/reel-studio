@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { api } from '../../../lib/api';
 import { friendlyError } from '@/lib/friendlyError';
 import { LoadingSpinner } from '../../../components/LoadingScreen';
+import { checkFile, uploadTrackDirect } from '@/lib/trackUpload';
 
 function centsToDollars(cents) {
   return `$${(cents / 100).toFixed(2)}`;
@@ -21,6 +22,8 @@ export default function ArtistHubPage() {
   const [showUpload, setShowUpload] = useState(false);
   const [title, setTitle] = useState('');
   const [file, setFile] = useState(null);
+  const [cover, setCover] = useState(null);
+  const [progress, setProgress] = useState(0);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState(null);
   const fileInputRef = useRef(null);
@@ -57,23 +60,22 @@ export default function ArtistHubPage() {
     if (!file || !title.trim()) return;
     setUploading(true);
     setUploadError(null);
+    setProgress(0);
     try {
-      const formData = new FormData();
-      formData.append('audio', file);
-      formData.append('title', title.trim());
-      // Real duration, read from the browser rather than guessed — helps
-      // creators know clip length before they attach it to a reel.
+      const bad = checkFile('audio', file) || (cover ? checkFile('cover', cover) : null);
+      if (bad) throw new Error(bad);
+      // Real duration, read from the browser rather than guessed.
       const duration = await readAudioDuration(file).catch(() => null);
-      if (duration) formData.append('durationSeconds', String(Math.round(duration)));
-
-      await api.uploadTrack(formData);
+      // The audio goes straight from this browser to storage; only the small JSON record hits our API.
+      await uploadTrackDirect({ title: title.trim(), audioFile: file, coverFile: cover, durationSeconds: duration ? Math.round(duration) : null, onProgress: setProgress });
       setShowUpload(false);
       setTitle('');
       setFile(null);
+      setCover(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
       load();
     } catch (err) {
-      setUploadError(friendlyError(err));
+      setUploadError(friendlyError(err, 'Something went wrong. Please try again.'));
     } finally {
       setUploading(false);
     }
@@ -206,11 +208,21 @@ export default function ArtistHubPage() {
                 ref={fileInputRef}
                 required
                 type="file"
-                accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/mp4,audio/aac"
+                accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/mp4,audio/x-m4a,audio/aac"
                 onChange={(e) => setFile(e.target.files?.[0] || null)}
                 className="mt-1.5 w-full text-xs text-zinc-400 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-zinc-800 file:text-white file:text-xs"
               />
-              <p className="text-[11px] text-zinc-600 mt-1">MP3, WAV, M4A, or AAC — up to 25MB</p>
+              <p className="text-[11px] text-zinc-600 mt-1">MP3, WAV, M4A, or AAC — up to 50MB</p>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">Cover art <span className="normal-case text-zinc-600">(optional)</span></label>
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                onChange={(e) => setCover(e.target.files?.[0] || null)}
+                className="mt-1.5 w-full text-xs text-zinc-400 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-zinc-800 file:text-white file:text-xs"
+              />
             </div>
 
             {uploadError && <p className="text-sm text-red-400">{uploadError}</p>}
@@ -220,7 +232,7 @@ export default function ArtistHubPage() {
               disabled={uploading || !file || !title.trim()}
               className="w-full bg-amber-500 hover:bg-amber-400 text-black font-bold px-6 py-3 rounded-xl transition-all disabled:opacity-50"
             >
-              {uploading ? 'Uploading…' : 'Upload & distribute'}
+              {uploading ? `Uploading… ${progress}%` : 'Upload & distribute'}
             </button>
           </form>
         </div>

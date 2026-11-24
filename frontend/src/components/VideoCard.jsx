@@ -946,7 +946,7 @@ const VideoCard = forwardRef(function VideoCard(
           }`}
         >
           <a href={`/profile/${video.user?.id}`} className="font-extrabold text-base tracking-tight text-white">
-            @{video.user?.username}
+            {video.user?.displayName || video.user?.username}
           </a>
           {video.caption && (
             <div className="mt-1">
@@ -956,7 +956,7 @@ const VideoCard = forwardRef(function VideoCard(
               >
                 {renderCaption(captionTr.text)}
               </p>
-              <TranslationToggle tr={captionTr} className="mt-0.5 text-white" />
+              <div className="mt-0.5 flex items-center flex-wrap gap-x-1.5">
               {(captionOverflows || isExpanded) && (
                 <button
                   type="button"
@@ -965,11 +965,14 @@ const VideoCard = forwardRef(function VideoCard(
                     setIsExpanded((v) => !v);
                   }}
                   aria-expanded={isExpanded}
-                  className="mt-0.5 py-1 text-sm font-extrabold tracking-tight text-white underline-offset-2 active:opacity-70"
+                  className="py-1 text-sm font-extrabold tracking-tight text-white underline-offset-2 active:opacity-70"
                 >
                   {isExpanded ? 'less' : '...more'}
                 </button>
               )}
+              {(captionOverflows || isExpanded) && (captionTr.canToggle || captionTr.canOffer || captionTr.busy) && <span className="text-white/60 text-sm" aria-hidden="true">|</span>}
+              <TranslationToggle tr={captionTr} className="text-white" />
+              </div>
             </div>
           )}
 
@@ -981,7 +984,7 @@ const VideoCard = forwardRef(function VideoCard(
               artist: true } } }` and maps it onto the response the same
               way GET /artists/tracks/search already does. */}
           {video.track && (
-            <div className="mt-2 flex items-center gap-1.5 max-w-full overflow-hidden">
+            <a href={`/sound/${video.track.id}`} className="mt-2 flex items-center gap-1.5 max-w-full overflow-hidden" aria-label="Open sound">
               <MusicNoteIcon className="w-3.5 h-3.5 text-white shrink-0 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]" />
               <div className="overflow-hidden">
                 <div className="flex w-max animate-marquee font-body text-xs font-bold tracking-tight text-white whitespace-nowrap drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
@@ -993,7 +996,7 @@ const VideoCard = forwardRef(function VideoCard(
                   </span>
                 </div>
               </div>
-            </div>
+            </a>
           )}
         </div>
 
@@ -1069,27 +1072,6 @@ const VideoCard = forwardRef(function VideoCard(
               {bookmarkCount}
             </span>
           </button>
-          {video.user?.stripeOnboarded ? (
-            <button
-              onClick={() => setShowTip(true)}
-              className="flex flex-col items-center gap-1 p-2 -m-2 text-white hover:scale-110 transition-transform"
-            >
-              <TipIcon className="w-8 h-8 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]" />
-              <span className="text-xs font-extrabold tracking-tight text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
-                Tip
-              </span>
-            </button>
-          ) : (
-            <button
-              onClick={() => setShowTipUnavailable(true)}
-              className="flex flex-col items-center gap-1 p-2 -m-2 hover:scale-110 transition-transform"
-            >
-              <TipIcon muted className="w-8 h-8 drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]" />
-              <span className="text-xs font-extrabold tracking-tight text-white/60 drop-shadow-[0_1px_2px_rgba(0,0,0,0.5)]">
-                Tip
-              </span>
-            </button>
-          )}
           </div>
           <div className="relative" ref={menuRef}>
             <button
@@ -1120,7 +1102,7 @@ const VideoCard = forwardRef(function VideoCard(
                     if (video.user?.stripeOnboarded) setShowTip(true);
                     else setShowTipUnavailable(true);
                   }}
-                  className="hidden lg:block w-full text-left px-4 py-2.5 text-xs text-bone hover:bg-smoke/10 font-body font-bold tracking-tight"
+                  className="w-full text-left px-4 py-2.5 text-xs text-bone hover:bg-smoke/10 font-body font-bold tracking-tight"
                 >
                   Tip creator
                 </button>
@@ -1167,25 +1149,20 @@ const VideoCard = forwardRef(function VideoCard(
               `paused`, the same local play/pause flag the tap-to-pause
               overlay above already uses, so the disc always matches what's
               actually on screen. */}
-          {video.track && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setShowSoundPicker(true);
-              }}
-              aria-label="View sound"
-              className={`mt-1 w-11 h-11 rounded-full border-2 border-white/80 shadow-[0_2px_6px_rgba(0,0,0,0.6)] overflow-hidden bg-ink2 flex items-center justify-center text-reel animate-[spin_4s_linear_infinite] ${
-                paused ? '[animation-play-state:paused]' : ''
-              }`}
-            >
-              {video.track.coverUrl ? (
-                <img src={video.track.coverUrl} alt="" className="w-full h-full object-cover" />
-              ) : (
-                <MusicNoteIcon className="w-4 h-4" />
-              )}
-            </button>
-          )}
+          <a
+            href={video.track ? `/sound/${video.track.id}` : `/profile/${video.user?.id}`}
+            onClick={(e) => e.stopPropagation()}
+            aria-label={video.track ? 'Open sound' : 'Open creator profile'}
+            className={`mt-1 w-11 h-11 rounded-full border-[6px] border-zinc-900 ring-1 ring-white/40 shadow-[0_2px_6px_rgba(0,0,0,0.6)] overflow-hidden bg-zinc-800 flex items-center justify-center text-white animate-[spin_4s_linear_infinite] ${
+              paused ? '[animation-play-state:paused]' : ''
+            }`}
+          >
+            {video.track?.coverUrl || video.user?.avatarUrl ? (
+              <img src={video.track?.coverUrl || video.user.avatarUrl} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <MusicNoteIcon className="w-4 h-4" />
+            )}
+          </a>
         </div>
       </div>
 
