@@ -6,6 +6,7 @@ import { api } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { useSocketContext } from '../context/SocketContext';
 import { useToast } from '../context/ToastContext';
+import { ThreeDotBlock } from '@/components/ThreeDotLoader';
 
 // Hidden anywhere a fuller, dedicated equivalent of this widget already
 // exists (auth pages have nothing to show yet either way) — a floating
@@ -407,7 +408,7 @@ export default function ChatHub() {
             </div>
 
             <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
-              {loadingThread && <p className="font-body text-zinc-500 text-xs text-center py-4">Loading…</p>}
+              {loadingThread && <ThreeDotBlock className="!py-4" />}
               {!loadingThread && messages.length === 0 && (
                 <p className="font-body text-zinc-500 text-xs text-center py-4">Say hello 👋</p>
               )}

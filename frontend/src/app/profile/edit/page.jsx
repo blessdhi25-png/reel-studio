@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Camera, ImagePlus } from 'lucide-react';
 import { api, getStoredUser } from '@/lib/api';
+import ThreeDotLoader from '@/components/ThreeDotLoader';
 
 function EditProfilePageInner() {
   const router = useRouter();
@@ -118,7 +119,7 @@ function EditProfilePageInner() {
   if (loading) {
     return (
       <div className="min-h-screen bg-[#0a090e] text-white flex items-center justify-center">
-        <p className="text-xs text-zinc-500 font-mono">Loading…</p>
+        <ThreeDotLoader />
       </div>
     );
   }

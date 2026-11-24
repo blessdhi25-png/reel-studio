@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 import { friendlyError } from '@/lib/friendlyError';
 import { useToast } from '@/context/ToastContext';
 import { SettingsGroup } from '@/components/settings/SettingsUI';
+import { ThreeDotBlock } from '@/components/ThreeDotLoader';
 
 const SMALL = 'px-3 py-1.5 rounded-xl font-sans font-bold text-xs disabled:opacity-50';
 
@@ -51,7 +52,7 @@ export default function FacebookFriends({ refreshKey }) {
       title="Facebook Friends on ClipPulse"
       footer={friends && !friends.length ? 'None of your Facebook friends have linked their Facebook account on ClipPulse yet. Facebook only shares friends who also use this app, so invite them to join and link.' : myLive ? undefined : 'Start a live stream to invite these friends to it.'}
     >
-      {friends === null && <p className="px-4 py-4 text-sm text-slate-500 dark:text-neutral-400">Loading…</p>}
+      {friends === null && <ThreeDotBlock />}
       {friends?.map((f) => (
         <div key={f.id} className="px-4 py-3 flex items-center gap-3">
           <Link href={`/profile/${f.id}`} className="flex items-center gap-3 min-w-0 flex-1">

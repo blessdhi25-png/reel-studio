@@ -1,3 +1,4 @@
+import { CONNECTION_LOST } from './friendlyError';
 // --------------------------------------------------------------------------
 // API base URL resolution
 // --------------------------------------------------------------------------
@@ -114,8 +115,8 @@ async function request(path, { method = 'GET', body, isForm = false, timeoutMs =
     console.error(`[api] ${networkErr.name === 'AbortError' ? 'Timed out requesting' : 'Network error requesting'} ${url}:`, networkErr);
     const err = new Error(
       networkErr.name === 'AbortError'
-        ? 'The server took too long to respond. This can happen if it\u2019s waking up after being idle \u2014 please try again in a moment.'
-        : 'Unable to connect to the server. Please verify backend connection.'
+        ? CONNECTION_LOST // timed out (often a cold start); the technical detail is in the console log above
+        : CONNECTION_LOST
     );
     err.cause = networkErr;
     err.requestUrl = url;

@@ -4,6 +4,8 @@ import BackButton from '@/components/BackButton';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '../../../lib/api';
+import ThreeDotLoader from '@/components/ThreeDotLoader';
+import { friendlyError } from '@/lib/friendlyError';
 
 const GENRES = ['Hip-Hop', 'Pop', 'R&B', 'Electronic', 'Rock', 'Afrobeats', 'Country', 'Jazz', 'Classical', 'Other'];
 
@@ -21,6 +23,15 @@ export default function ArtistRegisterPage() {
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
+
+  // The page scrolls with the window, so scroll-padding must live on the root for "scroll into view"
+  // (focusing a field, the keyboard opening) to stop short of the bottom navigation bar.
+  useEffect(() => {
+    const root = document.documentElement;
+    const prev = root.style.scrollPaddingBottom;
+    root.style.scrollPaddingBottom = '8rem';
+    return () => { root.style.scrollPaddingBottom = prev; };
+  }, []);
 
   useEffect(() => {
     if (!localStorage.getItem('token')) {
@@ -47,7 +58,7 @@ export default function ArtistRegisterPage() {
       await api.registerArtist(form);
       router.push('/studio/artists');
     } catch (err) {
-      setError(err.message);
+      setError(friendlyError(err));
     } finally {
       setSubmitting(false);
     }
@@ -56,13 +67,13 @@ export default function ArtistRegisterPage() {
   if (checking) {
     return (
       <main className="min-h-screen flex items-center justify-center bg-zinc-950">
-        <p className="text-zinc-500 text-sm">Checking…</p>
+        <ThreeDotLoader label="Checking your account" />
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen bg-zinc-950 text-white px-6 py-10">
+    <main className="min-h-screen bg-zinc-950 text-white px-6 pt-10 pb-[calc(8rem+env(safe-area-inset-bottom))] md:pb-12 scroll-pb-32">
       <div className="max-w-lg mx-auto">
         <BackButton href="/studio" label="Back to Studio" />
 

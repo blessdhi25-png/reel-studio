@@ -4,6 +4,7 @@ import BackButton from '@/components/BackButton';
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '../../../lib/api';
+import { friendlyError } from '@/lib/friendlyError';
 import { LoadingSpinner } from '../../../components/LoadingScreen';
 
 function centsToDollars(cents) {
@@ -45,7 +46,7 @@ export default function ArtistHubPage() {
         if (err.message === 'No artist profile yet') {
           router.push('/artist/register');
         } else {
-          setError(err.message);
+          setError(friendlyError(err));
         }
       })
       .finally(() => setLoading(false));
@@ -72,7 +73,7 @@ export default function ArtistHubPage() {
       if (fileInputRef.current) fileInputRef.current.value = '';
       load();
     } catch (err) {
-      setUploadError(err.message);
+      setUploadError(friendlyError(err));
     } finally {
       setUploading(false);
     }

@@ -7,6 +7,7 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import Logo from '@/components/Logo';
 import { LoadingSpinner } from '@/components/LoadingScreen';
+import { friendlyError } from '@/lib/friendlyError';
 
 // Small inline icon set — no icon library dependency, kept minimal/monoline
 // to match the premium dashboard look without pulling in a new package.
@@ -121,7 +122,7 @@ export default function StudioPage() {
     api
       .getStudioOverview()
       .then((d) => !cancelled && setData(d ?? {}))
-      .catch((err) => !cancelled && setError(err?.message || "Couldn't load Studio."))
+      .catch((err) => !cancelled && setError(friendlyError(err, "Couldn't load Studio.")))
       .finally(() => !cancelled && setLoading(false));
     api
       .getTrending()

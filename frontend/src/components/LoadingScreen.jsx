@@ -1,12 +1,24 @@
 'use client';
 
-import { ClipPulseMark } from './ClipPulseLogo';
+import ThreeDotLoader from './ThreeDotLoader';
 
 // Full-screen branded splash — the app's first-load moment (auth hydration,
 // the home feed's first batch of videos). Always white: it is the first
 // thing painted, before any saved theme preference has been applied, so it
 // deliberately has no dark: variants. AppShell renders it with no props.
+// Route / data / hydration loading: straight to three dots, no logo. (Always white: it can be the first thing
+// painted, before a saved theme preference has been applied.)
 export default function LoadingScreen() {
+  return (
+    <div className="fixed inset-0 z-[200] bg-white text-black flex items-center justify-center" role="status" aria-label="Loading">
+      <ThreeDotLoader size={12} />
+    </div>
+  );
+}
+
+// The branded CLIPPULSE splash. NOT used for ordinary loading any more — reserve it for an explicit app exit
+// or a critical/security screen that wants the brand on it.
+export function BrandedSplash() {
   return (
     <div
       className="fixed inset-0 z-[200] bg-white text-black flex flex-col items-center justify-center overflow-hidden"
@@ -61,11 +73,11 @@ export default function LoadingScreen() {
 
 // Compact inline replacement for the plain "Loading…" text scattered across
 // ~25 pages. Export name/signature unchanged — imported across the app.
-export function LoadingSpinner({ size = 20, label, className = '' }) {
+export function LoadingSpinner({ size = 8, label, className = '' }) {
+  // `size` used to be the logo's pixel size; the dots use their own scale, so it's ignored above a sane range.
   return (
-    <span className={`inline-flex items-center gap-2 ${className}`}>
-      <ClipPulseMark size={size} animated />
-      {label && <span className="font-body text-sm text-smoke">{label}</span>}
+    <span className={`flex items-center justify-center py-6 ${className}`}>
+      <ThreeDotLoader size={size > 12 ? 8 : size} label={label || 'Loading'} />
     </span>
   );
 }

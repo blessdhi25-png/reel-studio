@@ -8,6 +8,7 @@ import { friendlyError } from '@/lib/friendlyError';
 import { useRequireAuth } from '@/hooks/useRequireAuth';
 import { StatusPill, TICKET_CATEGORIES, timeAgo } from '@/lib/supportUi';
 import { SettingsPage } from '@/components/settings/SettingsUI';
+import { ThreeDotBlock } from '@/components/ThreeDotLoader';
 
 export default function TicketsPage() {
   const ok = useRequireAuth();
@@ -65,7 +66,7 @@ export default function TicketsPage() {
       )}
 
       {tickets === null ? (
-        <p className="font-sans text-sm text-slate-500 dark:text-neutral-400 py-10 text-center">Loading…</p>
+        <ThreeDotBlock />
       ) : error ? (
         <p className="font-sans text-sm text-rose-500 py-10 text-center">{error}</p>
       ) : tickets.length === 0 ? (

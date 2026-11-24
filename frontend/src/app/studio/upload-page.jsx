@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { api, API_BASE } from '@/lib/api';
+import { friendlyError, CONNECTION_LOST } from '@/lib/friendlyError';
 import { ALLOWED_CIRCLES } from '@/lib/circles';
 import CameraRecorder from '@/components/CameraRecorder';
 import AICoPilotDrawer from '@/components/AICoPilotDrawer';
@@ -312,7 +313,7 @@ function UploadPageInner() {
         setStatus(null);
       } else {
         setStatus('error');
-        setErrorMsg(err.message || 'Upload failed. Please try again.');
+        setErrorMsg(friendlyError(err, 'Upload failed. Please try again.'));
       }
     }
   }
@@ -876,19 +877,27 @@ function uploadWithProgress(formData, onProgress, xhrRef) {
           resolve({});
         }
       } else {
-        let message = 'Upload failed. Please try again.';
+        let message = '';
         try {
-          message = JSON.parse(xhr.responseText).error || message;
+          message = JSON.parse(xhr.responseText).error || '';
         } catch {
-          /* ignore parse errors, use default message */
+          /* non-JSON body (proxy error page etc.): friendlyError falls back to a generic line */
         }
-        reject(new Error(message));
+        // Keep the status so friendlyError can map 413/429/5xx to a human sentence; raw server text is filtered.
+        const err = new Error(friendlyError({ status: xhr.status, message }, 'Upload failed. Please try again.'));
+        err.status = xhr.status;
+        reject(err);
       }
     };
 
     xhr.onerror = () => {
       xhrRef.current = null;
-      reject(new Error('Network error during upload.'));
+      reject(new Error(CONNECTION_LOST));
+    };
+
+    xhr.ontimeout = () => {
+      xhrRef.current = null;
+      reject(new Error(CONNECTION_LOST));
     };
 
     xhr.onabort = () => {

@@ -19,11 +19,13 @@ export function xhrUpload(path, formData, { onProgress, xhrRef } = {}) {
       let body = {};
       try { body = JSON.parse(xhr.responseText); } catch { /* non-JSON body */ }
       if (xhr.status >= 200 && xhr.status < 300) return resolve(body);
-      reject(new Error(body.error || 'Upload failed. Please try again.'));
+      const err = new Error(body.error || 'Upload failed. Please try again.');
+      err.status = xhr.status; // lets friendlyError map 413/429/5xx to a human sentence
+      reject(err);
     };
     xhr.onerror = () => {
       if (xhrRef) xhrRef.current = null;
-      reject(new Error('Network error during upload.'));
+      reject(new Error('Connection lost. Please try again.'));
     };
     xhr.onabort = () => {
       if (xhrRef) xhrRef.current = null;

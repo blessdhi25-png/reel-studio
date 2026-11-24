@@ -5,6 +5,7 @@ import { Copy, Link2, RefreshCw, Share2, X } from 'lucide-react';
 import SlideDrawer from '@/components/SlideDrawer';
 import { api } from '@/lib/api';
 import { useToast } from '@/context/ToastContext';
+import { ThreeDotBlock } from '@/components/ThreeDotLoader';
 
 /**
  * Invite-link sheet for a community (right-side slide-over). Any member can copy
@@ -80,7 +81,7 @@ export default function InviteMemberModal({ open, onClose, communityId, communit
           Anyone with this link can join <span className="text-black dark:text-white">{communityName}</span>. Share it
           only with people you want in.
         </p>
-        {loading && <p className="text-sm font-bold text-neutral-500">Loading…</p>}
+        {loading && <ThreeDotBlock />}
         {error && <p className="text-sm font-bold text-red-500" role="alert">{error}</p>}
         {url && (
           <>

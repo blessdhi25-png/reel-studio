@@ -11,6 +11,7 @@ import {
 import { api } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { useSocketContext } from '../context/SocketContext';
+import { ThreeDotBlock } from '@/components/ThreeDotLoader';
 
 // Slide-out panels that open beside the collapsed/expanded sidebar (lg+ only).
 // Panel left edge tracks the sidebar width: left-20 (icon rail) / xl:left-64 (full).
@@ -96,7 +97,7 @@ function MessagesDrawer({ onClose }) {
         />
       </div>
       {error && <p className="text-sm font-bold text-red-400" role="alert">{error}</p>}
-      {!threads && !error && <Empty>Loading…</Empty>}
+      {!threads && !error && <ThreeDotBlock />}
       {threads && shown.length === 0 && <Empty>{q ? 'No matching chats.' : 'No messages yet.'}</Empty>}
       <ul>
         {shown.map((c) => (
@@ -232,7 +233,7 @@ function ActivityDrawer({ onClose }) {
         ))}
       </div>
       {error && <p className="text-sm font-bold text-red-400" role="alert">{error}</p>}
-      {!items && !error && <Empty>Loading…</Empty>}
+      {!items && !error && <ThreeDotBlock />}
       {items && list.length === 0 && <Empty>Nothing here yet.</Empty>}
       {fresh.length > 0 && (
         <>

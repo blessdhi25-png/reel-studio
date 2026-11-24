@@ -8,6 +8,7 @@ import { useRequireAuth } from '@/hooks/useRequireAuth';
 import { useToast } from '@/context/ToastContext';
 import { StatusPill, TICKET_CATEGORIES, TICKET_STATUS, timeAgo } from '@/lib/supportUi';
 import { SettingsPage } from '@/components/settings/SettingsUI';
+import { ThreeDotBlock } from '@/components/ThreeDotLoader';
 
 const BOX = 'w-full rounded-xl bg-white dark:bg-neutral-900 border border-slate-200 dark:border-neutral-700 px-3.5 py-3 font-sans text-sm text-slate-900 dark:text-white focus:outline-none focus:border-amber-500';
 const SHELL = (children) => <SettingsPage title="Ticket" backHref="/settings/help/tickets" backLabel="Tickets">{children}</SettingsPage>;
@@ -58,7 +59,7 @@ export default function TicketThreadPage({ params }) {
 
   if (!ok) return null;
   if (error) return SHELL(<p className="py-10 text-center font-sans text-sm text-rose-500">{error}</p>);
-  if (!ticket) return SHELL(<p className="py-10 text-center font-sans text-sm text-slate-500">Loading…</p>);
+  if (!ticket) return SHELL(<ThreeDotBlock />);
 
   const closed = ticket.status === 'CLOSED';
   const typeLabel = TICKET_CATEGORIES.find((c) => c.value === ticket.issueType)?.label || 'Other';

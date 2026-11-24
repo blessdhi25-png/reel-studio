@@ -5,6 +5,7 @@ import { api } from '@/lib/api';
 import { friendlyError } from '@/lib/friendlyError';
 import { useToast } from '@/context/ToastContext';
 import { TICKET_CATEGORIES, TICKET_STATUS, timeAgo } from '@/lib/supportUi';
+import ThreeDotLoader from '@/components/ThreeDotLoader';
 
 // Support Tickets tab of the admin and moderator dashboards. Staff see every user's tickets (the backend
 // returns them only to admin/moderator accounts and re-checks the role on every request, including each PATCH).
@@ -210,7 +211,7 @@ function TicketCard({ ticket, t, toast, onChange }) {
 
       {open && (
         <div className="mt-3 space-y-2">
-          {!replies && <p className={`text-xs font-bold ${t.sub}`}>Loading…</p>}
+          {!replies && <ThreeDotLoader size={7} />}
           {replies && replies.length === 0 && <p className={`text-xs font-bold ${t.sub}`}>No replies yet.</p>}
           {(replies || []).map((r) => (
             <div key={r.id} className={`rounded-xl border px-3 py-2 ${r.isStaff ? 'border-amber-500/40 bg-amber-500/10' : t.quote}`}>

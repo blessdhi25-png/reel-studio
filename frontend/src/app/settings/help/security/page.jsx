@@ -7,6 +7,7 @@ import { friendlyError } from '@/lib/friendlyError';
 import { useRequireAuth } from '@/hooks/useRequireAuth';
 import { timeAgo } from '@/lib/supportUi';
 import { SettingsPage } from '@/components/settings/SettingsUI';
+import { ThreeDotBlock } from '@/components/ThreeDotLoader';
 
 const METHODS = { password: 'Password', google: 'Google', biometric: 'Biometric' };
 
@@ -47,7 +48,7 @@ export default function SecurityAlertsPage() {
     <SettingsPage title="Security alerts" backHref="/settings/help" backLabel="Help Centre">
       <p className="font-sans text-sm text-slate-500 dark:text-neutral-400 mb-4">Sign-ins and security changes from the last 90 days. If something isn’t you, change your password right away.</p>
       {alerts === null ? (
-        <p className="py-10 text-center font-sans text-sm text-slate-500">Loading…</p>
+        <ThreeDotBlock />
       ) : error ? (
         <p className="py-10 text-center font-sans text-sm text-rose-500">{error}</p>
       ) : alerts.length === 0 ? (
