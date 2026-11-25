@@ -169,8 +169,17 @@ router.post('/videos/:id/comments', requireAuth, async (req, res) => {
     }
   }
 
+  // A reply must point at a comment on this same video (and replies nest one level: reply-to-reply
+  // attaches to the top-level comment).
+  let parentId = null;
+  if (parentCommentId) {
+    const parent = await prisma.comment.findUnique({ where: { id: String(parentCommentId) }, select: { id: true, videoId: true, parentCommentId: true } });
+    if (!parent || parent.videoId !== req.params.id) return res.status(400).json({ error: 'Invalid parent comment' });
+    parentId = parent.parentCommentId || parent.id;
+  }
   const comment = await prisma.comment.create({
-    data: { videoId: req.params.id, userId: req.userId, content, parentCommentId },
+    data: { videoId: req.params.id, userId: req.userId, content: content.trim(), parentCommentId: parentId },
+    include: { user: { select: { id: true, username: true, displayName: true, avatarUrl: true } } },
   });
   await prisma.video.update({
     where: { id: req.params.id },

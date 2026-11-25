@@ -210,3 +210,39 @@ body {
   0%, 100% { opacity: 0.35; }
   50% { opacity: 1; }
 }
+
+/* Double-tap heart burst: pops in at the tap point, tilts, floats up and fades. --rot is set per heart. */
+@keyframes heart-burst {
+  0%   { opacity: 0; transform: scale(0.2) rotate(var(--rot, 0deg)); }
+  15%  { opacity: 1; transform: scale(1.25) rotate(var(--rot, 0deg)); }
+  30%  { transform: scale(0.95) rotate(var(--rot, 0deg)); }
+  45%  { opacity: 1; transform: scale(1) rotate(var(--rot, 0deg)) translateY(0); }
+  100% { opacity: 0; transform: scale(1.1) rotate(var(--rot, 0deg)) translateY(-110px); }
+}
+.heart-burst { animation: heart-burst 0.9s ease-out forwards; }
+@media (prefers-reduced-motion: reduce) {
+  .heart-burst { animation-name: three-dot-fade; animation-duration: 0.9s; }
+}
+
+/* ThreeDotCrossingLoader: three dots slide along the same track and pass each other. Each dot drifts a
+   full width left -> right -> left on its own phase, and swaps depth (scale/opacity) as it crosses. */
+@keyframes dot-cross-a {
+  0%, 100% { transform: translateX(-1.6em) scale(1); opacity: 1; }
+  50% { transform: translateX(1.6em) scale(0.7); opacity: 0.55; }
+}
+@keyframes dot-cross-b {
+  0%, 100% { transform: translateX(0) scale(0.7); opacity: 0.55; }
+  25% { transform: translateX(1.6em) scale(1); opacity: 1; }
+  75% { transform: translateX(-1.6em) scale(1); opacity: 1; }
+}
+@keyframes dot-cross-c {
+  0%, 100% { transform: translateX(1.6em) scale(0.7); opacity: 0.55; }
+  50% { transform: translateX(-1.6em) scale(1); opacity: 1; }
+}
+.dot-cross { animation-duration: 1.4s; animation-timing-function: ease-in-out; animation-iteration-count: infinite; }
+.dot-cross-a { animation-name: dot-cross-a; }
+.dot-cross-b { animation-name: dot-cross-b; }
+.dot-cross-c { animation-name: dot-cross-c; }
+@media (prefers-reduced-motion: reduce) {
+  .dot-cross { animation-name: three-dot-fade !important; transform: none; }
+}

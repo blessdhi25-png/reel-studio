@@ -21,6 +21,7 @@ import { downloadPlain, PlainDownloadUnsupportedError } from '../lib/downloadPla
 import { usePref } from '../lib/settingsPrefs';
 import { useContentTranslation } from '../hooks/useContentTranslation';
 import TranslationToggle from './TranslationToggle';
+import { Bookmark, DollarSign, Flag, Trash2 } from 'lucide-react';
 import { getCachedVideoResponse, isVideoInManifest } from '../lib/offlineCache';
 
 // A second tap/click arriving within this window counts as a double-tap
@@ -206,7 +207,16 @@ const VideoCard = forwardRef(function VideoCard(
   // Bumped (not just toggled) on every double-tap so a second double-tap
   // mid-animation restarts the pop cleanly via a fresh `key` rather than
   // fighting the still-running CSS animation from the first one.
-  const [heartPopId, setHeartPopId] = useState(0);
+  // One entry per double-tap, positioned where the finger/cursor landed (px, relative to the player box).
+  const [hearts, setHearts] = useState([]);
+  const heartSeqRef = useRef(0);
+  const stageRef = useRef(null);
+  // Attached sound (a Track). The feed API calls it `track`; `sound` is accepted as an alias.
+  // keepOriginalAudio mixes the clip's own audio under the sound; otherwise the sound replaces it.
+  const sound = video.sound || video.track || null;
+  const soundUrl = sound?.audioUrl || null;
+  const replaceOriginal = Boolean(soundUrl) && !video.keepOriginalAudio;
+  const audioRef = useRef(null);
   // video.durationSeconds is only ever populated by the transcode worker's
   // completion callback (POST /:id/complete) — which, per the immediate-
   // publish upload flow (see backend/src/routes/videos.js), never runs in
@@ -570,7 +580,9 @@ const VideoCard = forwardRef(function VideoCard(
       setAudioEnabled(true);
       window.localStorage.setItem('feedAudioEnabled', 'true');
       onMuteChange?.(false);
-      el.muted = false;
+      el.muted = replaceOriginal;
+      // Inside the tap's user gesture: start the attached sound right away so autoplay policy can't block it.
+      if (soundUrl) audioRef.current?.play().catch(() => {});
       if (soundBlockedRef.current) {
         // Autoplay fell back to muted: this tap only brings the sound back.
         soundBlockedRef.current = false;
@@ -591,18 +603,17 @@ const VideoCard = forwardRef(function VideoCard(
   // Double-tap-to-like: always *likes*, never toggles off — matches the
   // Instagram/TikTok convention where tapping an already-liked video twice
   // just re-plays the heart animation rather than unliking it.
-  function likeWithHeartPop() {
+  function likeWithHeartPop(x, y) {
     if (!liked) toggleLike();
-    setHeartPopId((id) => id + 1);
+    const id = ++heartSeqRef.current;
+    setHearts((hs) => [...hs.slice(-4), { id, x, y, rot: Math.round((Math.random() - 0.5) * 36) }]);
   }
 
-  // A single handler covers both mouse double-click (desktop) and touch
-  // double-tap (mobile) — touch taps already fire regular `click` events,
-  // so timing between two clicks is all that's needed to tell one gesture
-  // from two, without separate touch-event plumbing. A lone tap is held
-  // for DOUBLE_TAP_MS before actually toggling play/pause, in case a
-  // second tap is about to arrive and turn it into a like instead.
-  function handleVideoTap() {
+  // One handler covers desktop double-click and touch double-tap: both arrive as `click` events, so two
+  // clicks within DOUBLE_TAP_MS is a like (heart at the second tap's position) and a lone click toggles
+  // play/pause after that window. It's attached only to the media element, so taps on buttons, links, the
+  // comment drawer and menus (siblings of the media) can never trigger it.
+  function handleVideoTap(e) {
     // The release that ends a long-press still produces a click — ignore it
     // so opening the menu doesn't also pause the video.
     if (longPress.shouldSuppressClick()) return;
@@ -611,6 +622,9 @@ const VideoCard = forwardRef(function VideoCard(
       setClearDisplay(false);
       return;
     }
+    const box = stageRef.current?.getBoundingClientRect();
+    const x = box && e?.clientX != null ? e.clientX - box.left : box ? box.width / 2 : 0;
+    const y = box && e?.clientY != null ? e.clientY - box.top : box ? box.height / 2 : 0;
     const now = Date.now();
     const sinceLastTap = now - lastTapRef.current;
     lastTapRef.current = now;
@@ -620,7 +634,8 @@ const VideoCard = forwardRef(function VideoCard(
         clearTimeout(singleTapTimerRef.current);
         singleTapTimerRef.current = null;
       }
-      likeWithHeartPop();
+      lastTapRef.current = 0; // a third quick tap starts a new gesture rather than chaining
+      likeWithHeartPop(x, y);
     } else {
       singleTapTimerRef.current = setTimeout(() => {
         togglePlayPause();
@@ -628,6 +643,59 @@ const VideoCard = forwardRef(function VideoCard(
       }, DOUBLE_TAP_MS);
     }
   }
+
+  // Attached sound <-> video sync. Only the in-view card plays its sound; pausing, buffering, scrolling away
+  // or muting stops it at once, and it follows the video's position (including loop restarts and seeks).
+  useEffect(() => {
+    const a = audioRef.current;
+    if (!a || !soundUrl) return undefined;
+    const v = isPhoto ? null : videoRef.current;
+    const stop = (reset) => {
+      a.pause();
+      if (reset) { try { a.currentTime = 0; } catch {} }
+    };
+    if (!inView) { stop(true); return undefined; }
+    a.muted = !audioEnabled;
+    if (!audioEnabled) { stop(false); return undefined; }
+
+    const align = () => {
+      if (!v || !Number.isFinite(a.duration) || a.duration <= 0) return;
+      const t = v.currentTime % a.duration;
+      if (Math.abs(a.currentTime - t) > 0.35) { try { a.currentTime = t; } catch {} }
+    };
+    const play = () => {
+      align();
+      a.play().catch((err) => {
+        // Autoplay policy: fall back to "sound off" so the next tap/unmute brings it back with a gesture.
+        if (err?.name === 'NotAllowedError') {
+          soundBlockedRef.current = true;
+          setAudioEnabled(false);
+          onMuteChange?.(true);
+        }
+      });
+    };
+
+    if (!v) {
+      if (paused) stop(false); else play();
+      return () => stop(false);
+    }
+    const onPause = () => stop(false);
+    v.addEventListener('playing', play);
+    v.addEventListener('pause', onPause);
+    v.addEventListener('waiting', onPause);
+    v.addEventListener('seeked', align);
+    v.addEventListener('timeupdate', align);
+    if (!v.paused && v.readyState >= 3) play();
+    return () => {
+      v.removeEventListener('playing', play);
+      v.removeEventListener('pause', onPause);
+      v.removeEventListener('waiting', onPause);
+      v.removeEventListener('seeked', align);
+      v.removeEventListener('timeupdate', align);
+      stop(false);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inView, audioEnabled, soundUrl, isPhoto, paused, shouldLoad]);
 
   useEffect(() => {
     return () => {
@@ -709,8 +777,9 @@ const VideoCard = forwardRef(function VideoCard(
 
   return (
     <div ref={containerRef} className="relative h-full w-full flex flex-col bg-ink lg:rounded-2xl lg:shadow-2xl lg:bg-neutral-950">
+      {soundUrl && shouldLoad && <audio ref={audioRef} src={soundUrl} preload="auto" loop playsInline />}
       {/* Player box: the media + its on-video controls. Captions live BELOW this box. */}
-      <div className="relative flex-1 min-h-0 w-full flex items-center justify-center overflow-hidden bg-black lg:rounded-2xl">
+      <div ref={stageRef} className="relative flex-1 min-h-0 w-full flex items-center justify-center overflow-hidden bg-black lg:rounded-2xl">
       {isPhoto ? (
         <div
           onClick={handleVideoTap}
@@ -733,7 +802,7 @@ const VideoCard = forwardRef(function VideoCard(
           data-feed-media
           loop={!prefs.autoScroll}
           playsInline
-          muted={!audioEnabled}
+          muted={!audioEnabled || replaceOriginal}
           onClick={handleVideoTap}
           {...longPress.handlers}
           style={longPressStyle}
@@ -778,15 +847,23 @@ const VideoCard = forwardRef(function VideoCard(
       {/* Double-tap-to-like heart — key={heartPopId} forces a fresh mount
           (and so a fresh animation run) on every double-tap, even ones
           that land mid-animation. */}
-      {heartPopId > 0 && (
-        <div
-          key={heartPopId}
-          className="absolute inset-0 flex items-center justify-center pointer-events-none z-20"
-          onAnimationEnd={() => setHeartPopId(0)}
+      {hearts.map((h) => (
+        <span
+          key={h.id}
+          aria-hidden="true"
+          className="absolute z-20 pointer-events-none -translate-x-1/2 -translate-y-1/2"
+          style={{ left: h.x, top: h.y }}
         >
-          <span className="text-8xl text-reel drop-shadow-lg animate-heart-pop">♥</span>
-        </div>
-      )}
+          <svg
+            viewBox="0 0 24 24"
+            className="w-28 h-28 heart-burst drop-shadow-[0_4px_12px_rgba(0,0,0,0.35)]"
+            style={{ '--rot': `${h.rot}deg` }}
+            onAnimationEnd={() => setHearts((hs) => hs.filter((x) => x.id !== h.id))}
+          >
+            <path fill="#fe2c55" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+          </svg>
+        </span>
+      ))}
 
       {/* Mobile-only mute toggle (the desktop control bar carries its own volume button). */}
       {!isPhoto && (
@@ -1082,7 +1159,7 @@ const VideoCard = forwardRef(function VideoCard(
               <MoreDotsIcon className="w-8 h-8 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]" />
             </button>
             {showMenu && (
-              <div className="absolute bottom-full right-0 mb-2 bg-ink2 border border-smoke/20 rounded-sprocket overflow-hidden z-10 w-40">
+              <div role="menu" className="absolute bottom-full right-0 mb-2 bg-white text-zinc-900 border border-zinc-200 shadow-xl rounded-2xl overflow-hidden z-10 w-52 max-w-[calc(100vw-1.5rem)] animate-share-sheet divide-y divide-zinc-100">
                 <button
                   onClick={() => {
                     setShowMenu(false);
@@ -1092,8 +1169,10 @@ const VideoCard = forwardRef(function VideoCard(
                     }
                     setShowSaveModal(true);
                   }}
-                  className="hidden lg:block w-full text-left px-4 py-2.5 text-xs text-bone hover:bg-smoke/10 font-body font-bold tracking-tight"
+                  role="menuitem"
+                  className="hidden lg:flex items-center gap-3 w-full text-left px-4 py-3 text-sm text-zinc-900 hover:bg-zinc-50 active:bg-zinc-100 transition-colors font-semibold"
                 >
+                  <Bookmark size={18} className="text-zinc-500" />
                   {bookmarked ? 'Saved' : 'Save'} · {bookmarkCount}
                 </button>
                 <button
@@ -1102,8 +1181,10 @@ const VideoCard = forwardRef(function VideoCard(
                     if (video.user?.stripeOnboarded) setShowTip(true);
                     else setShowTipUnavailable(true);
                   }}
-                  className="w-full text-left px-4 py-2.5 text-xs text-bone hover:bg-smoke/10 font-body font-bold tracking-tight"
+                  role="menuitem"
+                  className="flex items-center gap-3 w-full text-left px-4 py-3 text-sm text-zinc-900 hover:bg-zinc-50 active:bg-zinc-100 transition-colors font-semibold"
                 >
+                  <DollarSign size={18} className="text-amber-500" />
                   Tip creator
                 </button>
                 {isOwnVideo ? (
@@ -1112,8 +1193,10 @@ const VideoCard = forwardRef(function VideoCard(
                       setShowMenu(false);
                       setShowDeleteConfirm(true);
                     }}
-                    className="w-full text-left px-4 py-2.5 text-xs text-red-400 hover:bg-smoke/10 font-body font-bold tracking-tight"
+                    role="menuitem"
+                    className="flex items-center gap-3 w-full text-left px-4 py-3 text-sm text-red-600 hover:bg-red-50 active:bg-red-100 transition-colors font-semibold"
                   >
+                    <Trash2 size={18} />
                     Delete Post
                   </button>
                 ) : (
@@ -1122,8 +1205,10 @@ const VideoCard = forwardRef(function VideoCard(
                       setShowMenu(false);
                       setShowReport(true);
                     }}
-                    className="w-full text-left px-4 py-2.5 text-xs text-bone hover:bg-smoke/10 font-body font-bold tracking-tight"
+                    role="menuitem"
+                    className="flex items-center gap-3 w-full text-left px-4 py-3 text-sm text-zinc-900 hover:bg-zinc-50 active:bg-zinc-100 transition-colors font-semibold"
                   >
+                    <Flag size={18} className="text-zinc-500" />
                     Report
                   </button>
                 )}

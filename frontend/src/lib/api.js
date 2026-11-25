@@ -256,8 +256,8 @@ export const api = {
   getBookmarks: () => request('/users/me/bookmarks'),
   getLikedVideos: () => request('/users/me/likes'),
   getComments: (id) => request(`/videos/${id}/comments`),
-  postComment: (id, content) =>
-    request(`/videos/${id}/comments`, { method: 'POST', body: { content } }),
+  postComment: (id, content, parentCommentId = null) =>
+    request(`/videos/${id}/comments`, { method: 'POST', body: parentCommentId ? { content, parentCommentId } : { content } }),
   tipVideoCheckout: (id, amountCents) =>
     request(`/videos/${id}/tip/checkout`, { method: 'POST', body: { amountCents } }),
   connectStripe: () => request('/stripe/connect', { method: 'POST' }),

@@ -7,7 +7,7 @@ import { useToast } from '../context/ToastContext';
 import { LoadingSpinner } from './LoadingScreen';
 import { useContentTranslation } from '../hooks/useContentTranslation';
 import TranslationToggle from './TranslationToggle';
-import { Heart, X } from 'lucide-react';
+import { ArrowUpDown, AtSign, ChevronDown, Heart, Smile, X } from 'lucide-react';
 
 // Matches M:SS or MM:SS timestamps like "0:14" or "1:25" written in a
 // comment. Capped at 59 seconds in the SS group so we don't match things
@@ -105,6 +105,11 @@ const CommentsPanel = forwardRef(function CommentsPanel(
 ) {
   const [comments, setComments] = useState([]);
   const [text, setText] = useState('');
+  const [sort, setSort] = useState('top'); // 'top' | 'new'
+  const [showSort, setShowSort] = useState(false);
+  const [showEmoji, setShowEmoji] = useState(false);
+  const [replyTo, setReplyTo] = useState(null); // { id: top-level comment id, username }
+  const [openThreads, setOpenThreads] = useState(() => new Set());
   const [loading, setLoading] = useState(true);
   const [posting, setPosting] = useState(false);
   const inputRef = useRef(null);
@@ -148,21 +153,27 @@ const CommentsPanel = forwardRef(function CommentsPanel(
       id: tempId,
       content,
       createdAt: new Date().toISOString(),
-      user: { id: user?.id, username: user?.username, avatarUrl: user?.avatarUrl },
+      user: { id: user?.id, username: user?.username, displayName: user?.displayName, avatarUrl: user?.avatarUrl },
+      parentCommentId: replyTo?.id || null,
+      likeCount: 0,
+      liked: false,
       pending: true,
     };
     setComments((prev) => [optimisticComment, ...prev]);
+    const parentId = replyTo?.id || null;
     setText('');
+    setReplyTo(null);
+    setShowEmoji(false);
     onCountChange?.((c) => c + 1);
 
     setPosting(true);
     try {
-      const saved = await api.postComment(videoId, content);
+      const saved = await api.postComment(videoId, content, parentId);
       // Swap the optimistic placeholder for the real server record (real
       // id, server-assigned createdAt, etc.) rather than leaving the fake
       // one in place — later features keying off comment.id (replies,
       // deletion) need the real id.
-      setComments((prev) => prev.map((c) => (c.id === tempId ? saved : c)));
+      setComments((prev) => prev.map((c) => (c.id === tempId ? { ...optimisticComment, ...saved, pending: false } : c)));
     } catch {
       setComments((prev) => prev.filter((c) => c.id !== tempId));
       onCountChange?.((c) => Math.max(0, c - 1));
@@ -224,10 +235,93 @@ const CommentsPanel = forwardRef(function CommentsPanel(
     }
   }
 
+  // Replies are one level deep: replying to a reply attaches to the same top-level comment (as on TikTok).
   function handleReply(c) {
     const handle = c.user?.username ? `@${c.user.username} ` : '';
-    setText((t) => (t.startsWith(handle) ? t : handle));
+    const topId = c.parentCommentId || c.id;
+    setReplyTo({ id: topId, username: c.user?.username || '' });
+    setText(handle);
+    setOpenThreads((s) => new Set(s).add(topId));
     inputRef.current?.focus();
+  }
+
+  function toggleThread(id) {
+    setOpenThreads((s) => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id); else n.add(id);
+      return n;
+    });
+  }
+
+  // Top-level comments (sorted) with their replies (oldest first). The earliest top-level comment gets the
+  // "First comment" badge.
+  const { threads, firstId } = useMemo(() => {
+    const byParent = new Map();
+    const tops = [];
+    for (const c of comments) {
+      if (c.parentCommentId && comments.some((x) => x.id === c.parentCommentId)) {
+        if (!byParent.has(c.parentCommentId)) byParent.set(c.parentCommentId, []);
+        byParent.get(c.parentCommentId).push(c);
+      } else tops.push(c);
+    }
+    const time = (c) => new Date(c.createdAt).getTime();
+    const oldest = tops.filter((c) => !c.pending).reduce((m, c) => (!m || time(c) < time(m) ? c : m), null);
+    tops.sort((a, b) => (sort === 'top' ? (b.likeCount || 0) - (a.likeCount || 0) || time(b) - time(a) : time(b) - time(a)));
+    return {
+      threads: tops.map((c) => ({ c, replies: (byParent.get(c.id) || []).sort((a, b) => time(a) - time(b)) })),
+      firstId: oldest?.id ?? null,
+    };
+  }, [comments, sort]);
+
+  function renderRow(c, isReply) {
+    const parts = splitContent(c.content);
+    const isActive =
+      activeTimestampSeconds != null &&
+      parts.some((p) => p.type === 'timestamp' && p.seconds === activeTimestampSeconds);
+    const avatar = isReply ? 'w-7 h-7' : 'w-9 h-9';
+    return (
+      <div
+        key={c.id}
+        ref={isActive ? activeCommentRef : null}
+        className={`flex gap-3 -mx-2 px-2 py-1.5 rounded-sprocket transition-colors ${
+          isActive ? (light ? 'bg-zinc-50 ring-1 ring-zinc-200' : 'bg-reel/10 ring-1 ring-reel/40') : ''
+        } ${c.pending ? 'opacity-60' : ''}`}
+      >
+        {c.user?.avatarUrl ? (
+          <img src={c.user.avatarUrl} alt="" className={`${avatar} rounded-full object-cover shrink-0 bg-zinc-200`} />
+        ) : (
+          <div className={`${avatar} rounded-full flex items-center justify-center font-extrabold text-xs shrink-0 ${light ? 'bg-zinc-200 text-zinc-600' : 'bg-reel/20 text-reel'}`}>
+            {c.user?.username?.[0]?.toUpperCase() || '?'}
+          </div>
+        )}
+        <div className="min-w-0 flex-1">
+          <CommentText comment={c} onSeek={handleSeek} light={light} />
+          {light && !isReply && c.id === firstId && (
+            <span className="inline-block mt-1.5 px-2.5 py-1 rounded-md bg-zinc-100 text-zinc-500 text-xs font-semibold">First comment</span>
+          )}
+          <p className={`text-xs mt-1 flex items-center gap-4 ${light ? 'text-zinc-400 font-medium' : 'font-bold text-[11px] text-neutral-400'}`}>
+            <span>{c.pending ? 'Posting…' : timeAgo(c.createdAt)}</span>
+            {light && !c.pending && (
+              <button type="button" onClick={() => handleReply(c)} className="font-semibold text-zinc-500 active:opacity-60">
+                Reply
+              </button>
+            )}
+          </p>
+        </div>
+        {light && !c.pending && (
+          <button
+            type="button"
+            onClick={() => handleLike(c)}
+            aria-label={c.liked ? 'Unlike comment' : 'Like comment'}
+            aria-pressed={!!c.liked}
+            className="shrink-0 flex flex-col items-center gap-0.5 pt-1 px-1 active:scale-90 transition-transform"
+          >
+            <Heart size={18} className={c.liked ? 'text-[#fe2c55]' : 'text-zinc-400'} fill={c.liked ? 'currentColor' : 'none'} />
+            <span className="text-[11px] text-zinc-400 font-medium tabular-nums">{c.likeCount || 0}</span>
+          </button>
+        )}
+      </div>
+    );
   }
 
   const body = (
@@ -241,53 +335,26 @@ const CommentsPanel = forwardRef(function CommentsPanel(
             <p className={`font-semibold text-xs ${light ? 'text-zinc-400' : 'text-neutral-400'}`}>Be the first to say something.</p>
           </div>
         )}
-        {comments.map((c) => {
-          const parts = splitContent(c.content);
-          const isActive =
-            activeTimestampSeconds != null &&
-            parts.some((p) => p.type === 'timestamp' && p.seconds === activeTimestampSeconds);
-
-          return (
-            <div
-              key={c.id}
-              ref={isActive ? activeCommentRef : null}
-              className={`flex gap-3 -mx-2 px-2 py-1.5 rounded-sprocket transition-colors ${
-                isActive ? (light ? 'bg-zinc-50 ring-1 ring-zinc-200' : 'bg-reel/10 ring-1 ring-reel/40') : ''
-              } ${c.pending ? 'opacity-60' : ''}`}
-            >
-              {c.user?.avatarUrl ? (
-                <img src={c.user.avatarUrl} alt="" className="w-9 h-9 rounded-full object-cover shrink-0 bg-zinc-200" />
-              ) : (
-                <div className={`w-9 h-9 rounded-full flex items-center justify-center font-extrabold text-xs shrink-0 ${light ? 'bg-zinc-200 text-zinc-600' : 'bg-reel/20 text-reel'}`}>
-                  {c.user?.username?.[0]?.toUpperCase() || '?'}
-                </div>
-              )}
-              <div className="min-w-0 flex-1">
-                <CommentText comment={c} onSeek={handleSeek} light={light} />
-                <p className={`text-xs mt-1 flex items-center gap-3 ${light ? 'text-zinc-400 font-medium' : 'font-bold text-[11px] text-neutral-400'}`}>
-                  <span>{c.pending ? 'Posting…' : timeAgo(c.createdAt)}</span>
-                  {light && !c.pending && (
-                    <button type="button" onClick={() => handleReply(c)} className="font-semibold text-zinc-500 active:opacity-60">
-                      Reply
-                    </button>
-                  )}
-                </p>
-              </div>
-              {light && !c.pending && (
+        {threads.map(({ c, replies }) => (
+          <div key={c.id}>
+            {renderRow(c, false)}
+            {replies.length > 0 && (
+              <div className="ml-12">
                 <button
                   type="button"
-                  onClick={() => handleLike(c)}
-                  aria-label={c.liked ? 'Unlike comment' : 'Like comment'}
-                  aria-pressed={!!c.liked}
-                  className="shrink-0 flex flex-col items-center gap-0.5 pt-1 px-1 active:scale-90 transition-transform"
+                  onClick={() => toggleThread(c.id)}
+                  className={`flex items-center gap-2 py-1.5 text-xs font-semibold ${light ? 'text-zinc-500' : 'text-neutral-400'}`}
+                  aria-expanded={openThreads.has(c.id)}
                 >
-                  <Heart size={18} className={c.liked ? 'text-[#fe2c55]' : 'text-zinc-400'} fill={c.liked ? 'currentColor' : 'none'} />
-                  <span className="text-[11px] text-zinc-400 font-medium tabular-nums">{c.likeCount || 0}</span>
+                  <span className={`w-6 h-px ${light ? 'bg-zinc-300' : 'bg-neutral-600'}`} aria-hidden="true" />
+                  {openThreads.has(c.id) ? 'Hide replies' : `View ${replies.length} ${replies.length === 1 ? 'reply' : 'replies'}`}
+                  <ChevronDown size={14} className={openThreads.has(c.id) ? 'rotate-180' : ''} />
                 </button>
-              )}
-            </div>
-          );
-        })}
+                {openThreads.has(c.id) && <div className="space-y-3 mt-1">{replies.map((r) => renderRow(r, true))}</div>}
+              </div>
+            )}
+          </div>
+        ))}
       </div>
 
       <form
@@ -300,18 +367,50 @@ const CommentsPanel = forwardRef(function CommentsPanel(
           light ? 'border-zinc-100 bg-white' : 'border-smoke/10 bg-ink2'
         } ${variant === 'inline' ? '' : 'pb-[calc(5rem+env(safe-area-inset-bottom))]'}`}
       >
-        <div className="flex gap-2">
-          <input
-            ref={inputRef}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder={light ? 'Add comment…' : 'Add a comment… try a timestamp like 0:14'}
-            className={`flex-1 text-sm min-w-0 outline-none ${
-              light
-                ? 'bg-zinc-100 text-zinc-900 placeholder:text-zinc-400 rounded-full px-4 py-2.5 focus:ring-2 focus:ring-zinc-300'
-                : 'bg-zinc-800/80 border border-zinc-700 text-white placeholder:text-neutral-400 placeholder:font-bold font-bold text-xs rounded-sprocket px-3 py-2 focus:ring-2 focus:ring-amber-500/50'
-            }`}
-          />
+        {light && replyTo && (
+          <div className="flex items-center justify-between px-1 text-xs text-zinc-500">
+            <span>Replying to <b className="text-zinc-700">@{replyTo.username}</b></span>
+            <button type="button" onClick={() => { setReplyTo(null); setText(''); }} aria-label="Cancel reply" className="p-1"><X size={14} /></button>
+          </div>
+        )}
+        <div className="flex gap-2 items-center">
+          {light && (
+            user?.avatarUrl ? (
+              <img src={user.avatarUrl} alt="" className="w-9 h-9 rounded-full object-cover shrink-0 bg-zinc-200" />
+            ) : (
+              <div className="w-9 h-9 rounded-full bg-zinc-200 text-zinc-600 flex items-center justify-center text-xs font-extrabold shrink-0">
+                {user?.username?.[0]?.toUpperCase() || '?'}
+              </div>
+            )
+          )}
+          <div className={`flex-1 min-w-0 flex items-center ${light ? 'bg-zinc-100 rounded-full pr-2' : ''}`}>
+            <input
+              ref={inputRef}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder={light ? 'Add comment…' : 'Add a comment… try a timestamp like 0:14'}
+              className={`flex-1 text-sm min-w-0 outline-none ${
+                light
+                  ? 'bg-transparent text-zinc-900 placeholder:text-zinc-400 px-4 py-2.5'
+                  : 'bg-zinc-800/80 border border-zinc-700 text-white placeholder:text-neutral-400 placeholder:font-bold font-bold text-xs rounded-sprocket px-3 py-2 focus:ring-2 focus:ring-amber-500/50'
+              }`}
+            />
+            {light && (
+              <>
+                <button type="button" onClick={() => setShowEmoji((v) => !v)} aria-label="Emoji" className="p-1.5 text-zinc-700 active:opacity-60">
+                  <Smile size={22} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setText((t) => `${t}@`); inputRef.current?.focus(); }}
+                  aria-label="Mention someone"
+                  className="p-1.5 text-zinc-700 active:opacity-60"
+                >
+                  <AtSign size={22} />
+                </button>
+              </>
+            )}
+          </div>
           <button
             type="submit"
             disabled={posting || !text.trim()}
@@ -324,6 +423,15 @@ const CommentsPanel = forwardRef(function CommentsPanel(
             Post
           </button>
         </div>
+        {light && showEmoji && (
+          <div className="flex flex-wrap gap-1 px-1 pt-1">
+            {['😂', '😍', '🥰', '🔥', '👏', '🙌', '😭', '💯', '❤️', '🙏', '😮', '👍'].map((e) => (
+              <button key={e} type="button" onClick={() => { setText((t) => t + e); inputRef.current?.focus(); }} className="text-2xl p-1 active:scale-90 transition-transform">
+                {e}
+              </button>
+            ))}
+          </div>
+        )}
         {!light && (
           <p className="font-semibold text-[11px] text-neutral-400 px-1 leading-snug">
             Timestamps like 0:14 or 1:25 become clickable chapter markers.
@@ -343,9 +451,28 @@ const CommentsPanel = forwardRef(function CommentsPanel(
       <div className="relative w-full max-h-[70%] min-h-[45%] bg-white rounded-t-2xl flex flex-col font-sans text-zinc-900">
         <div className="pt-2 pb-3 px-4 relative">
           <div className="mx-auto w-10 h-1 rounded-full bg-zinc-300" aria-hidden="true" />
-          <p className="mt-3 text-center font-bold text-sm text-zinc-900">
-            {comments.length} {comments.length === 1 ? 'comment' : 'comments'}
-          </p>
+          <div className="mt-3 relative flex items-center justify-center gap-2">
+            <p className="font-bold text-sm text-zinc-900">
+              {comments.length} {comments.length === 1 ? 'comment' : 'comments'}
+            </p>
+            <button type="button" onClick={() => setShowSort((v) => !v)} aria-label="Sort comments" aria-expanded={showSort} className="p-1 text-zinc-700 active:opacity-60">
+              <ArrowUpDown size={16} />
+            </button>
+            {showSort && (
+              <div className="absolute top-full mt-1 z-10 bg-white border border-zinc-200 shadow-xl rounded-xl overflow-hidden text-sm">
+                {[['top', 'Top comments'], ['new', 'Newest first']].map(([k, label]) => (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => { setSort(k); setShowSort(false); }}
+                    className={`block w-full text-left px-4 py-2.5 hover:bg-zinc-50 ${sort === k ? 'font-bold text-zinc-900' : 'text-zinc-600'}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <button onClick={onClose} aria-label="Close comments" className="absolute right-3 top-5 p-1 text-zinc-500">
             <X size={20} />
           </button>
