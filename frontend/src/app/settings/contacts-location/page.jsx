@@ -46,7 +46,7 @@ function ContactsLocationInner() {
   const toast = useToast();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { state: perm, request: requestPermission, issues: permIssues, pending: permPending } = usePermissions();
+  const { state: perm, request: requestPermission, issues: permIssues, pending: permPending, errors: permErrors } = usePermissions();
   const [fb, setFb] = useState(null); // /auth/facebook/status
   const [fbKey, setFbKey] = useState(0); // bumps to reload the friends list
   const [contactsEnabled, setContactsEnabled] = usePref('contactsEnabled');
@@ -236,8 +236,8 @@ function ContactsLocationInner() {
                   : permIssues[name] || (s ? 'Not asked yet' : 'Checking…');
           const canAsk = !asking && s && s !== 'granted' && s !== 'unsupported';
           return (
+            <div key={name}>
             <SettingsRow
-              key={name}
               icon={ic(Icon)}
               title={title}
               subtitle={`${status} · ${sub}`}
@@ -250,6 +250,12 @@ function ContactsLocationInner() {
                 )
               }
             />
+            {permErrors[name] && (
+              <p className="px-4 pb-3 -mt-1 font-mono text-[11px] text-red-500 break-words" role="status">
+                {permErrors[name]}
+              </p>
+            )}
+            </div>
           );
         })}
         <DevicePushRows />

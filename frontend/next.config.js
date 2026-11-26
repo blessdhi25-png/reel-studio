@@ -12,7 +12,10 @@ const nextConfig = {
   async headers() {
     // The push service worker must always be revalidated so updates reach installed browsers promptly.
     const swHeaders = [{ source: '/sw.js', headers: [{ key: 'Cache-Control', value: 'no-cache, max-age=0, must-revalidate' }, { key: 'Service-Worker-Allowed', value: '/' }] }];
-    return [...swHeaders, ...PROTECTED.flatMap((p) => [
+    // Camera/microphone/location are allowed for our own origin (nothing in this app may switch them off
+    // for the whole site); embedded third-party frames still don't inherit them.
+    const policy = [{ source: '/:path*', headers: [{ key: 'Permissions-Policy', value: 'camera=(self), microphone=(self), geolocation=(self)' }] }];
+    return [...policy, ...swHeaders, ...PROTECTED.flatMap((p) => [
       { source: p, headers: NO_STORE },
       { source: `${p}/:path*`, headers: NO_STORE },
     ])];

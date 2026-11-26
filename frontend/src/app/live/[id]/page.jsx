@@ -1,5 +1,6 @@
 'use client';
 
+import { mediaErrorDetail, UNSUPPORTED_TEXT } from '@/lib/mediaErrorDetail';
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { MessageSquare, Mic, MicOff, MonitorUp, PhoneOff, Smile, SwitchCamera, UserPlus, Video, VideoOff, X } from 'lucide-react';
@@ -28,6 +29,7 @@ export default function LiveRoomPage({ params }) {
   // run concurrently; the phase is derived from both results (see evaluatePhase).
   const [phase, setPhase] = useState('IDLE');
   const [localStream, setLocalStream] = useState(null);
+  const [cameraDetail, setCameraDetail] = useState('');
   const [cameraIssue, setCameraIssue] = useState(null); // null | denied | busy | missing | unsupported | play
   const [cameraOn, setCameraOn] = useState(true);
   const [micOn, setMicOn] = useState(true);
@@ -289,13 +291,13 @@ export default function LiveRoomPage({ params }) {
   // Never rejects: resolves { media } or { issue }.
   async function acquireCamera() {
     if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
-      return { issue: 'unsupported' };
+      return { issue: 'unsupported', detail: UNSUPPORTED_TEXT };
     }
     try {
       const media = await navigator.mediaDevices.getUserMedia(buildConstraints({ audio: true }));
       return { media };
     } catch (err) {
-      return { issue: classifyMediaError(err) };
+      return { issue: classifyMediaError(err), detail: mediaErrorDetail(err) };
     }
   }
 
@@ -521,6 +523,7 @@ export default function LiveRoomPage({ params }) {
         statusRef.current.cam = 'ready';
       } else {
         setCameraIssue(res.issue);
+        setCameraDetail(res.detail || '');
         statusRef.current.cam = 'failed';
       }
       evaluatePhase(attempt);
@@ -540,6 +543,7 @@ export default function LiveRoomPage({ params }) {
     const res = await acquireCamera();
     if (!res.media) {
       setCameraIssue(res.issue);
+      setCameraDetail(res.detail || '');
       return;
     }
     localStreamRef.current = res.media;
@@ -1078,6 +1082,7 @@ export default function LiveRoomPage({ params }) {
               : cameraIssue === 'play'
               ? 'Tap to start the camera preview'
               : 'Camera access required. Please tap to enable camera'}
+            {cameraDetail && cameraIssue !== 'play' && <span className="block mt-1 font-mono text-[11px] font-semibold text-black/70 break-words">{cameraDetail}</span>}
           </button>
         </div>
       )}

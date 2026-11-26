@@ -224,6 +224,7 @@ const CameraRecorder = forwardRef(function CameraRecorder(
   const [recording, setRecording] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState(duration);
   const [error, setError] = useState(null);
+  const [retryKey, setRetryKey] = useState(0);
   // Separate from `error` (camera/mic access failures, which hide the
   // preview entirely) because this can happen even though the camera
   // preview is working fine — only recording itself is unsupported. Keeping
@@ -313,7 +314,7 @@ const CameraRecorder = forwardRef(function CameraRecorder(
         }
       } catch (err) {
         const d = describeCameraError(err);
-        setError(`${d.message} ${d.hint}`);
+        setError({ text: `${d.message} ${d.hint}`, detail: d.detail });
       }
     }
 
@@ -323,7 +324,7 @@ const CameraRecorder = forwardRef(function CameraRecorder(
       streamRef.current?.getTracks().forEach((t) => t.stop());
       clearInterval(timerRef.current);
     };
-  }, [facingMode, manualFacingFlip, selectedDeviceId, ready]);
+  }, [facingMode, manualFacingFlip, selectedDeviceId, ready, retryKey]);
 
   // --- Canvas compositor: the single source of truth for both what's
   // displayed AND what gets recorded (see startRecording below, which
@@ -779,8 +780,12 @@ const CameraRecorder = forwardRef(function CameraRecorder(
 
       <div className={embedded ? 'relative flex-1 bg-ink2 overflow-hidden' : 'relative flex-1 bg-ink2 mx-4 rounded-sprocket overflow-hidden'}>
         {error ? (
-          <div className="w-full h-full flex items-center justify-center px-8 text-center">
-            <p className="font-body text-smoke text-sm">{error}</p>
+          <div className="w-full h-full flex flex-col items-center justify-center gap-3 px-8 text-center">
+            <p className="font-body text-smoke text-sm">{error.text || error}</p>
+            {error.detail && <p className="font-mono text-[11px] text-red-400 break-words">{error.detail}</p>}
+            <button type="button" onClick={() => setRetryKey((k) => k + 1)} className="px-4 py-2 rounded-xl bg-amber-500 text-black font-bold text-sm">
+              Try again
+            </button>
           </div>
         ) : (
           <>

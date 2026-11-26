@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { mediaErrorDetail, UNSUPPORTED_TEXT } from './mediaErrorDetail';
 
 // Live browser permission state for geolocation / camera / microphone / notifications.
 // navigator.permissions.query isn't reliable everywhere (Firefox rejects "camera"/"microphone", older Safari
@@ -76,30 +77,34 @@ export function usePermissions() {
   // and ignored once the permission reads as granted.
   const [issues, setIssues] = useState({});
   const [pending, setPending] = useState({});
+  const [errors, setErrors] = useState({}); // exact err.name/message from the last failed request, per permission
 
   // Triggers the real browser prompt — must be called straight from the tap handler so the browser
   // treats it as a user gesture. Resolves the new state: 'granted' | 'denied' | 'prompt' | 'unsupported'.
   const request = useCallback(async (name) => {
     setPending((p) => ({ ...p, [name]: true }));
     setIssues((i) => { const n = { ...i }; delete n[name]; return n; });
+    setErrors((e) => { const n = { ...e }; delete n[name]; return n; });
     let next = 'granted';
+    let detail = '';
     let issue = null;
     const secure = typeof window !== 'undefined' && window.isSecureContext !== false;
     try {
       if (!secure && name !== 'notifications') {
         next = 'unsupported';
         issue = 'Needs a secure (https) connection';
+        detail = `SecurityError: insecure context (${window.location.protocol})`;
       } else if (name === 'geolocation') {
-        if (!navigator.geolocation) next = 'unsupported';
+        if (!navigator.geolocation) { next = 'unsupported'; detail = UNSUPPORTED_TEXT; }
         else await new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: false, timeout: 10000, maximumAge: 0 }));
       } else if (name === 'notifications') {
-        if (typeof Notification === 'undefined') next = 'unsupported';
+        if (typeof Notification === 'undefined') { next = 'unsupported'; detail = UNSUPPORTED_TEXT; }
         else {
           const r = await Notification.requestPermission();
           next = r === 'default' ? 'prompt' : r;
         }
       } else {
-        if (!navigator.mediaDevices?.getUserMedia) next = 'unsupported';
+        if (!navigator.mediaDevices?.getUserMedia) { next = 'unsupported'; detail = UNSUPPORTED_TEXT; }
         else {
           const stream = await navigator.mediaDevices.getUserMedia(name === 'camera' ? { video: true } : { audio: true });
           stream.getTracks().forEach((t) => t.stop()); // we only wanted the permission, not the feed
@@ -107,6 +112,10 @@ export function usePermissions() {
       }
     } catch (err) {
       const code = err?.name;
+      // Geolocation errors carry a numeric code (1 PERMISSION_DENIED, 2 POSITION_UNAVAILABLE, 3 TIMEOUT), not a name.
+      detail = name === 'geolocation'
+        ? `${{ 1: 'PERMISSION_DENIED', 2: 'POSITION_UNAVAILABLE', 3: 'TIMEOUT' }[err?.code] || 'GeolocationPositionError'}${err?.message ? `: ${err.message}` : ''}`
+        : mediaErrorDetail(err);
       const thing = name === 'camera' ? 'camera' : 'microphone';
       if (name === 'geolocation') {
         if (err?.code === 1) next = 'denied';
@@ -122,10 +131,11 @@ export function usePermissions() {
     markAsked(name, next === 'unsupported' ? 'prompt' : next);
     setState((s) => ({ ...s, [name]: next }));
     if (issue) setIssues((i) => ({ ...i, [name]: issue }));
+    if (detail) setErrors((e) => ({ ...e, [name]: detail }));
     setPending((p) => ({ ...p, [name]: false }));
     refresh(); // reconcile with what the browser itself reports
     return next;
   }, [refresh]);
 
-  return { state, request, refresh, issues, pending };
+  return { state, request, refresh, issues, pending, errors };
 }

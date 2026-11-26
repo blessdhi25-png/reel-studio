@@ -1,5 +1,6 @@
 'use client';
 
+import { mediaErrorDetail, UNSUPPORTED_TEXT } from '@/lib/mediaErrorDetail';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
@@ -303,6 +304,7 @@ function GoLiveModal({ onClose, onStarted }) {
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState(null);
   const [camError, setCamError] = useState(null);
+  const [camRetry, setCamRetry] = useState(0);
 
   const videoRef = useRef(null);
   const streamRef = useRef(null);
@@ -341,7 +343,7 @@ function GoLiveModal({ onClose, onStarted }) {
         if (videoRef.current) videoRef.current.srcObject = stream;
       } catch (err) {
         if (!cancelled) {
-          setCamError('Camera access was denied or unavailable. You can still go live without a preview.');
+          setCamError({ text: 'Camera access was denied or unavailable. You can still go live without a preview.', detail: err?.name === 'NotSupportedError' ? UNSUPPORTED_TEXT : mediaErrorDetail(err) });
         }
       }
     }
@@ -354,7 +356,7 @@ function GoLiveModal({ onClose, onStarted }) {
         streamRef.current.getTracks().forEach((t) => t.stop());
       }
     };
-  }, [ready, selectedDeviceId, buildConstraints]);
+  }, [ready, selectedDeviceId, buildConstraints, camRetry]);
 
   useEffect(() => {
     streamRef.current?.getVideoTracks().forEach((t) => (t.enabled = cameraOn));
@@ -398,7 +400,11 @@ function GoLiveModal({ onClose, onStarted }) {
         <div className="aspect-video bg-zinc-900 rounded-2xl overflow-hidden relative border border-zinc-800">
           {camError ? (
             <div className="w-full h-full flex items-center justify-center px-6 text-center">
-              <p className="text-zinc-500 text-xs">{camError}</p>
+              <div className="flex flex-col items-center gap-2">
+                <p className="text-zinc-500 text-xs">{camError.text || camError}</p>
+                {camError.detail && <p className="font-mono text-[11px] text-red-400 break-words">{camError.detail}</p>}
+                <button type="button" onClick={() => setCamRetry((k) => k + 1)} className="px-3 py-1.5 rounded-lg bg-amber-500 text-black font-bold text-xs">Try again</button>
+              </div>
             </div>
           ) : (
             <video

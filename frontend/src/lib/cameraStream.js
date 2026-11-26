@@ -61,7 +61,14 @@ export async function openCameraStream({ deviceId = '', facingMode = 'user' } = 
   throw mostUseful(errors);
 }
 
+import { mediaErrorDetail, UNSUPPORTED_TEXT } from './mediaErrorDetail';
+
 export function describeCameraError(err) {
+  const d = describeCameraErrorBase(err);
+  return { ...d, detail: err?.name === 'NotSupportedError' ? UNSUPPORTED_TEXT : mediaErrorDetail(err) };
+}
+
+function describeCameraErrorBase(err) {
   const name = err?.name || '';
   if (isDenied(err)) {
     return {

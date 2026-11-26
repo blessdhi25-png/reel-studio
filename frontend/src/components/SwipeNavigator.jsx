@@ -17,8 +17,7 @@ import { shouldIgnoreSwipe } from '@/lib/swipeGuards';
 //
 // Real neighbouring routes can't be rendered side by side (each tab is its own Next route), so the peek is
 // a labelled underlay rather than a live preview of the next screen.
-const LOCK_PX = 10;
-const DOMINANCE = 1.5;
+const LOCK_PX = 12;
 const COMMIT = 0.3;
 const OUT_MS = 180;
 const IN_MS = 280;
@@ -84,6 +83,11 @@ export default function SwipeNavigator() {
 
     let s = null;
     const page = () => document.getElementById('page-slider');
+    // Tell the browser this area only pans vertically. Without it, Android Chrome/WebViews may claim a
+    // sideways drag for themselves (overscroll / history gestures) and cancel our touch stream. Horizontal
+    // scrollers inside are unaffected: touch-action only intersects up to the nearest scroll container.
+    const shell = page();
+    if (shell) shell.style.touchAction = 'pan-y pinch-zoom';
 
     const onStart = (e) => {
       s = null;
@@ -101,7 +105,7 @@ export default function SwipeNavigator() {
       const dy = t.clientY - s.y;
       if (!s.locked) {
         if (Math.abs(dx) < LOCK_PX && Math.abs(dy) < LOCK_PX) return;
-        if (Math.abs(dx) < Math.abs(dy) * DOMINANCE) { s = null; return; } // a scroll, not a page swipe
+        if (Math.abs(dx) <= Math.abs(dy)) { s = null; return; } // vertical wins: a scroll, not a page swipe
         s.locked = true;
         const under = getUnderlay();
         el.style.position = 'relative';
@@ -162,6 +166,7 @@ export default function SwipeNavigator() {
     window.addEventListener('touchend', onEnd, { passive: true });
     window.addEventListener('touchcancel', onCancel, { passive: true });
     return () => {
+      if (shell) shell.style.touchAction = '';
       window.removeEventListener('touchstart', onStart);
       window.removeEventListener('touchmove', onMove);
       window.removeEventListener('touchend', onEnd);

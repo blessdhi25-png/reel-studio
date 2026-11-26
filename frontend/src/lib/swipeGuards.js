@@ -14,6 +14,10 @@ function startsInHorizontalScroller(el) {
 export function shouldIgnoreSwipe(target) {
   if (typeof document === 'undefined' || !(target instanceof Element)) return true;
   if (target.closest('input, textarea, select, [contenteditable="true"], [role="slider"], [data-no-swipe], canvas')) return true;
-  if (document.querySelector('[aria-modal="true"]')) return true;
+  // Only a modal that is actually on screen blocks swiping (a hidden/off-screen one must not).
+  for (const m of document.querySelectorAll('[aria-modal="true"]')) {
+    const r = m.getBoundingClientRect();
+    if (r.width > 0 && r.height > 0 && r.right > 0 && r.left < window.innerWidth && getComputedStyle(m).visibility !== 'hidden') return true;
+  }
   return startsInHorizontalScroller(target);
 }
