@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '../context/AuthContext';
 import { useSocketContext } from '../context/SocketContext';
@@ -87,6 +88,14 @@ export default function BottomNav() {
   // it here, independently from the notifications page).
   const { unreadCount } = useSocketContext();
   const { t } = useLanguage();
+  // While a page swipe is in progress SwipeNavigator reports the tab being swiped to, so the highlight
+  // follows the finger instead of waiting for the route change.
+  const [swipeHint, setSwipeHint] = useState(null);
+  useEffect(() => {
+    const on = (e) => setSwipeHint(e.detail || null);
+    window.addEventListener('clippulse:swipe-hint', on);
+    return () => window.removeEventListener('clippulse:swipe-hint', on);
+  }, []);
 
   if (isNavHidden(pathname)) return null;
 
@@ -98,7 +107,9 @@ export default function BottomNav() {
     router.push(path);
   }
 
-  const isActive = (path) => (path === '/' ? pathname === '/' : pathname.startsWith(path));
+  const isActive = (path) => (swipeHint ? swipeHint === path : path === '/' ? pathname === '/' : pathname.startsWith(path));
+  const profilePath = user ? `/profile/${user.id}` : null;
+  const profileActive = swipeHint ? swipeHint === profilePath : pathname.startsWith('/profile') && user ? pathname === profilePath : false;
 
   return (
     // Solid black bar with a hard top border — no gradient scrim or shadow. The inline
@@ -140,9 +151,9 @@ export default function BottomNav() {
         />
         <NavItem
           label={t('nav.profile')}
-          active={pathname.startsWith('/profile') && user ? pathname === `/profile/${user.id}` : false}
+          active={profileActive}
           onClick={() => go(user ? `/profile/${user.id}` : '/login')}
-          icon={<ProfileIcon active={pathname === `/profile/${user?.id}`} />}
+          icon={<ProfileIcon active={profileActive} />}
         />
       </div>
     </nav>

@@ -46,7 +46,7 @@ function ContactsLocationInner() {
   const toast = useToast();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { state: perm, request: requestPermission } = usePermissions();
+  const { state: perm, request: requestPermission, issues: permIssues, pending: permPending } = usePermissions();
   const [fb, setFb] = useState(null); // /auth/facebook/status
   const [fbKey, setFbKey] = useState(0); // bumps to reload the friends list
   const [contactsEnabled, setContactsEnabled] = usePref('contactsEnabled');
@@ -75,6 +75,7 @@ function ContactsLocationInner() {
   async function allow(name) {
     const next = await requestPermission(name);
     if (next === 'denied') toast.error('Blocked. Change it in your browser’s site settings (the lock icon in the address bar).');
+    else if (next === 'granted') toast.success('Allowed');
   }
 
   async function startFacebook(resync) {
@@ -223,14 +224,31 @@ function ContactsLocationInner() {
       <SettingsGroup title="Device permissions" footer="Permissions are controlled by your browser or device; if one is blocked, change it from the site settings (the lock icon in the address bar).">
         {rows.map(([name, Icon, title, sub]) => {
           const s = perm[name];
+          const asking = !!permPending[name];
+          const status = asking
+            ? 'Requesting…'
+            : s === 'granted'
+              ? 'Allowed'
+              : s === 'denied'
+                ? (name === 'geolocation' ? 'Blocked — enable in browser/site settings' : 'Blocked in browser settings')
+                : s === 'unsupported'
+                  ? permIssues[name] || 'Not supported here'
+                  : permIssues[name] || (s ? 'Not asked yet' : 'Checking…');
+          const canAsk = !asking && s && s !== 'granted' && s !== 'unsupported';
           return (
             <SettingsRow
               key={name}
               icon={ic(Icon)}
               title={title}
-              subtitle={`${s ? LABEL[s] || s : 'Checking…'} · ${sub}`}
+              subtitle={`${status} · ${sub}`}
               chevron={false}
-              right={s === 'prompt' || s === 'unsupported' ? <button type="button" onClick={() => allow(name)} className={BTN}>Allow</button> : null}
+              right={
+                s === 'granted' || s === 'unsupported' ? null : (
+                  <button type="button" disabled={!canAsk} onClick={() => allow(name)} className={BTN}>
+                    {asking ? 'Asking…' : s === 'denied' ? 'Retry' : 'Allow'}
+                  </button>
+                )
+              }
             />
           );
         })}

@@ -60,7 +60,10 @@ export default function AppShell({ children }) {
       <DesktopSidebar />
       {/* Below lg there is no sidebar, so the wrapper adds no padding and mobile layout is untouched. */}
       <div className={sidebarShownFor(pathname) ? SIDEBAR_PAD_CLASS : undefined}>
-        <ThemeSurface>{children}</ThemeSurface>
+        {/* #page-slider: SwipeNavigator translates this with the finger between the main tabs. */}
+        <div id="page-slider">
+          <ThemeSurface>{children}</ThemeSurface>
+        </div>
       </div>
       <SwipeNavigator />
       <ChatHub />

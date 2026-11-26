@@ -71,13 +71,27 @@ export function usePermissions() {
     };
   }, [refresh]);
 
-  // Triggers the real browser prompt. Resolves the new state: 'granted' | 'denied' | 'prompt' (dismissed) | 'unsupported'.
+  // What happened the last time the person tapped "Allow", for states the browser's own permission value
+  // can't express (no camera plugged in, GPS unavailable, request timed out). Cleared by the next attempt,
+  // and ignored once the permission reads as granted.
+  const [issues, setIssues] = useState({});
+  const [pending, setPending] = useState({});
+
+  // Triggers the real browser prompt — must be called straight from the tap handler so the browser
+  // treats it as a user gesture. Resolves the new state: 'granted' | 'denied' | 'prompt' | 'unsupported'.
   const request = useCallback(async (name) => {
+    setPending((p) => ({ ...p, [name]: true }));
+    setIssues((i) => { const n = { ...i }; delete n[name]; return n; });
     let next = 'granted';
+    let issue = null;
+    const secure = typeof window !== 'undefined' && window.isSecureContext !== false;
     try {
-      if (name === 'geolocation') {
+      if (!secure && name !== 'notifications') {
+        next = 'unsupported';
+        issue = 'Needs a secure (https) connection';
+      } else if (name === 'geolocation') {
         if (!navigator.geolocation) next = 'unsupported';
-        else await new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej, { timeout: 20000, maximumAge: 60000 }));
+        else await new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: false, timeout: 10000, maximumAge: 0 }));
       } else if (name === 'notifications') {
         if (typeof Notification === 'undefined') next = 'unsupported';
         else {
@@ -93,16 +107,25 @@ export function usePermissions() {
       }
     } catch (err) {
       const code = err?.name;
-      if (name === 'geolocation') next = err?.code === 1 ? 'denied' : err?.code === 2 || err?.code === 3 ? 'granted' : 'prompt'; // unavailable/timeout ≠ denied: permission was given
-      else if (code === 'NotAllowedError' || code === 'SecurityError' || code === 'PermissionDeniedError') next = 'denied';
-      else if (code === 'NotFoundError' || code === 'OverconstrainedError') next = 'granted'; // allowed, but no such device on this machine
-      else next = 'prompt';
+      const thing = name === 'camera' ? 'camera' : 'microphone';
+      if (name === 'geolocation') {
+        if (err?.code === 1) next = 'denied';
+        else {
+          next = 'prompt';
+          issue = err?.code === 3 ? 'Location timed out — try again' : 'Location unavailable';
+        }
+      } else if (code === 'NotAllowedError' || code === 'SecurityError' || code === 'PermissionDeniedError') next = 'denied';
+      else if (code === 'NotFoundError' || code === 'OverconstrainedError' || code === 'DevicesNotFoundError') { next = 'prompt'; issue = `No ${thing} detected`; }
+      else if (code === 'NotReadableError' || code === 'AbortError') { next = 'prompt'; issue = `${thing[0].toUpperCase()}${thing.slice(1)} is busy in another app`; }
+      else { next = 'prompt'; issue = 'Something went wrong — try again'; }
     }
     markAsked(name, next === 'unsupported' ? 'prompt' : next);
     setState((s) => ({ ...s, [name]: next }));
+    if (issue) setIssues((i) => ({ ...i, [name]: issue }));
+    setPending((p) => ({ ...p, [name]: false }));
     refresh(); // reconcile with what the browser itself reports
     return next;
   }, [refresh]);
 
-  return { state, request, refresh };
+  return { state, request, refresh, issues, pending };
 }

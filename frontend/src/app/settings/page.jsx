@@ -1,235 +1,1060 @@
 'use client';
 
-import {
-  Accessibility, Image as ImageIcon, Clock, CloudOff, FileText, Fingerprint, HardDrive, KeyRound, Languages, LifeBuoy, Lock, MapPin,
-  Megaphone, MessageSquare, Moon, Music, PlayCircle, Shield, ShieldCheck, Timer, User, Users,
-} from 'lucide-react';
-import { disableBiometric, getBiometricStatus, isBiometricSupported, registerBiometricCredential } from '@/lib/biometrics';
-import { useCallback, useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { useTheme } from 'next-themes';
-import { api } from '@/lib/api';
-import { useAuth } from '@/context/AuthContext';
-import { useToast } from '@/context/ToastContext';
-import { useStaffAccess } from '@/hooks/useStaffAccess';
-import { usePref } from '@/lib/settingsPrefs';
-import { languageByCode } from '@/lib/languages';
-import { useLanguage } from '@/context/LanguageContext';
-import { formatBytes, getCachedMediaBytes, isCacheSupported } from '@/lib/storageCache';
-import { dailyAverageSeconds, formatDuration, readUsage, weekUsage } from '@/lib/screenTime';
-import ConfirmModal from '@/components/ConfirmModal';
-import {
-  SettingsGroup,
-  SettingsPage,
-  SettingsRow,
-  SettingsUserCard,
-  ToggleRow,
-  VerifiedBadge,
-} from '@/components/settings/SettingsUI';
+export const dynamic = 'force-dynamic';
 
-// Row icons: one consistent set (lucide) instead of emoji.
-const ic = (Icon) => <Icon size={18} strokeWidth={2.25} />;
+import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
+import { hasSeenWelcome, hasToken, isGuest } from '@/lib/onboarding';
+import { api } from '../lib/api';
+import { getSocket } from '../lib/socket';
+import VideoCard from '../components/VideoCard';
+import SwipeablePager from '@/components/SwipeablePager';
+import CreatorPreview from '@/components/CreatorPreview';
+import { useFeedScrolling } from '../hooks/useFeedScrolling';
+import DesktopRail from '../components/DesktopRail';
+import { loadTuningWeights } from '../components/TuneFeedPanel';
+import FeedFiltersDrawer from '../components/FeedFiltersDrawer';
+import Logo from '../components/Logo';
+import StoriesBar from '../components/StoriesBar';
+import TopHeaderNav from '../components/TopHeaderNav';
+import { useFeedSync } from '../hooks/useFeedSync';
+import { getPref } from '@/lib/settingsPrefs';
+import { getOfflineFeed, precacheVideo } from '../lib/offlineCache';
 
-export default function SettingsDashboardPage() {
-  const router = useRouter();
-  const toast = useToast();
-  const { t } = useLanguage();
-  const { user, ready, isAuthenticated, logout } = useAuth();
-  // Admin visibility is decided by the backend (GET /admin/me re-reads the role
-  // from the database), not by the role string cached in localStorage — which
-  // is also lowercase ('admin') in this codebase, not 'ADMIN'.
-  const { isStaff } = useStaffAccess();
+const FILTERS = [
+  { label: 'All', value: null },
+  { label: 'Shorts', value: 'short' },
+  { label: 'Features', value: 'long' },
+  { label: 'LIVE', href: '/live' },
+  { label: 'Communities', href: '/communities' },
+  { label: 'Collections', href: '/collections' },
+];
 
-  const [me, setMe] = useState(null);
-
-  // Device-local preferences (see lib/settingsPrefs.js).
-  const [twoStep] = usePref('twoStep');
-  const [dataSaver] = usePref('dataSaver');
-  const [displayLanguage] = usePref('displayLanguage');
-
-  // Storage & cache
-  const [cacheBytes, setCacheBytes] = useState(null);
-
-  // Screen-time summary for the Wellbeing row
-  const [avgSeconds, setAvgSeconds] = useState(null);
-
-  const [confirmLogout, setConfirmLogout] = useState(false);
-
-  // Biometric lock (device-local; see lib/biometrics.js)
-  const [bioSupported, setBioSupported] = useState(false);
-  const [bioEnabled, setBioEnabled] = useState(false);
-  const [bioBusy, setBioBusy] = useState(false);
+// Sidebar "Following" → /?tab=following selects the following-only feed.
+function TabParamSync({ onTab }) {
+  const searchParams = useSearchParams();
   useEffect(() => {
-    if (!user?.id) return;
-    isBiometricSupported().then(setBioSupported);
-    getBiometricStatus().then((st) => setBioEnabled(!!st.enabled)).catch(() => {});
-  }, [user?.id]);
+    onTab(searchParams.get('tab') === 'following' ? 'following' : null);
+  }, [searchParams, onTab]);
+  return null;
+}
 
-  async function toggleBiometric(next) {
-    if (!user?.id || bioBusy) return;
-    setBioBusy(true);
-    try {
-      if (next) {
-        await registerBiometricCredential(user); // server issues the challenge, verifies and stores the public key
-        setBioEnabled(true);
-        toast.success('Biometric lock on');
-      } else {
-        await disableBiometric(user); // needs a server-verified fingerprint
-        setBioEnabled(false);
-        toast.success('Biometric lock off');
-      }
-    } catch (err) {
-      toast.error(err.message || "Couldn't change the biometric lock");
-    } finally {
-      setBioBusy(false);
+function CircleParamSync({ onCircle }) {
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    const c = searchParams.get('circle');
+    if (c) onCircle(c);
+  }, [searchParams, onCircle]);
+
+  return null;
+}
+
+// Survives client-side navigation (Home -> Profile -> Home) for as long as the tab lives, so coming
+// back restores the same clips at the same position instead of reloading from the first video.
+const FEED_SESSION_TTL_MS = 30 * 60 * 1000;
+let feedSession = null; // { key, videos, nextCursor, activeId, savedAt }
+
+function readDeepLink() {
+  if (typeof window === 'undefined') return null;
+  const sp = new URLSearchParams(window.location.search);
+  return sp.get('video') || sp.get('postId') || null;
+}
+
+// In-app navigations to "/?video=ID" while the feed is already mounted (the page doesn't remount).
+function VideoParamSync({ onVideo }) {
+  const searchParams = useSearchParams();
+  useEffect(() => {
+    onVideo(searchParams.get('video') || searchParams.get('postId') || null);
+  }, [searchParams, onVideo]);
+  return null;
+}
+
+function feedKey(filter, circle, weights) {
+  return JSON.stringify([filter || null, circle || null, weights || null]);
+}
+
+// A slide counts as "the one playing" once this much of it is in view (≥ 0.75).
+const ACTIVE_RATIO = 0.75;
+// After one wheel/keyboard step, ignore further steps for this long (matches the smooth-scroll duration).
+const STEP_LOCK_MS = 420;
+
+export default function FeedPage() {
+  const router = useRouter();
+  const [guest, setGuest] = useState(false);
+
+  // Welcome gate: a brand-new install (no session, welcome never seen) is sent to the intro before
+  // any feed content. Keys: the session token is stored as 'token' (not 'auth_token').
+  useEffect(() => {
+    if (!hasToken() && !hasSeenWelcome()) {
+      router.replace('/welcome');
+      return;
+    }
+    setGuest(!hasToken() && isGuest());
+  }, [router]);
+
+  // Audio & Header state
+  const [activeTab, setActiveTab] = useState('All');
+  const [isMuted, setIsMuted] = useState(false);
+
+  // Core Feed States
+  const [videos, setVideos] = useState([]);
+  const [nextCursor, setNextCursor] = useState(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [filter, setFilter] = useState(null); // null = mixed, 'short', 'long'
+  const [circle, setCircle] = useState(null);
+  const [circles, setCircles] = useState([]);
+  const [user, setUser] = useState(null);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [focusMode, setFocusMode] = useState(false);
+  const { isScrolling, handlers: scrollHandlers } = useFeedScrolling();
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [tuningWeights, setTuningWeights] = useState({ nicheWeight: 50, freshWeight: 50, localWeight: 50 });
+  const [activeTime, setActiveTime] = useState(0);
+  const [celebration, setCelebration] = useState(null);
+
+  const [isDesktop, setIsDesktop] = useState(null);
+  // Swipe-left-on-a-video reveals the creator's profile (SwipeablePager page 1); header fades out while it's showing.
+  const [pagerIndex, setPagerIndex] = useState(0);
+  const [previewTouched, setPreviewTouched] = useState(false);
+  const [previewShown, setPreviewShown] = useState(false);
+  const previewShownRef = useRef(false);
+  const [bottomNavH, setBottomNavH] = useState(null); // measured BottomNav height (px) so the mobile feed ends exactly at its top edge
+
+  // Background sync / offline state
+  const [pendingNew, setPendingNew] = useState([]); // newer clips fetched in the background, not yet in the feed
+  const [offlineMode, setOfflineMode] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+
+  // Unified click handler for filter tabs
+  function handleFilterClick(opt) {
+    if (opt.href) {
+      router.push(opt.href);
+      return;
+    }
+    setActiveTab(opt.label);
+    setFilter(opt.value);
+  }
+
+  const handleUrlVideo = useCallback((id) => {
+    if (!id || id === handledDeepLinkRef.current) return;
+    handledDeepLinkRef.current = id;
+    deepLinkRef.current = id;
+    setReloadKey((k) => k + 1); // reload around the requested clip
+  }, []);
+
+  // URL-driven tab (/?tab=following from the desktop sidebar). null = back to the default feed.
+  const handleUrlTab = useCallback((tab) => {
+    if (tab === 'following') {
+      setActiveTab('Following');
+      setFilter('following');
+    } else {
+      setActiveTab((t) => (t === 'Following' ? 'All' : t));
+      setFilter((f) => (f === 'following' ? null : f));
+    }
+  }, []);
+
+  // Mobile TopHeaderNav Tab Handler
+  function handleMobileTabSelect(tabLabel) {
+    setActiveTab(tabLabel);
+    // Case-insensitive match against FILTERS by label — this is how tabs
+    // shared with the desktop nav (All, Shorts, LIVE, Communities,
+    // Collections) get routed/filtered. Keep TopHeaderNav's NAV_TABS
+    // labels in sync with FILTERS' labels or this silently no-ops.
+    const match = FILTERS.find((f) => f.label.toLowerCase() === tabLabel.toLowerCase());
+    if (match) {
+      handleFilterClick(match);
+    } else if (tabLabel === 'Shorts') {
+      setFilter('short');
+    } else if (tabLabel === 'Following') {
+      setFilter('following');
+    } else if (tabLabel === 'DMs') {
+      // DMs has no FILTERS entry (it's a standalone header link on
+      // desktop, not part of the tab/filter row), so it needs its own
+      // explicit route here.
+      router.push('/messages');
+    } else {
+      setFilter(null);
     }
   }
 
-  // Appearance (next-themes). Read only after mount to avoid a hydration mismatch.
-  const { theme } = useTheme();
-  const [themeMounted, setThemeMounted] = useState(false);
-  useEffect(() => setThemeMounted(true), []);
-
   useEffect(() => {
-    if (ready && !isAuthenticated) router.replace('/login');
-  }, [ready, isAuthenticated, router]);
-
-  useEffect(() => {
-    if (!isAuthenticated) return;
-    let cancelled = false;
-    api.getMe().then((d) => !cancelled && setMe(d)).catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [isAuthenticated]);
-
-  const refreshCache = useCallback(() => {
-    if (!isCacheSupported()) return setCacheBytes(0);
-    getCachedMediaBytes().then(setCacheBytes).catch(() => setCacheBytes(0));
+    const mq = window.matchMedia('(min-width: 768px)');
+    setIsDesktop(mq.matches);
+    const onChange = (e) => setIsDesktop(e.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
   }, []);
 
   useEffect(() => {
-    refreshCache();
-    setAvgSeconds(dailyAverageSeconds(weekUsage(readUsage())));
-  }, [refreshCache]);
+    setTuningWeights(loadTuningWeights());
+    setWeightsReady(true); // the feed waits for this, so it loads once with the real weights
+  }, []);
 
-  function handleLogout() {
-    setConfirmLogout(false);
-    // AuthContext.logout() clears localStorage, the auth cookies and live state
-    // in one go (a bare localStorage.removeItem leaves the middleware cookie behind).
-    logout();
-    // Hard navigation that *replaces* the history entry: drops every in-memory React/Next cache and
-    // means Back can't land on a signed-in screen (middleware + AppShell would bounce it anyway).
-    window.location.replace('/login');
+  const mobileContainerRef = useRef(null);
+  const desktopContainerRef = useRef(null);
+  const seenIdsRef = useRef(new Set()); // every clip id ever loaded (survives pruning) so pruned clips never look "new"
+  const videosRef = useRef([]);
+  const feedParamsRef = useRef({});
+  const offlineModeRef = useRef(false);
+  const pruneAnchorRef = useRef(null);
+  const videoCardRefs = useRef({});
+  const deepLinkRef = useRef(readDeepLink()); // clip id from ?video= / ?postId=, consumed once the feed has loaded it
+  const handledDeepLinkRef = useRef(deepLinkRef.current);
+  const [weightsReady, setWeightsReady] = useState(false);
+  const pendingStartRef = useRef(null); // index to jump to (instantly) once the list has rendered
+  const loadedKeyRef = useRef(null); // feed key the current `videos` belong to
+  const desktopRailRef = useRef(null);
+
+  useEffect(() => {
+    const stored = localStorage.getItem('user');
+    if (stored) setUser(JSON.parse(stored));
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    api.getUnreadCount().then((d) => setUnreadCount(d.count)).catch(() => {});
+
+    const socket = getSocket();
+    if (!socket) return;
+    const onNew = () => setUnreadCount((c) => c + 1);
+    socket.on('notification:new', onNew);
+
+    const onTip = (payload) => {
+      setCelebration(payload);
+      setTimeout(() => setCelebration((c) => (c === payload ? null : c)), 4000);
+    };
+    socket.on('tip:received', onTip);
+
+    return () => {
+      socket.off('notification:new', onNew);
+      socket.off('tip:received', onTip);
+    };
+  }, [user]);
+
+  useEffect(() => {
+    api.getCircles().then(setCircles).catch(() => {});
+  }, []);
+
+  // Rebuilds the feed from clips whose .mp4 is verifiably in the Cache API, so
+  // an offline user never lands on a black, unplayable card.
+  async function enterOfflineFeed() {
+    const cached = await getOfflineFeed();
+    setOfflineMode(true);
+    setVideos(cached);
+    setNextCursor(null);
+    setPendingNew([]);
+    setActiveIndex(0);
+    setInitialLoading(false);
+    desktopContainerRef.current?.scrollTo({ top: 0 });
+    mobileContainerRef.current?.scrollTo({ top: 0 });
   }
 
-  if (!ready || !isAuthenticated || !user) return null;
+  useEffect(() => {
+    if (!weightsReady) return;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      enterOfflineFeed();
+      return;
+    }
+    setOfflineMode(false);
+    setInitialLoading(true);
+    seenIdsRef.current = new Set();
+    setPendingNew([]);
 
-  const email = me?.email ?? user.email;
-  const verified = me?.emailVerified ?? user.emailVerified;
-  const phone = me?.phone ?? user.phone;
+    // Deep link: /?video=ID (profile grid, friends, collections, shared links) or /?postId=ID.
+    const targetId = deepLinkRef.current;
+    const key = feedKey(filter, circle, tuningWeights);
+    const cached =
+      feedSession && feedSession.key === key && Date.now() - feedSession.savedAt < FEED_SESSION_TTL_MS && reloadKey === 0
+        ? feedSession
+        : null;
+
+    const finish = (list, cursor, startIndex) => {
+      loadedKeyRef.current = key;
+      pendingStartRef.current = startIndex;
+      setVideos(list);
+      setNextCursor(cursor);
+      setActiveIndex(startIndex);
+      if (targetId) {
+        // Consumed: later tab/filter changes shouldn't re-pin this clip. Tidy the URL too.
+        deepLinkRef.current = null;
+        try {
+          const u = new URL(window.location.href);
+          u.searchParams.delete('video');
+          u.searchParams.delete('postId');
+          window.history.replaceState(window.history.state, '', u.pathname + u.search + u.hash);
+        } catch {}
+      }
+    };
+
+    // Returning to the feed with no deep link: restore the clips and the active video as they were.
+    if (cached && !targetId) {
+      const idx = Math.max(0, cached.videos.findIndex((v) => v.id === cached.activeId));
+      finish(cached.videos, cached.nextCursor, idx);
+      setInitialLoading(false);
+      return;
+    }
+
+    const base = cached
+      ? Promise.resolve({ videos: cached.videos, nextCursor: cached.nextCursor })
+      : api.getFeed(filter, undefined, tuningWeights, circle);
+    base
+      .then(async (data) => {
+        let videos = data.videos || [];
+        const PENDING_TTL_MS = 5 * 60 * 1000;
+        const pendingRaw = typeof window !== 'undefined' ? sessionStorage.getItem('pendingUpload') : null;
+        if (pendingRaw) {
+          try {
+            const pending = JSON.parse(pendingRaw);
+            const alreadyInResults = videos.some((v) => v.id === pending.id);
+            const expired = !pending.postedAt || Date.now() - pending.postedAt > PENDING_TTL_MS;
+            if (alreadyInResults || expired) {
+              sessionStorage.removeItem('pendingUpload');
+            } else if (!targetId && (filter === null || filter === pending.videoType)) {
+              videos = [pending, ...videos];
+            }
+          } catch {
+            sessionStorage.removeItem('pendingUpload');
+          }
+        }
+        let startIndex = 0;
+        if (targetId) {
+          startIndex = videos.findIndex((v) => v.id === targetId);
+          if (startIndex === -1) {
+            // Not in the loaded page: fetch that clip and put it first, so it plays immediately.
+            try {
+              const target = await api.getVideo(targetId);
+              videos = [target, ...videos.filter((v) => v.id !== target.id)];
+              startIndex = 0;
+            } catch {
+              startIndex = 0; // deleted / unavailable: fall back to the normal feed
+            }
+          }
+        }
+        finish(videos, data.nextCursor || null, startIndex);
+      })
+      .catch(() => {
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) enterOfflineFeed();
+      })
+      .finally(() => setInitialLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filter, tuningWeights, circle, reloadKey, weightsReady]);
+
+  useEffect(() => {
+    if (!nextCursor || loadingMore) return;
+    if (activeIndex < videos.length - 3) return;
+
+    setLoadingMore(true);
+    api
+      .getFeed(filter, nextCursor, tuningWeights, circle)
+      .then((data) => {
+        setVideos((prev) => {
+          const seen = new Set(prev.map((v) => v.id));
+          const fresh = (data.videos || []).filter((v) => !seen.has(v.id));
+          return [...prev, ...fresh];
+        });
+        setNextCursor(data.nextCursor || null);
+      })
+      .catch(() => {})
+      .finally(() => setLoadingMore(false));
+  }, [activeIndex, nextCursor, loadingMore, videos.length, filter, tuningWeights, circle]);
+
+  async function handleToggleFollow(userId) {
+    if (!localStorage.getItem('token')) {
+      window.location.href = '/login';
+      return;
+    }
+    const wasFollowing = videos.find((v) => v.user?.id === userId)?.user?.isFollowing;
+    const next = !wasFollowing;
+
+    setVideos((prev) =>
+      prev.map((v) => (v.user?.id === userId ? { ...v, user: { ...v.user, isFollowing: next } } : v))
+    );
+    try {
+      next ? await api.followUser(userId) : await api.unfollowUser(userId);
+    } catch {
+      setVideos((prev) =>
+        prev.map((v) => (v.user?.id === userId ? { ...v, user: { ...v.user, isFollowing: wasFollowing } } : v))
+      );
+    }
+  }
+
+  function handleVideoDeleted(videoId) {
+    setVideos((prev) => prev.filter((v) => v.id !== videoId));
+  }
+
+  // Active video = the slide that is (almost) fully in view. An IntersectionObserver with a high threshold
+  // only promotes a slide once it has snapped into place, so a card that is merely sliding past never starts
+  // playing (and the one leaving pauses) — no competing playback mid-swipe.
+  useEffect(() => {
+    const el = isDesktop ? desktopContainerRef.current : mobileContainerRef.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return undefined;
+    const indexOfSlide = (node) => Array.prototype.indexOf.call(el.children, node);
+    const io = new IntersectionObserver(
+      (entries) => {
+        let best = null;
+        for (const e of entries) {
+          if (!e.isIntersecting || e.intersectionRatio < ACTIVE_RATIO) continue;
+          if (!best || e.intersectionRatio > best.intersectionRatio) best = e;
+        }
+        if (!best) return;
+        const i = indexOfSlide(best.target);
+        if (i >= 0 && i < videos.length) setActiveIndex(i);
+      },
+      { root: el, threshold: [ACTIVE_RATIO, 0.9, 1] }
+    );
+    const count = Math.min(el.children.length, videos.length);
+    for (let i = 0; i < count; i++) io.observe(el.children[i]);
+
+    // Safety net: if nothing reaches the threshold (very short last slide, odd zoom levels), settle on the
+    // nearest slide once scrolling stops — never while it is still moving.
+    let timer;
+    const onScroll = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        const box = el.getBoundingClientRect();
+        const mid = box.top + box.height / 2;
+        let best = 0;
+        let bestDist = Infinity;
+        for (let i = 0; i < count; i++) {
+          const r = el.children[i].getBoundingClientRect();
+          const d = Math.abs(r.top + r.height / 2 - mid);
+          if (d < bestDist) { bestDist = d; best = i; }
+        }
+        setActiveIndex(best);
+      }, 160);
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      io.disconnect();
+      clearTimeout(timer);
+      el.removeEventListener('scroll', onScroll);
+    };
+  }, [videos.length, isDesktop]);
+
+  function scrollToIndex(i) {
+    const clamped = Math.max(0, Math.min(videos.length - 1, i));
+    const el = isDesktop ? desktopContainerRef.current : mobileContainerRef.current;
+    if (!el) return;
+    if (isDesktop) {
+      const card = el.children[clamped];
+      if (!card) return;
+      const box = el.getBoundingClientRect();
+      const r = card.getBoundingClientRect();
+      el.scrollTo({ top: el.scrollTop + (r.top + r.height / 2) - (box.top + box.height / 2), behavior: getPref('fastScroll') ? 'auto' : 'smooth' });
+      return;
+    }
+    el.scrollTo({ top: clamped * el.clientHeight, behavior: getPref('fastScroll') ? 'auto' : 'smooth' });
+  }
+
+  // Measure the real bottom-nav height (it grows with the device's safe-area inset), so the
+  // feed fills the space above it with no gap and no overlap.
+  useEffect(() => {
+    if (isDesktop !== false) return undefined;
+    const nav = document.querySelector('[data-bottom-nav]');
+    if (!nav) return undefined;
+    const measure = () => setBottomNavH(Math.round(nav.getBoundingClientRect().height));
+    measure();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(measure);
+    ro.observe(nav);
+    return () => ro.disconnect();
+  }, [isDesktop]);
+
+  // Instant jump to the start index chosen by the loader (deep-linked clip, or the restored position).
+  useLayoutEffect(() => {
+    const idx = pendingStartRef.current;
+    if (idx === null || isDesktop === null || !videos.length) return;
+    const el = isDesktop ? desktopContainerRef.current : mobileContainerRef.current;
+    if (!el || !el.children[idx]) return;
+    pendingStartRef.current = null;
+    if (isDesktop) {
+      const box = el.getBoundingClientRect();
+      const r = el.children[idx].getBoundingClientRect();
+      el.scrollTo({ top: el.scrollTop + (r.top + r.height / 2) - (box.top + box.height / 2), behavior: 'instant' });
+    } else {
+      el.scrollTo({ top: idx * el.clientHeight, behavior: 'instant' });
+    }
+  }, [videos, isDesktop]);
+
+  // Remember the feed + active clip for the next visit (only once the list belongs to the current key).
+  useEffect(() => {
+    if (offlineMode || !videos.length) return;
+    const key = feedKey(filter, circle, tuningWeights);
+    if (loadedKeyRef.current !== key) return;
+    feedSession = { key, videos, nextCursor, activeId: videos[activeIndex]?.id ?? null, savedAt: Date.now() };
+  }, [videos, nextCursor, activeIndex, filter, circle, tuningWeights, offlineMode]);
+
+  // ---- Silent background refresh, pruning, offline media cache ----
+  const MAX_FEED_VIDEOS = 30; // sliding window of clips kept in React state
+  const KEEP_ABOVE_ACTIVE = 8; // watched clips kept above the current one so a short scroll-back still works
+
+  videosRef.current = videos;
+  feedParamsRef.current = { filter, tuningWeights, circle };
+  offlineModeRef.current = offlineMode;
+  useEffect(() => {
+    videos.forEach((v) => seenIdsRef.current.add(v.id));
+  }, [videos]);
+
+  // 1) Poll for newer clips (every 60s while visible, plus on focus/online).
+  //    Found clips are only queued in `pendingNew`; the feed itself isn't touched here.
+  useFeedSync({
+    enabled: !offlineMode && !initialLoading,
+    check: async () => {
+      const { filter: f, tuningWeights: w, circle: c } = feedParamsRef.current;
+      const data = await api.getFeed(f, undefined, w, c);
+      const fresh = (data.videos || []).filter((v) => !seenIdsRef.current.has(v.id));
+      if (!fresh.length) return;
+      setPendingNew((prev) => {
+        const queued = new Set(prev.map((v) => v.id));
+        const add = fresh.filter((v) => !queued.has(v.id));
+        return add.length ? [...add, ...prev] : prev;
+      });
+    },
+  });
+
+  // 2) At the top of the feed and idle: slot the queued clips in right AFTER the
+  //    playing one, so nothing shifts above it and playback isn't interrupted.
+  useEffect(() => {
+    if (!pendingNew.length || offlineMode || activeIndex !== 0 || isScrolling) return;
+    const incoming = pendingNew;
+    setPendingNew([]);
+    setVideos((prev) => {
+      const seen = new Set(prev.map((v) => v.id));
+      const add = incoming.filter((v) => !seen.has(v.id));
+      return add.length ? [...prev.slice(0, 1), ...add, ...prev.slice(1)] : prev;
+    });
+  }, [pendingNew, activeIndex, isScrolling, offlineMode]);
+
+  // Pill tap (user is further down): put the new clips on top, then glide to them.
+  function showNewClips() {
+    const incoming = pendingNew;
+    setPendingNew([]);
+    setVideos((prev) => {
+      const seen = new Set(prev.map((v) => v.id));
+      return [...incoming.filter((v) => !seen.has(v.id)), ...prev];
+    });
+    setTimeout(() => scrollToIndexRef.current?.(0), 60);
+  }
+
+  // 3) Bulk pruning: once more than MAX_FEED_VIDEOS are loaded, drop watched clips
+  //    far above the current one. The active card's on-screen position is recorded
+  //    first and restored in the layout effect below, so the view doesn't jump.
+  useEffect(() => {
+    if (offlineMode || isScrolling || videos.length <= MAX_FEED_VIDEOS) return;
+    const drop = activeIndex - KEEP_ABOVE_ACTIVE;
+    if (drop <= 0) return;
+    const el = isDesktop ? desktopContainerRef.current : mobileContainerRef.current;
+    const anchor = el?.children[activeIndex];
+    pruneAnchorRef.current = el && anchor ? { el, anchor, top: anchor.getBoundingClientRect().top } : null;
+    setVideos((prev) => prev.slice(drop));
+    setActiveIndex((i) => Math.max(0, i - drop));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [videos.length, activeIndex, isScrolling, offlineMode, isDesktop]);
+
+  useLayoutEffect(() => {
+    const a = pruneAnchorRef.current;
+    if (!a) return;
+    pruneAnchorRef.current = null;
+    if (!a.anchor.isConnected) return;
+    const delta = a.anchor.getBoundingClientRect().top - a.top;
+    if (delta) a.el.scrollTop += delta;
+  }, [videos]);
+
+  // 4) Pre-cache the playing clip + the next 3 (debounced so fast flicking doesn't spawn fetches).
+  useEffect(() => {
+    if (offlineMode) return undefined;
+    const t = setTimeout(() => {
+      videos.slice(activeIndex, activeIndex + 4).forEach((v) => precacheVideo(v));
+    }, 1200);
+    return () => clearTimeout(t);
+  }, [activeIndex, videos, offlineMode]);
+
+  // 5) Offline / online switching.
+  useEffect(() => {
+    function onOffline() {
+      enterOfflineFeed();
+    }
+    function onOnline() {
+      if (offlineModeRef.current) {
+        setOfflineMode(false);
+        setReloadKey((k) => k + 1); // refetch the live feed
+      }
+    }
+    window.addEventListener('offline', onOffline);
+    window.addEventListener('online', onOnline);
+    return () => {
+      window.removeEventListener('offline', onOffline);
+      window.removeEventListener('online', onOnline);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Desktop paging: wheel / trackpad / ArrowUp / ArrowDown move exactly ONE video per gesture. After a step the
+  // feed is locked for STEP_LOCK_MS so a fast wheel spin or a trackpad's inertia tail can't chain extra steps;
+  // the target index is remembered meanwhile because activeIndex only updates once the slide has snapped.
+  const scrollToIndexRef = useRef(null);
+  scrollToIndexRef.current = scrollToIndex;
+  const stepTargetRef = useRef(null);
+  const stepLockUntilRef = useRef(0);
+  const stepClearRef = useRef(null);
+  const activeIndexRef = useRef(0);
+  activeIndexRef.current = activeIndex;
+  const videosLenRef = useRef(0);
+  videosLenRef.current = videos.length;
+
+  const stepFeed = useCallback((dir) => {
+    const now = performance.now();
+    if (now < stepLockUntilRef.current) return false;
+    const base = stepTargetRef.current ?? activeIndexRef.current;
+    const next = Math.max(0, Math.min(videosLenRef.current - 1, base + dir));
+    if (next === base) return false;
+    stepLockUntilRef.current = now + STEP_LOCK_MS;
+    stepTargetRef.current = next;
+    clearTimeout(stepClearRef.current);
+    stepClearRef.current = setTimeout(() => { stepTargetRef.current = null; }, STEP_LOCK_MS + 200);
+    scrollToIndexRef.current?.(next);
+    return true;
+  }, []);
+
+  useEffect(() => {
+    if (!isDesktop) return undefined;
+    const el = desktopContainerRef.current;
+
+    function onKeyDown(e) {
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+      if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      if (window.innerWidth < 1024) return;
+      const t = e.target;
+      if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      if (document.querySelector('[aria-modal="true"]')) return;
+      e.preventDefault();
+      stepFeed(e.key === 'ArrowDown' ? 1 : -1);
+    }
+
+    // Wheel: ignore the tiny deltas of a resting trackpad, ignore a decaying inertia tail, and leave wheel
+    // events alone when the pointer is over something inside the card that scrolls on its own.
+    let lastTs = 0;
+    let lastAbs = 0;
+    function onWheel(e) {
+      if (e.ctrlKey) return; // pinch-zoom
+      const abs = Math.abs(e.deltaY);
+      if (abs < Math.abs(e.deltaX)) return; // sideways gesture
+      for (let n = e.target; n && n !== el; n = n.parentElement) {
+        if (!(n instanceof HTMLElement)) continue;
+        const oy = getComputedStyle(n).overflowY;
+        if ((oy === 'auto' || oy === 'scroll') && n.scrollHeight > n.clientHeight + 1) return;
+      }
+      e.preventDefault(); // we own paging here; native wheel scrolling would skip several snap points
+      const now = performance.now();
+      const gap = now - lastTs;
+      const decaying = gap < 120 && abs < lastAbs; // inertia tail of the previous flick
+      lastTs = now;
+      lastAbs = abs;
+      if (abs < 4 || decaying) return;
+      stepFeed(e.deltaY > 0 ? 1 : -1);
+    }
+
+    window.addEventListener('keydown', onKeyDown);
+    el?.addEventListener('wheel', onWheel, { passive: false });
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      el?.removeEventListener('wheel', onWheel);
+      clearTimeout(stepClearRef.current);
+    };
+  }, [isDesktop, stepFeed]);
+
+  // Video currently centered in the feed — feeds the desktop side rail
+  // (comments/details) and its seek callback below. This was previously
+  // referenced in the JSX without ever being declared, which threw a
+  // ReferenceError on every render and crashed the whole page (not just
+  // the desktop rail) — including the nav.
+  const activeVideo = videos[activeIndex] || null;
+
+  // Desktop Header
+  const desktopHeader = (
+    <header className="hidden md:flex lg:hidden h-16 items-center justify-between gap-6 px-6 border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-md shrink-0 z-30 relative">
+      <div className="flex items-center gap-4 min-w-0 flex-1">
+        <a href="/" className="shrink-0" aria-label="Reel Studio home">
+          <Logo size="sm" showText />
+        </a>
+        <div className="w-px h-6 bg-zinc-800 shrink-0" />
+        {user ? (
+          <a href={`/profile/${user.id}`} className="flex items-center gap-2 min-w-0 group">
+            <span className="w-8 h-8 rounded-full overflow-hidden bg-zinc-800 border border-zinc-700 shrink-0 flex items-center justify-center font-display text-amber-400 text-sm">
+              {user.avatarUrl ? (
+                <img src={user.avatarUrl} alt="" className="w-full h-full object-cover" />
+              ) : (
+                user.username?.[0]?.toUpperCase()
+              )}
+            </span>
+            <span className="font-body text-sm font-semibold lg:font-extrabold lg:tracking-tight text-white truncate group-hover:text-amber-400 transition-colors">
+              @{user.username}
+            </span>
+          </a>
+        ) : (
+          <a href="/login" className="font-body text-sm font-semibold text-zinc-400 hover:text-white">
+            Log in
+          </a>
+        )}
+      </div>
+
+      <div className="flex gap-1 bg-zinc-900/80 border border-zinc-800 rounded-xl p-1 font-mono text-xs uppercase tracking-widest lg:font-body lg:font-extrabold lg:text-sm lg:tracking-tight shrink-0 z-10">
+        {FILTERS.map((opt) => (
+          <button
+            key={opt.label}
+            type="button"
+            onClick={() => handleFilterClick(opt)}
+            className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer ${
+              (opt.value === filter && !opt.href) || activeTab === opt.label
+                ? 'bg-amber-500 text-black font-bold'
+                : 'text-zinc-400 hover:text-white'
+            }`}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex items-center justify-end gap-5 font-mono text-xs uppercase tracking-widest lg:font-body lg:font-extrabold lg:text-sm lg:tracking-tight flex-1">
+        {user && (
+          <>
+            {user.role === 'admin' && (
+              <a href="/admin" className="text-yellow-400 hover:text-yellow-300">Admin</a>
+            )}
+            <a href="/live" className="text-zinc-400 hover:text-white">Live</a>
+            <a href="/messages" className="relative text-zinc-400 hover:text-white">
+              DMs
+              {unreadCount > 0 && (
+                <span className="absolute -top-2 -right-3 bg-amber-500 text-black rounded-full w-4 h-4 flex items-center justify-center text-[9px] font-bold">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
+            </a>
+          </>
+        )}
+        <button
+          type="button"
+          onClick={() => setIsMuted((prev) => !prev)}
+          className="text-zinc-300 hover:text-white px-2 py-1 rounded bg-zinc-800/50 lg:font-extrabold lg:tracking-tight"
+        >
+          {isMuted ? '🔇 Mute' : '🔊 Sound'}
+        </button>
+        <button
+          type="button"
+          onClick={() => router.push('/search')}
+          aria-label="Search"
+          className="text-zinc-300 hover:text-white cursor-pointer"
+        >
+          <SearchIcon />
+        </button>
+        <button
+          type="button"
+          onClick={() => setFiltersOpen(true)}
+          aria-label="Filters and feed tuning"
+          className="relative text-zinc-300 hover:text-white cursor-pointer"
+        >
+          <DotsIcon />
+          {circle !== null && (
+            <span className="absolute -top-1.5 -right-1.5 w-2 h-2 rounded-full bg-amber-500" />
+          )}
+        </button>
+      </div>
+    </header>
+  );
 
   return (
-    <SettingsPage title="Settings and privacy" backHref={user.id ? `/profile/${user.id}` : '/'} backLabel="Profile">
-      <SettingsUserCard user={user} email={email} verified={verified} href={user.id ? `/profile/${user.id}` : undefined} />
+    <main className="relative h-dvh w-full overflow-hidden bg-ink flex flex-col">
+      <Suspense fallback={null}>
+        <VideoParamSync onVideo={handleUrlVideo} />
+        <CircleParamSync onCircle={setCircle} />
+        <TabParamSync onTab={handleUrlTab} />
+      </Suspense>
 
-      {/* ─── 1. Account & Security ─── */}
-      <SettingsGroup title="Account & Security">
-        <SettingsRow
-          href="/settings/account"
-          icon={ic(User)}
-          title="Account Details"
-          subtitle={[email, phone].filter(Boolean).join(' · ') || 'Email, phone & verification'}
-          right={verified != null && <VerifiedBadge verified={verified} />}
-        />
-        <SettingsRow
-          href="/settings/security"
-          icon={ic(KeyRound)}
-          title="Security & Permissions"
-          subtitle={`2-Step Verification ${twoStep ? 'on' : 'off'} · Active devices`}
-        />
-        {bioSupported && (
-          <ToggleRow
-            icon={<Fingerprint className="w-5 h-5 text-amber-500" strokeWidth={2.5} />}
-            title="Biometric Security Lock"
-            subtitle="Require fingerprint to switch accounts or edit profile"
-            checked={bioEnabled}
-            disabled={bioBusy}
-            onChange={toggleBiometric}
+      {/* Guest browsing (chose "Continue as Guest" on /welcome): a slim, tappable nudge. */}
+      {guest && !focusMode && (
+        <div className="fixed bottom-[calc(5.5rem+env(safe-area-inset-bottom))] inset-x-0 z-30 flex justify-center pointer-events-none px-4">
+          <a
+            href="/signup"
+            className="pointer-events-auto flex items-center gap-2 bg-black/75 backdrop-blur-sm text-white text-xs font-extrabold px-4 py-2 rounded-full shadow-lg border border-white/15"
+          >
+            Browsing as a guest <span className="text-amber-400">Sign up to join in</span>
+          </a>
+        </div>
+      )}
+
+      {/* Desktop Header */}
+      {!focusMode && isDesktop && (
+        <>
+          {desktopHeader}
+          <StoriesBar className="border-b border-zinc-800 bg-zinc-950/80 lg:hidden" />
+        </>
+      )}
+
+      {/* Mobile Header Overlay */}
+      {!focusMode && isDesktop === false && (
+        <div className={`fixed top-0 inset-x-0 z-40 transition-opacity duration-200 ${previewShown ? 'opacity-0 pointer-events-none' : 'pointer-events-auto'}`}>
+          <TopHeaderNav
+            activeTab={activeTab}
+            setActiveTab={handleMobileTabSelect}
+            isMuted={isMuted}
+            onMuteToggle={() => setIsMuted((prev) => !prev)}
+            onSearchClick={() => router.push('/search')}
           />
-        )}
-        {isStaff && (
-          <SettingsRow
-            href="/admin"
-            icon={ic(ShieldCheck)}
-            title="Admin Console"
-            subtitle="Moderation, users & reports"
-            tone="amber"
-          />
-        )}
-      </SettingsGroup>
+          {/* TopHeaderNav is in normal flow now (sticky), so the stories bar simply follows it — no offset needed. */}
+          <div className="relative z-10">
+            <StoriesBar />
+          </div>
+        </div>
+      )}
 
-      {/* ─── Content & display ─── */}
-      <SettingsGroup title="Content & display">
-        <SettingsRow href="/settings/music" icon={ic(Music)} title="Music" subtitle="Sounds & artist tools" />
-        <SettingsRow href="/settings/inbox" icon={ic(MessageSquare)} title="Inbox & Messaging" subtitle="Who can message and call you" />
-        <SettingsRow href="/settings/activity" icon={ic(Clock)} title="Activity centre" subtitle="Watch, comment, search & account history" />
-        <SettingsRow href="/settings/audience" icon={ic(Lock)} title="Audience control" subtitle="Private profile, comments, blocked accounts" />
-        <SettingsRow href="/settings/ads" icon={ic(Megaphone)} title="Ads" subtitle="Promotions & ad activity" />
-        <SettingsRow href="/settings/playback" icon={ic(PlayCircle)} title="Playback" subtitle={dataSaver ? 'Data Saver on' : 'Data Saver off'} />
-        <SettingsRow href="/settings/display" icon={ic(Moon)} title="Display" subtitle={themeMounted ? (theme === 'dark' ? 'Dark theme' : 'Light theme') : 'Theme'} />
-        <SettingsRow href="/settings/wallpaper" icon={ic(ImageIcon)} title="Wallpaper" subtitle="Set videos as your phone wallpaper" />
-        <SettingsRow href="/settings/language" icon={ic(Languages)} title="Language" subtitle={languageByCode(displayLanguage)?.native || 'English'} />
-        <SettingsRow href="/settings/accessibility" icon={ic(Accessibility)} title="Accessibility" subtitle="Text size, contrast, motion" />
-        <SettingsRow href="/settings/contacts-location" icon={ic(MapPin)} title="Contacts and location" subtitle="Location, camera, microphone & notifications" />
-      </SettingsGroup>
-
-      {/* ─── Cache & mobile ─── */}
-      <SettingsGroup title="Cache & mobile">
-        <SettingsRow
-          href="/settings/offline-videos"
-          icon={ic(CloudOff)}
-          title="Offline videos"
-          subtitle={cacheBytes == null ? 'Calculating…' : `${formatBytes(cacheBytes)} stored on this device`}
-        />
-        <SettingsRow href="/settings/free-up-space" icon={ic(HardDrive)} title="Free up space" subtitle="Clear cached media and search history" />
-      </SettingsGroup>
-
-      {/* ─── 4. Pulse Wellbeing ─── */}
-      <SettingsGroup title="Pulse Wellbeing">
-        <SettingsRow
-          href="/settings/wellbeing"
-          icon={ic(Timer)}
-          title="Screen Time & Activity"
-          subtitle={avgSeconds == null ? 'Usage this week' : `Daily average ${formatDuration(avgSeconds)}`}
-        />
-      </SettingsGroup>
-
-      {/* ─── 5. Support & about ─── */}
-      <SettingsGroup title="Support & about">
-        <SettingsRow href="/settings/help" icon={ic(LifeBuoy)} title="Help Centre" subtitle="FAQs for account, LIVE, monetisation & safety" />
-        <SettingsRow href="/legal/terms" icon={ic(FileText)} title="Terms of Service" subtitle={isStaff ? 'Staff: you can edit this policy' : undefined} />
-        <SettingsRow href="/legal/privacy" icon={ic(Shield)} title="Privacy Policy" subtitle={isStaff ? 'Staff: you can edit this policy' : undefined} />
-        <SettingsRow href="/legal/guidelines" icon={ic(Users)} title="Community Guidelines" subtitle={isStaff ? 'Staff: you can edit this policy' : undefined} />
-      </SettingsGroup>
-
-      <button
-        type="button"
-        onClick={() => setConfirmLogout(true)}
-        className="w-full bg-red-500/10 text-red-500 font-sans font-bold text-sm border border-red-500/20 py-3.5 rounded-2xl hover:bg-red-500/15 active:bg-red-500/20 transition-colors"
-      >
-        Log Out
-      </button>
-
-      {confirmLogout && (
-        <ConfirmModal
-          title={t('logout.title')}
-          message={t('logout.message')}
-          confirmLabel={t('common.logOut')}
-          onConfirm={handleLogout}
-          onCancel={() => setConfirmLogout(false)}
+      {/* Mobile Feed */}
+      {isDesktop === false && (
+        <SwipeablePager
+          className="flex-1 min-h-0"
+          index={pagerIndex}
+          onIndexChange={setPagerIndex}
+          disabled={focusMode}
+          onProgress={(p) => {
+            if (p > 0.02) setPreviewTouched(true);
+            const shown = p > 0.5;
+            if (shown !== previewShownRef.current) { previewShownRef.current = shown; setPreviewShown(shown); }
+          }}
+          pages={[
+        <div key="feed" className="pt-16 pb-20 lg:pt-0 lg:pb-0 h-full w-full flex-1 min-h-0 flex flex-col items-center" style={bottomNavH ? { paddingBottom: bottomNavH } : undefined}>
+          <div
+            ref={mobileContainerRef}
+            className="feed-scroll h-full w-full overflow-y-scroll snap-y snap-mandatory overscroll-y-contain scroll-auto"
+            {...scrollHandlers}
+          >
+            {videos.map((video, i) => (
+              <div key={video.id} className="h-full w-full snap-start snap-always shrink-0 flex items-center justify-center relative">
+               <div className="h-full w-full">
+                <VideoCard
+                  ref={(el) => { videoCardRefs.current[video.id] = el; }}
+                  video={video}
+                  isActive={i === activeIndex}
+                  isMuted={isMuted}
+                  onMuteChange={setIsMuted}
+                  shouldLoad={Math.abs(i - activeIndex) <= 1}
+                  focusMode={focusMode}
+                  isScrolling={isScrolling}
+                  onAdvance={() => scrollToIndex(i + 1)}
+                  onToggleFollow={handleToggleFollow}
+                  onDeleted={handleVideoDeleted}
+                />
+               </div>
+              </div>
+            ))}
+            {loadingMore && (
+              <div className="h-full w-full snap-start shrink-0">
+                <FeedSkeletonCard />
+              </div>
+            )}
+            {videos.length === 0 && initialLoading && (
+              <div className="h-full w-full snap-start shrink-0">
+                <FeedSkeletonCard />
+              </div>
+            )}
+            {videos.length === 0 && !initialLoading && (
+              <div className="h-full flex items-center justify-center">
+                <p className="font-body text-smoke">No videos found for this filter.</p>
+              </div>
+            )}
+          </div>
+        </div>,
+        <CreatorPreview
+          key="creator"
+          creator={videos[activeIndex]?.user}
+          enabled={previewTouched}
+          bottomPad={bottomNavH || 80}
+          onBack={() => { setPagerIndex(0); previewShownRef.current = false; setPreviewShown(false); }}
+          onToggleFollow={handleToggleFollow}
+          onOpenVideo={(id) => { setPagerIndex(0); previewShownRef.current = false; setPreviewShown(false); router.push(`/?video=${id}`); }}
+        />,
+          ]}
         />
       )}
-    </SettingsPage>
+
+      {/* lg+: compact account shortcut, top-right */}
+      {!focusMode && isDesktop === true && (
+        <a
+          href="/profile"
+          aria-label="Your profile"
+          className="fixed top-4 right-6 z-40 hidden lg:flex w-10 h-10 rounded-full overflow-hidden bg-zinc-800 border border-zinc-600 hover:border-amber-400 items-center justify-center font-extrabold text-amber-400 text-sm shadow-lg transition-colors"
+        >
+          {user?.avatarUrl ? (
+            <img src={user.avatarUrl} alt="" className="w-full h-full object-cover" />
+          ) : (
+            user?.username?.[0]?.toUpperCase() || '?'
+          )}
+        </a>
+      )}
+
+      {/* lg+: the top header bar is gone (the sidebar carries navigation); the feed-specific
+          controls it held float over the top of the feed. */}
+      {!focusMode && isDesktop === true && (
+        <div className="hidden lg:flex absolute top-3 left-0 right-0 z-30 justify-center pointer-events-none">
+          <div className="pointer-events-auto flex items-center gap-1 rounded-full bg-black/70 backdrop-blur-md border border-neutral-800 p-1 text-sm font-extrabold tracking-tight">
+            {FILTERS.map((opt) => (
+              <button
+                key={opt.label}
+                type="button"
+                onClick={() => handleFilterClick(opt)}
+                className={`px-3.5 py-1.5 rounded-full transition-colors ${
+                  (opt.value === filter && !opt.href) || activeTab === opt.label
+                    ? 'bg-amber-500 text-black'
+                    : 'text-neutral-300 hover:text-white'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+            <span className="w-px h-5 bg-neutral-700 mx-1" />
+            <button
+              type="button"
+              onClick={() => setFiltersOpen(true)}
+              aria-label="Filters and feed tuning"
+              className="relative px-3 py-1.5 rounded-full text-neutral-300 hover:text-white"
+            >
+              <DotsIcon />
+              {circle !== null && <span className="absolute top-1 right-1.5 w-2 h-2 rounded-full bg-amber-500" />}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Desktop Workspace */}
+      {isDesktop === true && (
+        <div className="relative flex-1 min-h-0 flex gap-4 p-4 lg:p-0 lg:gap-0 lg:items-stretch">
+          <div className="flex-1 flex items-center justify-center min-w-0 lg:items-stretch lg:justify-center">
+            <div className="h-full w-full max-w-[calc((100vh-6rem)*9/16+2rem)] flex items-center justify-center lg:h-full bg-zinc-900/60 border border-zinc-800 rounded-2xl backdrop-blur-md shadow-2xl p-4 lg:max-w-none lg:bg-transparent lg:border-0 lg:shadow-none lg:backdrop-blur-none lg:p-0">
+              <div
+                ref={desktopContainerRef}
+                className="feed-scroll h-full max-h-[calc(100vh-8rem)] w-auto aspect-[9/16] overflow-y-scroll snap-y snap-mandatory overscroll-y-contain scroll-auto rounded-xl mx-auto lg:aspect-auto lg:w-full lg:max-h-none lg:mx-0 lg:rounded-none lg:flex lg:flex-col lg:items-center lg:pt-14 lg:pb-6"
+                {...scrollHandlers}
+              >
+                {videos.map((video, i) => (
+                  <div key={video.id} className="h-full w-full snap-start snap-always shrink-0 lg:h-[88vh] lg:max-w-[560px] lg:snap-center lg:flex lg:items-center lg:justify-center lg:relative lg:mb-8">
+                    <VideoCard
+                      ref={(el) => { videoCardRefs.current[video.id] = el; }}
+                      video={video}
+                      isActive={i === activeIndex}
+                      isMuted={isMuted}
+                      onMuteChange={setIsMuted}
+                      shouldLoad={Math.abs(i - activeIndex) <= 1}
+                      focusMode={focusMode}
+                      isScrolling={isScrolling}
+                  onAdvance={() => scrollToIndex(i + 1)}
+                      onToggleFollow={handleToggleFollow}
+                      onDeleted={handleVideoDeleted}
+                      onActiveTimeUpdate={setActiveTime}
+                    />
+                  </div>
+                ))}
+                {loadingMore && (
+                  <div className="h-full w-full snap-start lg:h-[88vh] lg:max-w-[560px] lg:shrink-0 lg:rounded-2xl lg:overflow-hidden lg:mb-8">
+                    <FeedSkeletonCard />
+                  </div>
+                )}
+                {videos.length === 0 && initialLoading && (
+                  <div className="h-full w-full snap-start lg:h-[88vh] lg:max-w-[560px] lg:shrink-0 lg:rounded-2xl lg:overflow-hidden lg:mb-8">
+                    <FeedSkeletonCard />
+                  </div>
+                )}
+                {videos.length === 0 && !initialLoading && (
+                  <div className="h-full flex items-center justify-center">
+                    <p className="font-body text-smoke text-center px-6">No videos found for this filter.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {!focusMode && activeVideo && (
+            <div className="w-full max-w-md shrink-0 bg-zinc-900/60 border border-zinc-800 rounded-2xl backdrop-blur-md shadow-2xl p-4 overflow-hidden lg:hidden xl:block xl:w-[320px] xl:max-w-[320px] xl:h-[88vh] xl:self-center xl:mr-6 lg:min-h-0 lg:overflow-y-auto lg:p-0 lg:bg-zinc-900/80">
+              <DesktopRail
+                ref={desktopRailRef}
+                video={activeVideo}
+                onToggleFollow={handleToggleFollow}
+                currentTime={activeTime}
+                onSeek={(seconds) => videoCardRefs.current[activeVideo?.id]?.seekTo(seconds)}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      {celebration && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 animate-[fadeIn_0.2s_ease-out]">
+          <div className="bg-amber-400 text-black font-body font-semibold px-5 py-3 rounded-xl shadow-lg flex items-center gap-2">
+            <span className="text-lg">🎉</span>
+            <span>You just got tipped ${(celebration.amountCents / 100).toFixed(2)}!</span>
+          </div>
+        </div>
+      )}
+
+      {pendingNew.length > 0 && activeIndex > 0 && !offlineMode && (
+        <button
+          type="button"
+          onClick={showNewClips}
+          className="fixed top-24 lg:top-20 left-1/2 lg:left-[calc(50%+2.5rem)] xl:left-[calc(50%+8rem)] -translate-x-1/2 z-[45] px-4 py-2 rounded-full bg-amber-500 text-black text-xs font-extrabold tracking-tight shadow-xl hover:bg-amber-400 transition-colors animate-[fadeIn_0.2s_ease-out]"
+        >
+          ↑ New clips available
+        </button>
+      )}
+
+      {offlineMode && (
+        <div className="fixed bottom-24 lg:bottom-6 left-1/2 lg:left-[calc(50%+2.5rem)] xl:left-[calc(50%+8rem)] -translate-x-1/2 z-[45] px-4 py-2 rounded-full bg-zinc-900/90 border border-zinc-700 text-neutral-200 text-xs font-bold tracking-tight shadow-xl pointer-events-none">
+          Offline · {videos.length ? 'showing saved clips' : 'no saved clips yet'}
+        </div>
+      )}
+
+      <FeedFiltersDrawer
+        open={filtersOpen}
+        onClose={() => setFiltersOpen(false)}
+        circles={circles}
+        circle={circle}
+        onSelectCircle={(c) => {
+          setCircle(c);
+          setFiltersOpen(false);
+        }}
+        weights={tuningWeights}
+        onWeightsChange={setTuningWeights}
+      />
+    </main>
+  );
+}
+
+function FeedSkeletonCard() {
+  return (
+    <div className="relative h-full w-full flex items-center justify-center bg-ink">
+      <div className="h-full w-full max-w-md bg-zinc-900 animate-pulse" />
+      <div className="absolute bottom-24 left-4 right-20 space-y-3">
+        <div className="h-4 w-1/3 bg-zinc-800 rounded animate-pulse" />
+        <div className="h-3 w-2/3 bg-zinc-800 rounded animate-pulse" />
+      </div>
+    </div>
+  );
+}
+
+function SearchIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="11" cy="11" r="7" />
+      <path d="m21 21-4.3-4.3" />
+    </svg>
+  );
+}
+
+function DotsIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+      <circle cx="5" cy="12" r="1.8" />
+      <circle cx="12" cy="12" r="1.8" />
+      <circle cx="19" cy="12" r="1.8" />
+    </svg>
   );
 }
